@@ -59,8 +59,10 @@ The app prompts for these when needed.
 
 ## Version
 
+<!-- VERSION_BLOCK_START -->
 - Version: `1.0.0`
 - Build: `1`
+<!-- VERSION_BLOCK_END -->
 
 ## Notes
 

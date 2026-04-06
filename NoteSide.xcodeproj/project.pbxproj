@@ -90,6 +90,7 @@
 				FEAE36DE2F7F007C00991A77 /* Sources */,
 				FEAE36DF2F7F007C00991A77 /* Frameworks */,
 				FEAE36E02F7F007C00991A77 /* Resources */,
+				FEAE37102F7F007C00991A77 /* Sync README Version */,
 			);
 			buildRules = (
 			);
@@ -212,6 +213,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		FEAE37102F7F007C00991A77 /* Sync README Version */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/README.md",
+				"$(SRCROOT)/NoteSide.xcodeproj/project.pbxproj",
+				"$(SRCROOT)/scripts/update_readme_version.sh",
+			);
+			name = "Sync README Version";
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/update_readme_version.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		FEAE36DE2F7F007C00991A77 /* Sources */ = {
@@ -385,6 +405,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = NO;
@@ -421,6 +442,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = NO;
