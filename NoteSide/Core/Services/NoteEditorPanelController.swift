@@ -109,6 +109,11 @@ final class NoteEditorPanelController {
             return panelScreen
         }
 
+        let pointerLocation = NSEvent.mouseLocation
+        if let pointerScreen = NSScreen.screens.first(where: { NSMouseInRect(pointerLocation, $0.frame, false) }) {
+            return pointerScreen
+        }
+
         if let lastPresentedScreen {
             return lastPresentedScreen
         }
@@ -119,11 +124,6 @@ final class NoteEditorPanelController {
 
         if let keyWindowScreen = NSApp.keyWindow?.screen {
             return keyWindowScreen
-        }
-
-        let pointerLocation = NSEvent.mouseLocation
-        if let pointerScreen = NSScreen.screens.first(where: { NSMouseInRect(pointerLocation, $0.frame, false) }) {
-            return pointerScreen
         }
 
         return NSScreen.main ?? NSScreen.screens.first
