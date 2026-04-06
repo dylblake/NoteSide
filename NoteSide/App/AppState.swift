@@ -747,6 +747,11 @@ final class AppState: ObservableObject {
             return
         }
 
+        guard browserURLProvider.isRunning(bundleIdentifier: bundleIdentifier) else {
+            setBrowserPermissionState(previousState, for: bundleIdentifier)
+            return
+        }
+
         let attempt = browserURLProvider.accessAttempt(
             bundleIdentifier: bundleIdentifier,
             activatesBrowser: false

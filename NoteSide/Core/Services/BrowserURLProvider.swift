@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 struct BrowserDescriptor: Hashable {
@@ -62,6 +63,10 @@ struct BrowserURLProvider {
         browserMap[bundleIdentifier] != nil
     }
 
+    func isRunning(bundleIdentifier: String) -> Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty
+    }
+
     func activeURL(bundleIdentifier: String) -> URL? {
         if case .success(_, let url) = accessAttempt(
             bundleIdentifier: bundleIdentifier,
@@ -78,6 +83,13 @@ struct BrowserURLProvider {
             return BrowserAutomationAttemptResult(
                 result: .notBrowser,
                 debugDetails: "No supported browser script for bundle identifier \(bundleIdentifier)."
+            )
+        }
+
+        if !activatesBrowser && !isRunning(bundleIdentifier: bundleIdentifier) {
+            return BrowserAutomationAttemptResult(
+                result: .unavailable(browserName: browser.title),
+                debugDetails: "\(browser.title) is installed but not currently running."
             )
         }
 
