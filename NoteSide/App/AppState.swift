@@ -135,16 +135,17 @@ final class AppState: ObservableObject {
         editorErrorMessage = nil
         let frontmostApp = NSWorkspace.shared.frontmostApplication
         let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
-        let context = contextResolver.resolveCurrentContext()
+        let fallbackContext = quickApplicationContext(for: frontmostApp)
 
-        activeContext = context
-        editorAttributedText = attributedText(for: context)
+        activeContext = fallbackContext
+        editorAttributedText = attributedText(for: fallbackContext)
         editorText = editorAttributedText.string
-        isActiveNotePinned = note(for: context)?.isPinned ?? false
+        isActiveNotePinned = note(for: fallbackContext)?.isPinned ?? false
         isEditorPresented = true
         noteEditorPanelController.present()
 
         DispatchQueue.main.async { [weak self] in
+            self?.resolveInitialQuickNoteContext(from: fallbackContext)
             self?.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
         }
     }
@@ -488,6 +489,32 @@ final class AppState: ObservableObject {
 
     private func note(for context: NoteContext) -> ContextNote? {
         notes.first { $0.context.id == context.id }
+    }
+
+    private func quickApplicationContext(for app: NSRunningApplication?) -> NoteContext {
+        NoteContext(
+            kind: .application,
+            identifier: app?.bundleIdentifier ?? "unknown",
+            displayName: app?.localizedName ?? "Current Context",
+            secondaryLabel: app?.bundleIdentifier,
+            navigationTarget: nil
+        )
+    }
+
+    private func resolveInitialQuickNoteContext(from fallbackContext: NoteContext) {
+        guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
+
+        let context = contextResolver.resolveCurrentContext()
+        guard context.id != fallbackContext.id else { return }
+
+        let hasUnsavedEditorText = !editorAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !hasUnsavedEditorText else { return }
+
+        activeContext = context
+        editorAttributedText = attributedText(for: context)
+        editorText = editorAttributedText.string
+        editorErrorMessage = nil
+        isActiveNotePinned = note(for: context)?.isPinned ?? false
     }
 
     private func refreshEditorContextIfNeeded() {
