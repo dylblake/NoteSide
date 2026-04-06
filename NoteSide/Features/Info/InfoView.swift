@@ -8,7 +8,6 @@ struct InfoView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
-                    actionsCard
                     privacyCard
                 }
                 .padding(28)
@@ -56,35 +55,17 @@ struct InfoView: View {
     }
 
     private var footer: some View {
-        HStack {
-            Spacer()
-
+        VStack(alignment: .trailing, spacing: 6) {
             Text("Version \(appState.appVersionDisplay)")
                 .font(.footnote)
                 .foregroundStyle(NoteSideTheme.tertiaryText)
-        }
-    }
 
-    private var actionsCard: some View {
-        infoCard(title: "Actions", systemImage: "info.circle") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    primaryButton("Check for Updates") {
-                        appState.checkForUpdates()
-                    }
-
-                    secondaryButton("Permissions & Setup") {
-                        appState.showOnboarding()
-                    }
-                }
-
-                if let status = appState.infoStatusMessage, !status.isEmpty {
-                    Text(status)
-                        .font(.footnote)
-                        .foregroundStyle(NoteSideTheme.secondaryText)
-                }
+            HStack(spacing: 12) {
+                footerLink("Apple EULA", destination: "https://www.apple.com/legal/macapps/stdeula/")
+                footerLink("Privacy Settings", destination: "https://www.dylblake.dev/noteside/privacy-settings")
             }
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var privacyCard: some View {
@@ -135,33 +116,10 @@ struct InfoView: View {
         }
     }
 
-    private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(NoteSideTheme.accent)
-                )
-        }
-        .buttonStyle(.plain)
+    private func footerLink(_ title: String, destination: String) -> some View {
+        Link(title, destination: URL(string: destination)!)
+            .font(.footnote)
+            .foregroundStyle(NoteSideTheme.accent)
     }
 
-    private func secondaryButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(NoteSideTheme.primaryText)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(NoteSideTheme.contentBackground)
-                )
-        }
-        .buttonStyle(.plain)
-    }
 }

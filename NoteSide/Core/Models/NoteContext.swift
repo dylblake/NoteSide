@@ -36,6 +36,8 @@ struct NoteContext: Codable, Hashable, Identifiable {
     let navigationTarget: String?
     let sourceBundleIdentifier: String?
     let sourceRootPath: String?
+    let fileSystemIdentifier: String?
+    let fileBookmarkData: Data?
 
     init(
         kind: Kind,
@@ -44,7 +46,9 @@ struct NoteContext: Codable, Hashable, Identifiable {
         secondaryLabel: String?,
         navigationTarget: String?,
         sourceBundleIdentifier: String? = nil,
-        sourceRootPath: String? = nil
+        sourceRootPath: String? = nil,
+        fileSystemIdentifier: String? = nil,
+        fileBookmarkData: Data? = nil
     ) {
         self.kind = kind
         self.identifier = identifier
@@ -53,9 +57,15 @@ struct NoteContext: Codable, Hashable, Identifiable {
         self.navigationTarget = navigationTarget
         self.sourceBundleIdentifier = sourceBundleIdentifier
         self.sourceRootPath = sourceRootPath
+        self.fileSystemIdentifier = fileSystemIdentifier
+        self.fileBookmarkData = fileBookmarkData
     }
 
     var id: String {
-        "\(kind.rawValue)::\(identifier)"
+        if kind == .file, let fileSystemIdentifier, !fileSystemIdentifier.isEmpty {
+            return "\(kind.rawValue)::\(fileSystemIdentifier)"
+        }
+
+        return "\(kind.rawValue)::\(identifier)"
     }
 }

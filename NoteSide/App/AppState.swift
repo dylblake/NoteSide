@@ -456,6 +456,7 @@ final class AppState: ObservableObject {
         return sortedNotes.filter { note in
             note.context.displayName.localizedCaseInsensitiveContains(searchText)
                 || note.context.identifier.localizedCaseInsensitiveContains(searchText)
+                || (note.context.secondaryLabel?.localizedCaseInsensitiveContains(searchText) ?? false)
                 || note.body.localizedCaseInsensitiveContains(searchText)
         }
     }
@@ -651,7 +652,7 @@ final class AppState: ObservableObject {
     }
 
     private func openFileContext(_ context: NoteContext) {
-        let fileURL = URL(fileURLWithPath: context.identifier)
+        guard let fileURL = resolvedFileURL(for: context) else { return }
         if let sourceBundleIdentifier = context.sourceBundleIdentifier,
            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: sourceBundleIdentifier) {
             let configuration = NSWorkspace.OpenConfiguration()
@@ -669,6 +670,27 @@ final class AppState: ObservableObject {
         }
 
         NSWorkspace.shared.open(fileURL)
+    }
+
+    private func resolvedFileURL(for context: NoteContext) -> URL? {
+        if let bookmarkData = context.fileBookmarkData {
+            var isStale = false
+            if let resolvedURL = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [.withoutUI],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                return resolvedURL
+            }
+        }
+
+        if let secondaryLabel = context.secondaryLabel, !secondaryLabel.isEmpty {
+            return URL(fileURLWithPath: secondaryLabel)
+        }
+
+        guard context.identifier.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: context.identifier)
     }
 
     private func browserName(for bundleIdentifier: String) -> String {

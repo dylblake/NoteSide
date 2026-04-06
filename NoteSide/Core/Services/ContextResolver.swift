@@ -110,14 +110,17 @@ struct ContextResolver {
         sourceBundleIdentifier: String? = nil,
         sourceRootPath: String? = nil
     ) -> NoteContext {
-        NoteContext(
+        let resolvedPath = url.path(percentEncoded: false)
+        return NoteContext(
             kind: .file,
-            identifier: url.path(percentEncoded: false),
+            identifier: resolvedPath,
             displayName: fileDisplayName(for: url),
             secondaryLabel: fileSecondaryLabel(for: url),
             navigationTarget: nil,
             sourceBundleIdentifier: sourceBundleIdentifier,
-            sourceRootPath: sourceRootPath
+            sourceRootPath: sourceRootPath,
+            fileSystemIdentifier: stableFileSystemIdentifier(for: url),
+            fileBookmarkData: fileBookmarkData(for: url)
         )
     }
 
@@ -526,6 +529,25 @@ struct ContextResolver {
         }
 
         return fileURL.deletingLastPathComponent()
+    }
+
+    private func stableFileSystemIdentifier(for url: URL) -> String? {
+        guard
+            let values = try? url.resourceValues(forKeys: [.fileResourceIdentifierKey]),
+            let fileResourceIdentifier = values.fileResourceIdentifier
+        else {
+            return nil
+        }
+
+        return String(describing: fileResourceIdentifier)
+    }
+
+    private func fileBookmarkData(for url: URL) -> Data? {
+        try? url.bookmarkData(
+            options: .minimalBookmark,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
     }
 
     private func isWorkspaceRootCandidate(_ url: URL) -> Bool {
