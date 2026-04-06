@@ -544,7 +544,7 @@ struct ContextResolver {
 
     private func fileBookmarkData(for url: URL) -> Data? {
         try? url.bookmarkData(
-            options: .minimalBookmark,
+            options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )

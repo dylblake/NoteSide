@@ -652,7 +652,13 @@ final class AppState: ObservableObject {
     }
 
     private func openFileContext(_ context: NoteContext) {
-        guard let fileURL = resolvedFileURL(for: context) else { return }
+        guard let (fileURL, stopAccessing) = resolvedFileURL(for: context) else { return }
+        defer {
+            if stopAccessing {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
         if let sourceBundleIdentifier = context.sourceBundleIdentifier,
            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: sourceBundleIdentifier) {
             let configuration = NSWorkspace.OpenConfiguration()
@@ -672,25 +678,26 @@ final class AppState: ObservableObject {
         NSWorkspace.shared.open(fileURL)
     }
 
-    private func resolvedFileURL(for context: NoteContext) -> URL? {
+    private func resolvedFileURL(for context: NoteContext) -> (url: URL, stopAccessing: Bool)? {
         if let bookmarkData = context.fileBookmarkData {
             var isStale = false
             if let resolvedURL = try? URL(
                 resolvingBookmarkData: bookmarkData,
-                options: [.withoutUI],
+                options: [.withoutUI, .withSecurityScope],
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             ) {
-                return resolvedURL
+                let didStartAccessing = resolvedURL.startAccessingSecurityScopedResource()
+                return (resolvedURL, didStartAccessing)
             }
         }
 
         if let secondaryLabel = context.secondaryLabel, !secondaryLabel.isEmpty {
-            return URL(fileURLWithPath: secondaryLabel)
+            return (URL(fileURLWithPath: secondaryLabel), false)
         }
 
         guard context.identifier.hasPrefix("/") else { return nil }
-        return URL(fileURLWithPath: context.identifier)
+        return (URL(fileURLWithPath: context.identifier), false)
     }
 
     private func browserName(for bundleIdentifier: String) -> String {
