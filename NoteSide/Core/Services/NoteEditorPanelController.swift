@@ -45,21 +45,8 @@ final class NoteEditorPanelController {
         animationSequence += 1
         let sequence = animationSequence
         lastPresentedScreen = screen
-        let screenFrame = screen.visibleFrame.integral
-        let paneWidth = floor(screenFrame.width / 3)
-        let collapsedWidth: CGFloat = 28
-        let finalFrame = NSRect(
-            x: screenFrame.maxX - paneWidth,
-            y: screenFrame.minY,
-            width: paneWidth,
-            height: screenFrame.height
-        )
-        let startFrame = NSRect(
-            x: screenFrame.maxX - collapsedWidth,
-            y: screenFrame.minY,
-            width: collapsedWidth,
-            height: screenFrame.height
-        )
+        let finalFrame = paneFrame(for: screen)
+        let startFrame = collapsedFrame(for: screen)
 
         panel.animator().alphaValue = panel.alphaValue
         panel.setFrame(startFrame, display: false)
@@ -81,6 +68,62 @@ final class NoteEditorPanelController {
         })
     }
 
+    /// If the panel is visible and the cursor is now on a different screen
+    /// than the panel currently sits on, slide the panel to that screen's
+    /// right edge. Cheap and idempotent — safe to call from both the
+    /// didActivateApplication notification and the polling timer.
+    func repositionToActiveScreenIfNeeded() {
+        guard let panel, panel.isVisible else { return }
+        guard let target = targetScreen(preferPanelScreen: false) else { return }
+        guard let currentScreen = panel.screen else {
+            // Panel has no screen yet — just snap to the target.
+            panel.setFrame(paneFrame(for: target), display: true)
+            lastPresentedScreen = target
+            return
+        }
+        // NSScreen instances aren't necessarily reference-stable across calls;
+        // compare frames instead.
+        guard currentScreen.frame != target.frame else { return }
+
+        animationSequence += 1
+        let sequence = animationSequence
+        lastPresentedScreen = target
+        let newFrame = paneFrame(for: target)
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.2, 1.0)
+            panel.animator().setFrame(newFrame, display: true)
+        }, completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.animationSequence == sequence else { return }
+                panel.setFrame(newFrame, display: false)
+            }
+        })
+    }
+
+    private func paneFrame(for screen: NSScreen) -> NSRect {
+        let screenFrame = screen.visibleFrame.integral
+        let paneWidth = floor(screenFrame.width / 3)
+        return NSRect(
+            x: screenFrame.maxX - paneWidth,
+            y: screenFrame.minY,
+            width: paneWidth,
+            height: screenFrame.height
+        )
+    }
+
+    private func collapsedFrame(for screen: NSScreen) -> NSRect {
+        let screenFrame = screen.visibleFrame.integral
+        let collapsedWidth: CGFloat = 28
+        return NSRect(
+            x: screenFrame.maxX - collapsedWidth,
+            y: screenFrame.minY,
+            width: collapsedWidth,
+            height: screenFrame.height
+        )
+    }
+
     func dismiss() {
         guard let panel, let screen = targetScreen(preferPanelScreen: true), panel.isVisible else {
             panel?.orderOut(nil)
@@ -89,14 +132,7 @@ final class NoteEditorPanelController {
         animationSequence += 1
         let sequence = animationSequence
 
-        let screenFrame = screen.visibleFrame.integral
-        let collapsedWidth: CGFloat = 28
-        let endFrame = NSRect(
-            x: screenFrame.maxX - collapsedWidth,
-            y: screenFrame.minY,
-            width: collapsedWidth,
-            height: screenFrame.height
-        )
+        let endFrame = collapsedFrame(for: screen)
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.18

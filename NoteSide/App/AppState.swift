@@ -103,6 +103,7 @@ final class AppState: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.refreshEditorContextIfNeeded()
+                self?.panelController?.repositionToActiveScreenIfNeeded()
             }
             .store(in: &cancellables)
 
