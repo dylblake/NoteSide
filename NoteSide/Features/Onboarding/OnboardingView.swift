@@ -100,7 +100,7 @@ struct OnboardingView: View {
                 permissionStatusRow(
                     title: "Browser Automation",
                     detail: "Request access per browser below. macOS will ask the first time Side Note tries to read that browser's active tab.",
-                    isGranted: installedBrowsers.contains { browser in
+                    isGranted: !installedBrowsers.isEmpty && installedBrowsers.allSatisfy { browser in
                         appState.browserPermissionStates[browser.bundleIdentifier] == .granted
                     },
                     buttonTitle: "Open Settings",
@@ -194,8 +194,12 @@ struct OnboardingView: View {
     }
 
     private var installedBrowsers: [BrowserDescriptor] {
-        AppState.supportedBrowsers.filter {
-            appState.browserPermissionStates[$0.bundleIdentifier] != .notInstalled
+        AppState.supportedBrowsers.filter { browser in
+            // Only show browsers that have been attempted (have a state) and are not marked as notInstalled
+            if let state = appState.browserPermissionStates[browser.bundleIdentifier] {
+                return state != .notInstalled
+            }
+            return false
         }
     }
 

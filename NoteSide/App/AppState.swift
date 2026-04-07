@@ -59,6 +59,7 @@ final class AppState: ObservableObject {
     private static let onboardingDefaultsKey = "hasCompletedOnboarding"
     private static let hotKeyDefaultsKey = "globalHotKeyShortcut"
     private static let browserPermissionDefaultsPrefix = "browserPermissionState."
+    private static let browserPermissionMigrationKey = "browserPermissionStatesMigratedV2"
     static let supportedBrowsers = BrowserURLProvider.supportedBrowsers
 
     init(
@@ -69,6 +70,7 @@ final class AppState: ObservableObject {
         self.store = store
         self.contextResolver = contextResolver
         self.hotKeyMonitor = hotKeyMonitor
+        Self.migrateBrowserPermissionStatesIfNeeded()
         hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingDefaultsKey)
         hotKeyShortcut = Self.loadHotKeyShortcut()
         showsDockIcon = false
@@ -106,7 +108,8 @@ final class AppState: ObservableObject {
         Timer.publish(every: 2.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
-                self?.refreshEditorContextIfNeeded()
+                guard let self, self.shouldRefreshDetailedContext else { return }
+                self.refreshEditorContextIfNeeded()
             }
             .store(in: &cancellables)
 
@@ -124,6 +127,12 @@ final class AppState: ObservableObject {
     }
 
     func toggleQuickNote() async {
+        // Check if accessibility permission is granted, if not the native macOS prompt will appear
+        if !AXIsProcessTrusted() {
+            requestAccessibilityAccessIfNeeded()
+            return
+        }
+
         if isEditorPresented {
             saveAndDismissEditor()
             return
@@ -490,6 +499,20 @@ final class AppState: ObservableObject {
         notes.sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    private static func migrateBrowserPermissionStatesIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: browserPermissionMigrationKey) else { return }
+
+        // Earlier builds promoted browsers to `.granted` based on a no-tab
+        // AppleScript response that didn't actually exercise the Apple Events
+        // permission check. Wipe those stale values so the new conservative
+        // logic can re-derive accurate state.
+        for browser in supportedBrowsers {
+            defaults.removeObject(forKey: browserPermissionDefaultsPrefix + browser.bundleIdentifier)
+        }
+        defaults.set(true, forKey: browserPermissionMigrationKey)
+    }
+
     private static func loadHotKeyShortcut() -> HotKeyShortcut {
         guard
             let data = UserDefaults.standard.data(forKey: hotKeyDefaultsKey),
@@ -533,7 +556,6 @@ final class AppState: ObservableObject {
 
     private func refreshEditorContextIfNeeded() {
         guard isEditorPresented else { return }
-        guard shouldRefreshDetailedContext else { return }
 
         let context = resolveCurrentContext()
         guard context.id != activeContext?.id else { return }
@@ -548,6 +570,36 @@ final class AppState: ObservableObject {
 
     private func resolveCurrentContext(preferredBundleIdentifier: String? = nil) -> NoteContext {
         let bundleIdentifier = preferredBundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+
+        // Check if this is a supported browser and if we should attempt automation
+        let shouldAttemptBrowserAutomation: Bool = {
+            guard let bundleId = bundleIdentifier else { return false }
+            guard browserURLProvider.supports(bundleIdentifier: bundleId) else { return false }
+
+            let state = browserPermissionStates[bundleId]
+            // Attempt if: granted, OR never attempted before (nil)
+            return state == .granted || state == nil
+        }()
+
+        // If this is a first-time browser attempt, probe it and record the result
+        if shouldAttemptBrowserAutomation,
+           let bundleId = bundleIdentifier,
+           browserPermissionStates[bundleId] == nil {
+            let attempt = browserURLProvider.accessAttempt(bundleIdentifier: bundleId, activatesBrowser: false)
+
+            switch attempt.result {
+            case .success:
+                setBrowserPermissionState(.granted, for: bundleId)
+            case .automationDenied:
+                setBrowserPermissionState(.notGranted, for: bundleId)
+            case .noTab, .unavailable, .notBrowser:
+                // Inconclusive — Safari's `exists front document` can return
+                // empty without ever triggering the Apple Events permission
+                // check, so an empty result is not proof of access.
+                break
+            }
+        }
+
         let allowBrowserAutomation = bundleIdentifier.map { browserPermissionStates[$0] == .granted } ?? false
         return contextResolver.resolveCurrentContext(allowBrowserAutomation: allowBrowserAutomation)
     }
@@ -790,7 +842,7 @@ final class AppState: ObservableObject {
         browserAutomationMessage = result.message
 
         switch result {
-        case .success(let browserName, _), .noTab(let browserName):
+        case .success(let browserName, _):
             isBrowserAutomationGranted = true
             editorErrorMessage = nil
             setBrowserPermissionState(.granted, for: bundleIdentifier(for: browserName))
@@ -798,18 +850,61 @@ final class AppState: ObservableObject {
             isBrowserAutomationGranted = false
             editorErrorMessage = result.message
             setBrowserPermissionState(.notGranted, for: bundleIdentifier(for: browserName))
-        case .notBrowser:
+        case .noTab, .notBrowser:
+            // Inconclusive — empty/no-tab responses can occur without an
+            // actual Apple Events permission grant, so don't change state.
             break
         }
     }
 
     private func refreshBrowserPermissionStates() {
         for browser in Self.supportedBrowsers {
-            if isBrowserInstalled(browser.bundleIdentifier) {
-                let storedState = storedBrowserPermissionState(for: browser.bundleIdentifier)
-                browserPermissionStates[browser.bundleIdentifier] = storedState == .granted ? .granted : .notGranted
+            // Check if we've previously attempted this browser
+            let storedState = storedBrowserPermissionState(for: browser.bundleIdentifier)
+
+            // If not installed, mark as such
+            if !isBrowserInstalled(browser.bundleIdentifier) {
+                // Only set to notInstalled if we've tracked this browser before
+                if storedState != .notInstalled {
+                    browserPermissionStates[browser.bundleIdentifier] = .notInstalled
+                }
+                continue
+            }
+
+            // Only refresh state for browsers we've attempted before
+            guard storedState != .notInstalled else {
+                // Browser hasn't been attempted yet - don't set any state
+                continue
+            }
+
+            // If browser is running, probe it to check actual permission state
+            if browserURLProvider.isRunning(bundleIdentifier: browser.bundleIdentifier) {
+                let attempt = browserURLProvider.accessAttempt(
+                    bundleIdentifier: browser.bundleIdentifier,
+                    activatesBrowser: false
+                )
+
+                switch attempt.result {
+                case .success:
+                    // Browser is accessible - permission is granted
+                    browserPermissionStates[browser.bundleIdentifier] = .granted
+                    setBrowserPermissionState(.granted, for: browser.bundleIdentifier)
+                case .automationDenied, .unavailable:
+                    // Browser denied automation or unavailable - permission not granted
+                    browserPermissionStates[browser.bundleIdentifier] = .notGranted
+                    setBrowserPermissionState(.notGranted, for: browser.bundleIdentifier)
+                case .noTab:
+                    // Inconclusive — fall back to whatever was previously
+                    // stored rather than promoting to granted on an empty
+                    // response that may not have hit the permission check.
+                    browserPermissionStates[browser.bundleIdentifier] = storedState
+                case .notBrowser:
+                    // Shouldn't happen for supported browsers
+                    browserPermissionStates[browser.bundleIdentifier] = .notGranted
+                }
             } else {
-                browserPermissionStates[browser.bundleIdentifier] = .notInstalled
+                // Browser not running - use stored state
+                browserPermissionStates[browser.bundleIdentifier] = storedState
             }
         }
     }
