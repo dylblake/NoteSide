@@ -4,29 +4,13 @@ import SwiftUI
 struct ClickableIconView: NSViewRepresentable {
     let iconName: String
     let iconColor: NSColor
-    let hoverColor: NSColor
     let size: CGFloat
     let action: () -> Void
-
-    init(
-        iconName: String,
-        iconColor: NSColor,
-        hoverColor: NSColor = .labelColor,
-        size: CGFloat,
-        action: @escaping () -> Void
-    ) {
-        self.iconName = iconName
-        self.iconColor = iconColor
-        self.hoverColor = hoverColor
-        self.size = size
-        self.action = action
-    }
 
     func makeNSView(context: Context) -> ClickableIconNSView {
         let view = ClickableIconNSView()
         view.iconName = iconName
         view.iconColor = iconColor
-        view.hoverColor = hoverColor
         view.iconSize = size
         view.onClick = action
         return view
@@ -35,7 +19,6 @@ struct ClickableIconView: NSViewRepresentable {
     func updateNSView(_ nsView: ClickableIconNSView, context: Context) {
         nsView.iconName = iconName
         nsView.iconColor = iconColor
-        nsView.hoverColor = hoverColor
         nsView.iconSize = size
         nsView.onClick = action
         nsView.needsDisplay = true
@@ -45,7 +28,6 @@ struct ClickableIconView: NSViewRepresentable {
 final class ClickableIconNSView: NSView {
     var iconName: String = "questionmark"
     var iconColor: NSColor = .labelColor
-    var hoverColor: NSColor = .labelColor
     var iconSize: CGFloat = 16
     var onClick: (() -> Void)?
 
@@ -97,6 +79,13 @@ final class ClickableIconNSView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
+        // Draw hover background
+        if isHovered {
+            NSColor.quaternaryLabelColor.withAlphaComponent(0.2).setFill()
+            let backgroundPath = NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6)
+            backgroundPath.fill()
+        }
+
         // Draw the SF Symbol icon
         guard let baseImage = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) else {
             return
@@ -111,8 +100,7 @@ final class ClickableIconNSView: NSView {
         let tintedImage = NSImage(size: configuredImage.size)
         tintedImage.lockFocus()
 
-        let activeColor = isHovered ? hoverColor : iconColor
-        activeColor.set()
+        iconColor.set()
         let imageRect = NSRect(origin: .zero, size: configuredImage.size)
         configuredImage.draw(in: imageRect)
         imageRect.fill(using: .sourceAtop)
