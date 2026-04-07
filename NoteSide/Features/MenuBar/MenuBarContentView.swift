@@ -1,11 +1,14 @@
 import AppKit
 import Combine
+import ServiceManagement
 import SwiftUI
 
 struct MenuBarContentView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @StateObject private var updateChecker = UpdateChecker()
+    @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLoginNeedsApproval: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -63,6 +66,27 @@ struct MenuBarContentView: View {
                 Text("Click the box, then press the shortcut you want.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle("Launch on startup", isOn: $launchAtLogin)
+                    .toggleStyle(.checkbox)
+                    .font(.subheadline)
+                    .onChange(of: launchAtLogin) { _, newValue in
+                        setLaunchAtLogin(newValue)
+                    }
+
+                if launchAtLoginNeedsApproval {
+                    HStack(spacing: 6) {
+                        Text("Enable NoteSide in System Settings to allow launch on startup.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Open") {
+                            SMAppService.openSystemSettingsLoginItems()
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                    }
+                }
             }
 
             if let errorMessage = appState.editorErrorMessage {
@@ -106,10 +130,48 @@ struct MenuBarContentView: View {
 
             Divider()
 
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Label("Quit NoteSide", systemImage: "power")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             updateRow
         }
         .padding(16)
         .frame(width: 340)
+        .onAppear { refreshLaunchAtLoginState() }
+    }
+
+    private func refreshLaunchAtLoginState() {
+        let status = SMAppService.mainApp.status
+        launchAtLogin = (status == .enabled)
+        launchAtLoginNeedsApproval = (status == .requiresApproval)
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        let service = SMAppService.mainApp
+        do {
+            if enabled {
+                if service.status != .enabled {
+                    try service.register()
+                }
+            } else {
+                if service.status != .notRegistered {
+                    try service.unregister()
+                }
+            }
+        } catch {
+            // Fall through to status reconciliation below.
+        }
+
+        let status = service.status
+        let actualEnabled = (status == .enabled)
+        if launchAtLogin != actualEnabled {
+            launchAtLogin = actualEnabled
+        }
+        launchAtLoginNeedsApproval = (enabled && status == .requiresApproval)
     }
 
     @ViewBuilder
