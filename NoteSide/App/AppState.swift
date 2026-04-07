@@ -127,13 +127,14 @@ final class AppState: ObservableObject {
     }
 
     func toggleQuickNote() async {
-        // Surface the macOS Accessibility prompt the first time we don't have
-        // it, but don't block opening the panel — the global hotkey uses
-        // Carbon's RegisterEventHotKey, which doesn't need Accessibility, and
-        // browser/Finder contexts work via Apple Events. Only Slack/Figma and
-        // the code-editor focused-document AX paths actually need it.
+        // First-run gate: if we don't have Accessibility yet, surface the
+        // system prompt and bail out without opening the panel. The user
+        // grants permission, then their next hotkey press opens the editor
+        // for real. This avoids showing an empty/incomplete panel behind the
+        // permission dialog.
         if !AXIsProcessTrusted() {
             requestAccessibilityAccessIfNeeded()
+            return
         }
 
         if isEditorPresented {
