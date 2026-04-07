@@ -103,7 +103,7 @@ final class AppState: ObservableObject {
             }
             .store(in: &cancellables)
 
-        Timer.publish(every: 0.75, on: .main, in: .common)
+        Timer.publish(every: 2.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.refreshEditorContextIfNeeded()
@@ -113,9 +113,6 @@ final class AppState: ObservableObject {
         refreshPermissionStatus()
         applyDockIconPreference()
 
-        if !isAccessibilityTrusted {
-            requestAccessibilityAccessIfNeeded()
-        }
     }
 
     convenience init() {
@@ -144,8 +141,8 @@ final class AppState: ObservableObject {
         isEditorPresented = true
         noteEditorPanelController.present()
 
-        DispatchQueue.main.async { [weak self] in
-            self?.resolveInitialQuickNoteContext(from: fallbackContext)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.resolveInitialQuickNoteContext(from: fallbackContext, sourceBundleIdentifier: sourceBundleIdentifier)
             self?.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
         }
     }
@@ -266,7 +263,7 @@ final class AppState: ObservableObject {
     }
 
     func previewCurrentContext() {
-        onboardingContextPreview = contextResolver.resolveCurrentContext()
+        onboardingContextPreview = resolveCurrentContext()
     }
 
     func probeBrowserAutomation() {
@@ -351,16 +348,31 @@ final class AppState: ObservableObject {
 
         let currentAttributedText = currentEditorAttributedTextSnapshot()
         let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // If there's an existing note, update its pin state even if the editor is currently empty
+        if let existingNote = note(for: context) {
+            let updatedNote = ContextNote(
+                id: existingNote.id,
+                context: existingNote.context,
+                body: existingNote.body,
+                richTextData: existingNote.richTextData,
+                createdAt: existingNote.createdAt,
+                updatedAt: .now,
+                isPinned: nextPinnedState
+            )
+            upsert(updatedNote)
+            return
+        }
+
+        // For new notes, only save if there's content
         guard !trimmed.isEmpty else { return }
 
-        let existingID = note(for: context)?.id ?? UUID()
-        let createdAt = note(for: context)?.createdAt ?? .now
         let note = ContextNote(
-            id: existingID,
+            id: UUID(),
             context: context,
             body: trimmed,
             richTextData: archivedRichText(from: currentAttributedText),
-            createdAt: createdAt,
+            createdAt: .now,
             updatedAt: .now,
             isPinned: nextPinnedState
         )
@@ -501,10 +513,10 @@ final class AppState: ObservableObject {
         )
     }
 
-    private func resolveInitialQuickNoteContext(from fallbackContext: NoteContext) {
+    private func resolveInitialQuickNoteContext(from fallbackContext: NoteContext, sourceBundleIdentifier: String?) {
         guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
 
-        let context = contextResolver.resolveCurrentContext()
+        let context = resolveCurrentContext(preferredBundleIdentifier: sourceBundleIdentifier)
         guard context.id != fallbackContext.id else { return }
 
         let hasUnsavedEditorText = !editorAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -519,8 +531,9 @@ final class AppState: ObservableObject {
 
     private func refreshEditorContextIfNeeded() {
         guard isEditorPresented else { return }
+        guard shouldRefreshDetailedContext else { return }
 
-        let context = contextResolver.resolveCurrentContext()
+        let context = resolveCurrentContext()
         guard context.id != activeContext?.id else { return }
 
         persistEditorStateForActiveContext()
@@ -529,6 +542,21 @@ final class AppState: ObservableObject {
         editorText = editorAttributedText.string
         editorErrorMessage = nil
         isActiveNotePinned = note(for: context)?.isPinned ?? false
+    }
+
+    private func resolveCurrentContext(preferredBundleIdentifier: String? = nil) -> NoteContext {
+        let bundleIdentifier = preferredBundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let allowBrowserAutomation = bundleIdentifier.map { browserPermissionStates[$0] == .granted } ?? false
+        return contextResolver.resolveCurrentContext(allowBrowserAutomation: allowBrowserAutomation)
+    }
+
+    private var shouldRefreshDetailedContext: Bool {
+        guard let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else {
+            return false
+        }
+
+        // Poll only when page-level browser context can change without an app switch.
+        return browserPermissionStates[bundleIdentifier] == .granted
     }
 
     private func attributedText(for context: NoteContext) -> NSAttributedString {
@@ -746,7 +774,8 @@ final class AppState: ObservableObject {
         }
 
         if browserPermissionStates[sourceBundleIdentifier] != .granted {
-            queueAutomationRequest(for: sourceBundleIdentifier, activatesBrowser: false)
+            let browserName = browserName(for: sourceBundleIdentifier)
+            browserAutomationMessage = "Browser access is not enabled for \(browserName) yet. Use Permissions & Setup to request it."
         }
     }
 
@@ -773,53 +802,13 @@ final class AppState: ObservableObject {
     }
 
     private func refreshBrowserPermissionStates() {
-        guard isAccessibilityTrusted else {
-            seedBrowserInstallationStates()
-            return
-        }
-
         for browser in Self.supportedBrowsers {
             if isBrowserInstalled(browser.bundleIdentifier) {
-                syncBrowserPermissionState(for: browser.bundleIdentifier)
+                let storedState = storedBrowserPermissionState(for: browser.bundleIdentifier)
+                browserPermissionStates[browser.bundleIdentifier] = storedState == .granted ? .granted : .notGranted
             } else {
                 browserPermissionStates[browser.bundleIdentifier] = .notInstalled
             }
-        }
-    }
-
-    private func seedBrowserInstallationStates() {
-        for browser in Self.supportedBrowsers {
-            browserPermissionStates[browser.bundleIdentifier] = isBrowserInstalled(browser.bundleIdentifier)
-                ? .notGranted
-                : .notInstalled
-        }
-    }
-
-    private func syncBrowserPermissionState(for bundleIdentifier: String) {
-        let previousState = storedBrowserPermissionState(for: bundleIdentifier)
-
-        if previousState == .notInstalled {
-            setBrowserPermissionState(.notGranted, for: bundleIdentifier)
-            return
-        }
-
-        guard browserURLProvider.isRunning(bundleIdentifier: bundleIdentifier) else {
-            setBrowserPermissionState(previousState, for: bundleIdentifier)
-            return
-        }
-
-        let attempt = browserURLProvider.accessAttempt(
-            bundleIdentifier: bundleIdentifier,
-            activatesBrowser: false
-        )
-
-        switch attempt.result {
-        case .success, .noTab:
-            setBrowserPermissionState(.granted, for: bundleIdentifier)
-        case .automationDenied, .unavailable:
-            setBrowserPermissionState(.notGranted, for: bundleIdentifier)
-        case .notBrowser:
-            setBrowserPermissionState(.notInstalled, for: bundleIdentifier)
         }
     }
 

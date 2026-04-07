@@ -91,21 +91,25 @@ struct OnboardingView: View {
                     title: "Accessibility",
                     detail: appState.isAccessibilityTrusted
                         ? "Enabled. Side Note can listen for the global shortcut."
-                        : "Not enabled. Open macOS Settings and allow Accessibility access.",
+                        : "Not enabled. Click Request Access, then enable Side Note in macOS Accessibility settings.",
                     isGranted: appState.isAccessibilityTrusted,
-                    buttonTitle: "Open Settings",
+                    buttonTitle: "Request Access",
                     action: appState.openAccessibilitySettings
                 )
 
                 permissionStatusRow(
                     title: "Browser Automation",
-                    detail: "Open macOS Settings to manage browser automation access for installed browsers.",
+                    detail: "Request access per browser below. macOS will ask the first time Side Note tries to read that browser's active tab.",
                     isGranted: installedBrowsers.contains { browser in
                         appState.browserPermissionStates[browser.bundleIdentifier] == .granted
                     },
                     buttonTitle: "Open Settings",
                     action: appState.openAutomationSettings
                 )
+
+                Text(appState.browserAutomationMessage)
+                    .font(.footnote)
+                    .foregroundStyle(NoteSideTheme.secondaryText)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Supported Browser Requests")

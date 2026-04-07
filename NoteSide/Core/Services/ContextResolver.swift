@@ -21,7 +21,7 @@ struct ContextResolver {
         "com.visualstudio.code.oss"
     ]
 
-    func resolveCurrentContext() -> NoteContext {
+    func resolveCurrentContext(allowBrowserAutomation: Bool = true) -> NoteContext {
         guard let app = NSWorkspace.shared.frontmostApplication else {
             return NoteContext(
                 kind: .application,
@@ -47,7 +47,8 @@ struct ContextResolver {
             )
         }
 
-        if let url = browserURLProvider.activeURL(bundleIdentifier: bundleIdentifier) {
+        if allowBrowserAutomation,
+           let url = browserURLProvider.activeURL(bundleIdentifier: bundleIdentifier) {
             let host = normalizedHost(for: url)
             return NoteContext(
                 kind: .url,
@@ -299,9 +300,10 @@ struct ContextResolver {
         }
 
         if codeBundleIdentifiers.contains(bundleIdentifier) {
-            if let rootURL = preferredWorkspaceRootURL(for: app) {
-                return rootURL
-            }
+            // For VS Code, use inferredProjectRoot directly as it reliably detects
+            // workspace roots by looking for .git, .vscode, package.json, etc.
+            // The generic preferredWorkspaceRootURL can match incorrect directories
+            // from the accessibility UI tree.
             return inferredProjectRoot(for: fileURL)
         }
 

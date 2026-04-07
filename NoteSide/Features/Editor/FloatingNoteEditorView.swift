@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FloatingNoteEditorView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var showingDeleteConfirmation = false
     private let noteCardCornerRadius: CGFloat = 28
 
     var body: some View {
@@ -130,19 +131,34 @@ struct FloatingNoteEditorView: View {
                             Image(systemName: appState.isActiveNotePinned ? "pin.fill" : "pin")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(appState.isActiveNotePinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 18, height: 18)
+                                .contentShape(Rectangle())
+                                .frame(width: 36, height: 36)
                         }
                         .buttonStyle(.plain)
 
                         Button(role: .destructive) {
-                            appState.deleteActiveNote()
+                            showingDeleteConfirmation = true
                         } label: {
                             Image(systemName: "trash")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(NoteSideTheme.secondaryText)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 18, height: 18)
+                                .contentShape(Rectangle())
+                                .frame(width: 36, height: 36)
                         }
                         .buttonStyle(.plain)
+                        .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
+                            DeleteConfirmationPopover(
+                                onConfirm: {
+                                    showingDeleteConfirmation = false
+                                    appState.deleteActiveNote()
+                                },
+                                onCancel: {
+                                    showingDeleteConfirmation = false
+                                }
+                            )
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity)

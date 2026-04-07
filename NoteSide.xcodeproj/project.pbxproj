@@ -227,6 +227,8 @@
 				"$(SRCROOT)/scripts/update_readme_version.sh",
 			);
 			name = "Sync README Version";
+			outputPaths = (
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"${SRCROOT}/scripts/update_readme_version.sh\"\n";

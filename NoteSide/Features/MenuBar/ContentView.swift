@@ -375,6 +375,7 @@ private struct NoteGroupTile: View {
 
 private struct NoteTile: View {
     @EnvironmentObject private var appState: AppState
+    @State private var showingDeleteConfirmation = false
 
     let note: ContextNote
 
@@ -422,19 +423,34 @@ private struct NoteTile: View {
                     Image(systemName: note.isPinned ? "pin.fill" : "pin")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                        .frame(width: 38, height: 38)
                 }
                 .buttonStyle(.borderless)
 
                 Button(role: .destructive) {
-                    appState.delete(note)
+                    showingDeleteConfirmation = true
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(NoteSideTheme.secondaryText)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                        .frame(width: 38, height: 38)
                 }
                 .buttonStyle(.borderless)
+                .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
+                    DeleteConfirmationPopover(
+                        onConfirm: {
+                            showingDeleteConfirmation = false
+                            appState.delete(note)
+                        },
+                        onCancel: {
+                            showingDeleteConfirmation = false
+                        }
+                    )
+                }
             }
             .padding(.trailing, 14)
             .padding(.bottom, 14)

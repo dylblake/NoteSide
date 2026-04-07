@@ -59,7 +59,7 @@ final class NoteEditorPanelController {
         panel.makeKey()
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.62
+            context.duration = 0.24
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.2, 1.0)
             panel.animator().setFrame(finalFrame, display: true)
             panel.animator().alphaValue = 1
@@ -90,7 +90,7 @@ final class NoteEditorPanelController {
         )
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.44
+            context.duration = 0.18
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0.0, 0.2, 1.0)
             panel.animator().setFrame(endFrame, display: true)
             panel.animator().alphaValue = 0
