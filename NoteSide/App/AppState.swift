@@ -619,6 +619,7 @@ final class AppState: ObservableObject {
     }
 
     private static let intraAppPollingBundleIdentifiers: Set<String> = [
+        "com.apple.finder",
         "com.apple.dt.Xcode",
         "com.microsoft.VSCode",
         "com.microsoft.VSCodeInsiders",
