@@ -126,7 +126,7 @@ struct FloatingNoteEditorView: View {
                         Spacer()
                         Text("Press the hotkey again or Escape to dismiss.")
                             .font(.footnote)
-                            .foregroundStyle(NoteSideTheme.tertiaryText)
+                            .foregroundStyle(NoteSideTheme.secondaryText)
                         Spacer()
                     }
 
@@ -136,7 +136,7 @@ struct FloatingNoteEditorView: View {
                         HStack(spacing: 4) {
                             ClickableIconView(
                                 iconName: appState.isActiveNotePinned ? "pin.fill" : "pin",
-                                iconColor: appState.isActiveNotePinned ? .controlAccentColor : .secondaryLabelColor,
+                                iconColor: appState.isActiveNotePinned ? .controlAccentColor : .labelColor,
                                 size: 16
                             ) {
                                 appState.togglePinForActiveNote()
@@ -145,7 +145,7 @@ struct FloatingNoteEditorView: View {
 
                             ClickableIconView(
                                 iconName: "trash",
-                                iconColor: .secondaryLabelColor,
+                                iconColor: .labelColor,
                                 size: 16
                             ) {
                                 showingDeleteConfirmation = true

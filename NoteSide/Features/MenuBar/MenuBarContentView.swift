@@ -21,9 +21,9 @@ struct MenuBarContentView: View {
                     dismiss()
                     appState.showInfoWindow()
                 } label: {
-                    Image(systemName: "info.circle.fill")
+                    Image(systemName: "info.circle")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(NoteSideTheme.accent)
+                        .foregroundStyle(NoteSideTheme.primaryText)
                 }
                 .buttonStyle(.plain)
             }
