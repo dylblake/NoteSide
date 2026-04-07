@@ -41,7 +41,6 @@ EXPORT_DIR="${BUILD_DIR}/export"
 APP_PATH="${EXPORT_DIR}/NoteSide.app"
 ZIP_PATH="${BUILD_DIR}/NoteSide.zip"
 DMG_PATH="${BUILD_DIR}/NoteSide.dmg"
-DMG_STAGING="${BUILD_DIR}/dmg-staging"
 
 # Color helpers
 if [[ -t 1 ]]; then
@@ -173,22 +172,40 @@ xcrun stapler staple "$APP_PATH" 2>&1 | sed 's/^/    /'
 step "Gatekeeper verification"
 spctl -a -vv -t install "$APP_PATH" 2>&1 | sed 's/^/    /' || warn "spctl returned non-zero (may still be acceptable for first-run)."
 
-# Build a DMG for distribution
+# Build a styled distributable DMG via create-dmg
 step "Building distributable DMG"
-rm -rf "$DMG_STAGING"
-mkdir -p "$DMG_STAGING"
-cp -R "$APP_PATH" "$DMG_STAGING/"
-ln -s /Applications "$DMG_STAGING/Applications"
 
-hdiutil create \
-    -volname "NoteSide" \
-    -srcfolder "$DMG_STAGING" \
-    -ov \
-    -format UDZO \
+if ! command -v create-dmg >/dev/null 2>&1; then
+    fail "create-dmg not installed. Install with: brew install create-dmg"
+fi
+
+# Optional custom background image — drop a 540x380 PNG at this path to use it.
+DMG_BACKGROUND="assets/dmg-background.png"
+DMG_BACKGROUND_ARGS=()
+if [[ -f "$DMG_BACKGROUND" ]]; then
+    DMG_BACKGROUND_ARGS=(--background "$DMG_BACKGROUND")
+    info "Using background: $DMG_BACKGROUND"
+fi
+
+# create-dmg refuses to overwrite, so wipe any prior file first.
+rm -f "$DMG_PATH"
+
+create-dmg \
+    --volname "NoteSide" \
+    --window-pos 200 120 \
+    --window-size 540 380 \
+    --icon-size 128 \
+    --icon "NoteSide.app" 140 200 \
+    --app-drop-link 400 200 \
+    --hide-extension "NoteSide.app" \
+    --no-internet-enable \
+    --hdiutil-quiet \
+    ${DMG_BACKGROUND_ARGS[@]+"${DMG_BACKGROUND_ARGS[@]}"} \
     "$DMG_PATH" \
-    > "$BUILD_DIR/dmg.log" 2>&1 || { tail -30 "$BUILD_DIR/dmg.log"; fail "DMG creation failed."; }
+    "$APP_PATH" \
+    > "$BUILD_DIR/dmg.log" 2>&1 || { tail -40 "$BUILD_DIR/dmg.log"; fail "DMG creation failed."; }
 
-rm -rf "$DMG_STAGING"
+[[ -f "$DMG_PATH" ]] || fail "DMG missing at $DMG_PATH"
 info "DMG: $DMG_PATH ($(du -h "$DMG_PATH" | awk '{print $1}'))"
 
 # Sign the DMG itself
