@@ -154,6 +154,15 @@ final class NoteEditorPanelController {
             return panelScreen
         }
 
+        // Prefer the screen the frontmost app's focused window actually lives
+        // on. When the user opens a note from All Notes, the cursor stays
+        // over the (now-dismissed) All Notes window while the navigated app
+        // activates on whatever screen its window is on; using the cursor
+        // would put the panel on the wrong display.
+        if let appWindowScreen = frontmostAppFocusedWindowScreen() {
+            return appWindowScreen
+        }
+
         let pointerLocation = NSEvent.mouseLocation
         if let pointerScreen = NSScreen.screens.first(where: { NSMouseInRect(pointerLocation, $0.frame, false) }) {
             return pointerScreen
@@ -172,5 +181,53 @@ final class NoteEditorPanelController {
         }
 
         return NSScreen.main ?? NSScreen.screens.first
+    }
+
+    /// Asks the Accessibility API for the frontmost app's focused window
+    /// rect, then maps the window's center to whichever NSScreen contains
+    /// that point. Returns nil if AX can't reach the target (no permission,
+    /// non-AX app, no focused window, missing position/size attributes).
+    private func frontmostAppFocusedWindowScreen() -> NSScreen? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+
+        // Wake up Electron/Chromium AX trees so position queries succeed for
+        // Slack, VSCode, Figma, etc.
+        AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+
+        var focusedWindowRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWindowRef) == .success,
+              let focusedWindowRef
+        else {
+            return nil
+        }
+        let focusedWindow = focusedWindowRef as! AXUIElement
+
+        var positionRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focusedWindow, kAXPositionAttribute as CFString, &positionRef) == .success,
+              AXUIElementCopyAttributeValue(focusedWindow, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let positionRef, let sizeRef
+        else {
+            return nil
+        }
+
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionRef as! AXValue, .cgPoint, &position),
+              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size)
+        else {
+            return nil
+        }
+
+        // AX coordinates: top-left origin of the primary screen, Y down.
+        // Cocoa coordinates: bottom-left origin of the primary screen, Y up.
+        // Convert the window's center point and find the screen that contains it.
+        let centerAX = CGPoint(x: position.x + size.width / 2, y: position.y + size.height / 2)
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let centerCocoa = CGPoint(x: centerAX.x, y: primaryHeight - centerAX.y)
+
+        return NSScreen.screens.first { NSMouseInRect(centerCocoa, $0.frame, false) }
     }
 }
