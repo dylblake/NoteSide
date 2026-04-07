@@ -821,16 +821,15 @@ nonisolated struct ContextResolver: Sendable {
     }
 
     private func figmaPageName(windowTitle: String?, candidateStrings: [String], fileName: String?) -> String? {
-        if let windowTitle {
-            let titleTokens = figmaTitleTokens(from: windowTitle)
-            if titleTokens.count > 1 {
-                return titleTokens.first(where: { $0 != fileName })
-            }
-        }
-
-        return candidateStrings.first { candidate in
-            candidate != fileName && isLikelyFigmaPageName(candidate)
-        }
+        // Only trust the window title for the page name. AX-walked candidate
+        // strings include hovered tooltips ("Close tab") and section labels
+        // ("Application toolbar"), which leak into the path and make the
+        // context unstable. If the title doesn't carry a distinct page token,
+        // surface no page rather than guess.
+        guard let windowTitle else { return nil }
+        let titleTokens = figmaTitleTokens(from: windowTitle)
+        guard titleTokens.count > 1 else { return nil }
+        return titleTokens.first(where: { $0 != fileName })
     }
 
     private func figmaTitleTokens(from title: String) -> [String] {

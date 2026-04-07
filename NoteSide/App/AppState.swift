@@ -561,7 +561,28 @@ final class AppState: ObservableObject {
         guard isEditorPresented else { return }
 
         let context = resolveCurrentContext()
-        guard context.id != activeContext?.id else { return }
+
+        // Same logical note (matching id), but the file was renamed/moved or
+        // some display field changed. Refresh the active context and rewrite
+        // the persisted note's context so the panel shows the new name and
+        // disk state stays in sync — but don't reload editor content.
+        if let active = activeContext, context.id == active.id {
+            guard context != active else { return }
+            activeContext = context
+            if let existing = note(for: context) {
+                let updated = ContextNote(
+                    id: existing.id,
+                    context: context,
+                    body: existing.body,
+                    richTextData: existing.richTextData,
+                    createdAt: existing.createdAt,
+                    updatedAt: existing.updatedAt,
+                    isPinned: existing.isPinned
+                )
+                upsert(updated)
+            }
+            return
+        }
 
         persistEditorStateForActiveContext()
         activeContext = context
