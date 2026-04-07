@@ -8,9 +8,19 @@
 import AppKit
 import SwiftUI
 
+private enum AllNotesViewMode: String {
+    case grid
+    case list
+}
+
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showingBulkDeleteConfirmation = false
+    @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
+
+    private var viewMode: AllNotesViewMode {
+        AllNotesViewMode(rawValue: viewModeRaw) ?? .grid
+    }
 
     private let columns = [
         GridItem(.flexible(), spacing: 18, alignment: .top),
@@ -24,6 +34,7 @@ struct ContentView: View {
                     HStack(spacing: 12) {
                         Text("All Notes")
                             .font(.largeTitle.weight(.bold))
+                        viewModeToggle
                         Spacer()
                         if !appState.selectedNoteIDs.isEmpty {
                             bulkActionBar
@@ -42,8 +53,14 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 28) {
                             ForEach(noteSections) { section in
                                 if !section.groups.isEmpty {
-                                    NoteTileSection(section: section)
-                                        .environmentObject(appState)
+                                    switch viewMode {
+                                    case .grid:
+                                        NoteTileSection(section: section)
+                                            .environmentObject(appState)
+                                    case .list:
+                                        NoteListSection(section: section)
+                                            .environmentObject(appState)
+                                    }
                                 }
                             }
                         }
@@ -59,6 +76,45 @@ struct ContentView: View {
         }
         .frame(minWidth: 820, minHeight: 560)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var viewModeToggle: some View {
+        HStack(spacing: 2) {
+            viewModeButton(
+                mode: .list,
+                systemImage: "line.3.horizontal",
+                help: "List view"
+            )
+            viewModeButton(
+                mode: .grid,
+                systemImage: "square.grid.2x2",
+                help: "Grid view"
+            )
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.secondary.opacity(0.12))
+        )
+    }
+
+    private func viewModeButton(mode: AllNotesViewMode, systemImage: String, help: String) -> some View {
+        let isActive = viewMode == mode
+        return Button {
+            viewModeRaw = mode.rawValue
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isActive ? Color.white : NoteSideTheme.secondaryText)
+                .frame(width: 30, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isActive ? NoteSideTheme.accent : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(help)
     }
 
     private var bulkActionBar: some View {
@@ -359,11 +415,6 @@ private struct NoteTileSection: View {
 
     let section: NoteTileSectionModel
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 18, alignment: .top),
-        GridItem(.flexible(), spacing: 18, alignment: .top)
-    ]
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(section.title)
@@ -375,7 +426,7 @@ private struct NoteTileSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 18) {
                 ForEach(section.groups) { group in
                     NoteGroupTile(group: group)
                         .environmentObject(appState)
@@ -389,6 +440,11 @@ private struct NoteGroupTile: View {
     @EnvironmentObject private var appState: AppState
 
     let group: NoteTileGroup
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 18, alignment: .top),
+        GridItem(.flexible(), spacing: 18, alignment: .top)
+    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -407,9 +463,11 @@ private struct NoteGroupTile: View {
                     .textSelection(.enabled)
             }
 
-            ForEach(group.notes) { note in
-                NoteTile(note: note)
-                    .environmentObject(appState)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+                ForEach(group.notes) { note in
+                    NoteTile(note: note)
+                        .environmentObject(appState)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -427,152 +485,107 @@ private struct NoteTile: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Button {
-                appState.open(note)
-            } label: {
-                VStack(alignment: .leading, spacing: 8) {
-                    if let headerLabel, !headerLabel.isEmpty {
-                        Text(headerLabel)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-
-                    if let subheaderLabel, !subheaderLabel.isEmpty {
-                        Text(subheaderLabel)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                    }
-
-                    if let siteLabel, !siteLabel.isEmpty {
-                        Text(siteLabel)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-
-                    Text(note.body)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .padding(.top, 2)
-
-                    if let detailLabel, !detailLabel.isEmpty {
-                        Text(detailLabel)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                    }
-
-                    HStack {
-                        Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Spacer()
-
-                        // Reserve enough vertical space for the 44×44 pin and
-                        // trash overlays so they don't ride up over the path
-                        // / detail line above the date.
-                        Color.clear
-                            .frame(width: 96, height: 44)
-                    }
-                    .padding(.top, 4)
-                }
-                .padding(.top, 14)
-                // Extra left padding so the checkbox overlay doesn't overlap
-                // the header / preview text.
-                .padding(.leading, 40)
-                .padding(.trailing, 14)
-                .padding(.bottom, 14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(tileBackground)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            // Checkbox overlay anchored to the top-left of the colored tile.
-            // Drawn after the card button so it sits on top in z-order and
-            // intercepts taps before they reach the underlying open action.
+        HStack(alignment: .center, spacing: 10) {
             Button {
                 appState.toggleSelection(note.id)
             } label: {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(isSelected ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .padding(.leading, 6)
-            .padding(.top, 6)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            HStack(spacing: 4) {
-                Button {
-                    appState.togglePin(note)
-                } label: {
-                    ZStack {
-                        Color.clear
-                        Image(systemName: note.isPinned ? "pin.fill" : "pin")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    }
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
+            cardContent
+        }
+    }
 
-                Button(role: .destructive) {
-                    showingDeleteConfirmation = true
-                } label: {
-                    ZStack {
-                        Color.clear
-                        Image(systemName: "trash")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(NoteSideTheme.secondaryText)
-                    }
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
-                    DeleteConfirmationPopover(
-                        onConfirm: {
-                            showingDeleteConfirmation = false
-                            appState.delete(note)
-                        },
-                        onCancel: {
-                            showingDeleteConfirmation = false
-                        }
-                    )
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            headerRow
+
+            if !note.body.isEmpty {
+                Text(note.body)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tileBackground)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            appState.open(note)
+        }
+    }
+
+    private var headerRow: some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(primaryTitle)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if let subtitle = secondarySubtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
                 }
             }
-            .padding(.trailing, 14)
-            .padding(.bottom, 14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                appState.togglePin(note)
+            } label: {
+                Image(systemName: note.isPinned ? "pin.fill" : "pin")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help(note.isPinned ? "Unpin" : "Pin")
+
+            Button(role: .destructive) {
+                showingDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Delete")
+            .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
+                DeleteConfirmationPopover(
+                    onConfirm: {
+                        showingDeleteConfirmation = false
+                        appState.delete(note)
+                    },
+                    onCancel: {
+                        showingDeleteConfirmation = false
+                    }
+                )
+            }
         }
     }
 
-    private var tileColor: Color {
-        switch note.context.kind {
-        case .application:
-            return Color(red: 0.32, green: 0.56, blue: 0.92)
-        case .url:
-            return Color(red: 0.18, green: 0.68, blue: 0.47)
-        case .file:
-            return Color(red: 0.88, green: 0.58, blue: 0.18)
-        }
-    }
+    private var tileColor: Color { NoteCardStyle.tint(for: note) }
 
     private var tileBackground: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -583,59 +596,63 @@ private struct NoteTile: View {
             )
     }
 
-    private var siteLabel: String? {
+    private var primaryTitle: String { NoteCardStyle.primaryTitle(for: note) }
+    private var secondarySubtitle: String? { NoteCardStyle.secondarySubtitle(for: note) }
+}
+
+/// Shared visual + label helpers used by both the grid card and the list row
+/// renderings of a note in the All Notes window.
+private enum NoteCardStyle {
+    static func tint(for note: ContextNote) -> Color {
         switch note.context.kind {
+        case .application:
+            return Color(red: 0.32, green: 0.56, blue: 0.92)
+        case .url:
+            return Color(red: 0.18, green: 0.68, blue: 0.47)
+        case .file:
+            return Color(red: 0.88, green: 0.58, blue: 0.18)
+        }
+    }
+
+    /// Bold top line. Identifies *what* the note is attached to: the file
+    /// name (with editor), the page title, or the app name.
+    static func primaryTitle(for note: ContextNote) -> String {
+        switch note.context.kind {
+        case .file:
+            if let editorName = editorName(for: note.context.sourceBundleIdentifier) {
+                return "\(note.context.displayName) · \(editorName)"
+            }
+            return note.context.displayName
+        case .url:
+            return note.context.displayName
+        case .application:
+            let components = note.context.displayName.components(separatedBy: " / ")
+            return components.first ?? note.context.displayName
+        }
+    }
+
+    /// Caption line under the title — source location (project root, host,
+    /// or app sub-context). Returns nil when nothing meaningful exists.
+    static func secondarySubtitle(for note: ContextNote) -> String? {
+        switch note.context.kind {
+        case .file:
+            return note.context.sourceRootPath ?? note.context.secondaryLabel
         case .url:
             guard let secondaryLabel = note.context.secondaryLabel,
                   !secondaryLabel.isEmpty else {
                 return nil
             }
-
             if let url = URL(string: secondaryLabel),
                let host = url.host(),
                !host.isEmpty {
                 return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
             }
-
             return secondaryLabel
         case .application:
             let components = note.context.displayName.components(separatedBy: " / ")
             guard components.count > 1 else { return nil }
             return components.dropFirst().joined(separator: " / ")
-        case .file:
-            return nil
         }
-    }
-
-    /// Small detail line shown under the preview body, giving extra context
-    /// about where the note belongs (full URL for web notes, file path for
-    /// file notes). Hidden when nothing useful is available.
-    private var detailLabel: String? {
-        switch note.context.kind {
-        case .url:
-            return note.context.secondaryLabel ?? note.context.identifier
-        case .file:
-            return note.context.secondaryLabel ?? note.context.identifier
-        case .application:
-            return nil
-        }
-    }
-
-    /// Bold top line for file notes — file name plus the source editor
-    /// (e.g. "gradlew.bat (VSCode)"). Other note kinds rely on siteLabel.
-    private var headerLabel: String? {
-        guard note.context.kind == .file else { return nil }
-        if let editorName = NoteTile.editorName(for: note.context.sourceBundleIdentifier) {
-            return "\(note.context.displayName) (\(editorName))"
-        }
-        return note.context.displayName
-    }
-
-    /// Caption line directly under the header — the project root or parent
-    /// directory the file lives in.
-    private var subheaderLabel: String? {
-        guard note.context.kind == .file else { return nil }
-        return note.context.sourceRootPath
     }
 
     private static func editorName(for bundleIdentifier: String?) -> String? {
@@ -658,6 +675,188 @@ private struct NoteTile: View {
             }
             return bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                 ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+        }
+    }
+}
+
+private struct NoteListSection: View {
+    @EnvironmentObject private var appState: AppState
+
+    let section: NoteTileSectionModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(section.title)
+                .font(.title2.weight(.bold))
+
+            if let helperText = section.helperText, !helperText.isEmpty {
+                Text(helperText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(section.groups) { group in
+                    NoteListGroup(group: group)
+                        .environmentObject(appState)
+                }
+            }
+        }
+    }
+}
+
+private struct NoteListGroup: View {
+    @EnvironmentObject private var appState: AppState
+
+    let group: NoteTileGroup
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !group.title.isEmpty {
+                Text(group.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            if let subtitle = group.subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            VStack(spacing: 6) {
+                ForEach(group.notes) { note in
+                    NoteListRow(note: note)
+                        .environmentObject(appState)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct NoteListRow: View {
+    @EnvironmentObject private var appState: AppState
+    @State private var showingDeleteConfirmation = false
+
+    let note: ContextNote
+
+    private var isSelected: Bool {
+        appState.selectedNoteIDs.contains(note.id)
+    }
+
+    private var tint: Color { NoteCardStyle.tint(for: note) }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Button {
+                appState.toggleSelection(note.id)
+            } label: {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(isSelected ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+
+            rowContent
+        }
+    }
+
+    private var rowContent: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Circle()
+                .fill(tint)
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(NoteCardStyle.primaryTitle(for: note))
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if let subtitle = NoteCardStyle.secondarySubtitle(for: note), !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(width: 220, alignment: .leading)
+
+            if !note.body.isEmpty {
+                Text(note.body)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Spacer(minLength: 0)
+            }
+
+            Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+
+            Button {
+                appState.togglePin(note)
+            } label: {
+                Image(systemName: note.isPinned ? "pin.fill" : "pin")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help(note.isPinned ? "Unpin" : "Pin")
+
+            Button(role: .destructive) {
+                showingDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Delete")
+            .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
+                DeleteConfirmationPopover(
+                    onConfirm: {
+                        showingDeleteConfirmation = false
+                        appState.delete(note)
+                    },
+                    onCancel: {
+                        showingDeleteConfirmation = false
+                    }
+                )
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(NoteSideTheme.tintedTileFill(for: tint))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(NoteSideTheme.tintedTileStroke(for: tint), lineWidth: 1)
+                )
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            appState.open(note)
         }
     }
 }

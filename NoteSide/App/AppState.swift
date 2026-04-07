@@ -9,6 +9,7 @@ import AppKit
 import ApplicationServices
 import Combine
 import Foundation
+import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
@@ -102,8 +103,36 @@ final class AppState: ObservableObject {
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.refreshEditorContextIfNeeded()
-                self?.panelController?.repositionToActiveScreenIfNeeded()
+                guard let self else { return }
+
+                // Capture the panel's current visual state BEFORE the
+                // context refresh so the cross-screen transition has an
+                // image of the *old* context to use for the collapsing
+                // ghost. The expanding ghost on the new screen will use
+                // a fresh snapshot taken inside repositionToActiveScreenIfNeeded
+                // after SwiftUI has re-rendered the panel for the new
+                // context.
+                let oldSnapshot = self.panelController?.captureCurrentSnapshot()
+
+                // Refresh inside a no-animation Transaction so SwiftUI's
+                // contentTransition / .animation(value: activeContext.id)
+                // on the editor header doesn't cross-fade the title and
+                // path text. Without this, the snapshot we take below would
+                // land mid-fade and capture an invisible header — exactly
+                // the bug where the expanding ghost showed an empty editor.
+                withTransaction(Transaction(animation: nil)) {
+                    self.refreshEditorContextIfNeeded()
+                }
+
+                // Defer the reposition by one runloop tick so SwiftUI's
+                // re-render of the editor for the new context has time to
+                // commit to the contentView's layer. Without this hop the
+                // "new" snapshot would still show the old context.
+                DispatchQueue.main.async { [weak self] in
+                    self?.panelController?.repositionToActiveScreenIfNeeded(
+                        oldContextSnapshot: oldSnapshot
+                    )
+                }
             }
             .store(in: &cancellables)
 

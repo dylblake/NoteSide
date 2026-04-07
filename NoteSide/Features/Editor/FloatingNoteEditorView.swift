@@ -20,7 +20,6 @@ struct FloatingNoteEditorView: View {
                         .foregroundStyle(NoteSideTheme.primaryText)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .contentTransition(.opacity)
 
                     if let secondaryLabel = appState.activeContext?.secondaryLabel, !secondaryLabel.isEmpty {
                         Text(secondaryLabel)
@@ -29,8 +28,6 @@ struct FloatingNoteEditorView: View {
                             .textSelection(.enabled)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .contentTransition(.opacity)
-                            .transition(.opacity)
                     }
 
                     if let errorMessage = appState.editorErrorMessage, !errorMessage.isEmpty {
@@ -40,7 +37,6 @@ struct FloatingNoteEditorView: View {
                             .lineLimit(2)
                     }
                 }
-                .animation(.easeInOut(duration: 0.2), value: appState.activeContext?.id)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 14)
                 .frame(maxWidth: .infinity, alignment: .leading)
