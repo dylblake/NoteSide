@@ -129,9 +129,9 @@ struct FloatingNoteEditorView: View {
                             appState.togglePinForActiveNote()
                         } label: {
                             Image(systemName: appState.isActiveNotePinned ? "pin.fill" : "pin")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(appState.isActiveNotePinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                                .frame(width: 18, height: 18)
+                                .frame(width: 20, height: 20)
                                 .contentShape(Rectangle())
                                 .frame(width: 36, height: 36)
                         }
@@ -141,9 +141,9 @@ struct FloatingNoteEditorView: View {
                             showingDeleteConfirmation = true
                         } label: {
                             Image(systemName: "trash")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(NoteSideTheme.secondaryText)
-                                .frame(width: 18, height: 18)
+                                .frame(width: 20, height: 20)
                                 .contentShape(Rectangle())
                                 .frame(width: 36, height: 36)
                         }
