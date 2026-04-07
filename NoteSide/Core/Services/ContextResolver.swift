@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-struct ContextResolver {
+nonisolated struct ContextResolver: Sendable {
     private let browserURLProvider = BrowserURLProvider()
     private let supportedBrowserBundleIdentifiers = Set(
         BrowserURLProvider.supportedBrowsers.map(\.bundleIdentifier)
@@ -126,8 +126,11 @@ struct ContextResolver {
     }
 
     private func currentFinderContextURL() -> URL? {
+        // Address Finder by bundle id rather than name so the sandbox's
+        // temporary-exception.apple-events list (which is keyed on bundle id)
+        // matches the script target.
         let scriptSource = """
-        tell application "Finder"
+        tell application id "com.apple.finder"
             if selection is not {} then
                 set selectedItem to item 1 of (get selection)
                 return POSIX path of (selectedItem as alias)
@@ -156,6 +159,7 @@ struct ContextResolver {
 
     private func slackContext(for app: NSRunningApplication) -> NoteContext? {
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        enableElectronAccessibility(on: appElement)
         let focusedWindow = axElementAttribute(
             kAXFocusedWindowAttribute as CFString,
             from: appElement
@@ -215,6 +219,7 @@ struct ContextResolver {
 
     private func figmaContext(for app: NSRunningApplication) -> NoteContext? {
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        enableElectronAccessibility(on: appElement)
         let focusedWindow = axElementAttribute(
             kAXFocusedWindowAttribute as CFString,
             from: appElement
@@ -312,7 +317,7 @@ struct ContextResolver {
 
     private func xcodeActiveSourceDocumentURL() -> URL? {
         let scriptSource = """
-        tell application "Xcode"
+        tell application id "com.apple.dt.Xcode"
             if not (exists front window) then return ""
 
             set windowTitle to name of front window
@@ -346,7 +351,7 @@ struct ContextResolver {
 
     private func xcodeWorkspaceDocumentURL() -> URL? {
         let scriptSource = """
-        tell application "Xcode"
+        tell application id "com.apple.dt.Xcode"
             if not (exists front window) then return ""
             try
                 return path of document of front window
@@ -368,6 +373,7 @@ struct ContextResolver {
 
     private func focusedDocumentURL(for app: NSRunningApplication) -> URL? {
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        enableElectronAccessibility(on: appElement)
 
         if let focusedElement = copyAttribute(
             kAXFocusedUIElementAttribute as CFString,
@@ -396,6 +402,7 @@ struct ContextResolver {
 
     private func preferredWorkspaceRootURL(for app: NSRunningApplication) -> URL? {
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        enableElectronAccessibility(on: appElement)
         var candidateURLs: [URL] = []
 
         if let focusedElement = copyAttribute(
@@ -1042,6 +1049,17 @@ struct ContextResolver {
         let status = AXUIElementCopyAttributeValue(element, attribute, &value)
         guard status == .success else { return nil }
         return value
+    }
+
+    /// Wakes up the AX backend in Chromium/Electron-based apps (Slack, Figma,
+    /// VSCode, etc.). Without this they keep their accessibility tree disabled
+    /// and every AXUIElementCopyAttributeValue call returns kAXErrorCannotComplete
+    /// (-25204). Setting either AXManualAccessibility (modern Chromium) or
+    /// AXEnhancedUserInterface (older Electron / AppKit-style) on the
+    /// application element forces them to materialize the tree.
+    private func enableElectronAccessibility(on appElement: AXUIElement) {
+        AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
     }
 
     private func executeFilePathScript(_ scriptSource: String) -> URL? {

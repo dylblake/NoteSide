@@ -28,10 +28,10 @@ private struct MenuBarIconView: View {
         if let image = templateMenuBarImage() {
             Image(nsImage: image)
                 .renderingMode(.template)
-                .accessibilityLabel("Side Note")
+                .accessibilityLabel("NoteSide")
         } else {
             Image(systemName: "note.text")
-                .accessibilityLabel("Side Note")
+                .accessibilityLabel("NoteSide")
         }
     }
 

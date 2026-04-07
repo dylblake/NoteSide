@@ -412,7 +412,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = NO;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Side Note needs Automation access to read the active browser tab and Finder selection so notes can attach to the right context.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab and Finder selection so notes can attach to the right context.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dylan Evans";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -441,7 +441,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 57SW9PT7P8;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -449,7 +449,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = NO;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Side Note needs Automation access to read the active browser tab and Finder selection so notes can attach to the right context.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab and Finder selection so notes can attach to the right context.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dylan Evans";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

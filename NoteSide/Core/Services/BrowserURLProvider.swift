@@ -29,7 +29,7 @@ enum BrowserAutomationProbeResult {
         case .noTab(let browserName):
             return "\(browserName) is open, but there is no active tab URL."
         case .automationDenied(let browserName):
-            return "Automation access is blocked for \(browserName). macOS should prompt the first time Side Note tries to read the active tab."
+            return "Automation access is blocked for \(browserName). macOS should prompt the first time NoteSide tries to read the active tab."
         case .unavailable(let browserName):
             return "Could not read the active tab from \(browserName)."
         }
@@ -41,7 +41,7 @@ struct BrowserAutomationAttemptResult {
     let debugDetails: String
 }
 
-struct BrowserURLProvider {
+nonisolated struct BrowserURLProvider: Sendable {
     static let supportedBrowsers: [BrowserDescriptor] = [
         BrowserDescriptor(title: "Safari", bundleIdentifier: "com.apple.Safari", scriptFamily: .safari),
         BrowserDescriptor(title: "Safari Technology Preview", bundleIdentifier: "com.apple.SafariTechnologyPreview", scriptFamily: .safari),

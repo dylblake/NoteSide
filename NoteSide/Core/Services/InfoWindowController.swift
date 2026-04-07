@@ -21,7 +21,7 @@ final class InfoWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         window.contentViewController = hostingController
-        window.title = "About Side Note"
+        window.title = "About NoteSide"
         window.isReleasedWhenClosed = false
         window.minSize = defaultContentSize
         window.setContentSize(defaultContentSize)

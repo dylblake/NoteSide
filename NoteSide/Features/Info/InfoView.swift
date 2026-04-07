@@ -44,7 +44,7 @@ struct InfoView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Side Note")
+            Text("NoteSide")
                 .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundStyle(NoteSideTheme.primaryText)
 

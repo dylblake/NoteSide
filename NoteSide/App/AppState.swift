@@ -127,10 +127,13 @@ final class AppState: ObservableObject {
     }
 
     func toggleQuickNote() async {
-        // Check if accessibility permission is granted, if not the native macOS prompt will appear
+        // Surface the macOS Accessibility prompt the first time we don't have
+        // it, but don't block opening the panel — the global hotkey uses
+        // Carbon's RegisterEventHotKey, which doesn't need Accessibility, and
+        // browser/Finder contexts work via Apple Events. Only Slack/Figma and
+        // the code-editor focused-document AX paths actually need it.
         if !AXIsProcessTrusted() {
             requestAccessibilityAccessIfNeeded()
-            return
         }
 
         if isEditorPresented {
@@ -928,8 +931,21 @@ final class AppState: ObservableObject {
     private func requestAccessibilityAccessIfNeeded() {
         guard !AXIsProcessTrusted() else { return }
 
+        // Force TCC to register NoteSide in the Accessibility list by issuing
+        // a real AX query on the system-wide element. Without an actual AX
+        // call, the AXIsProcessTrustedWithOptions prompt sometimes fails to
+        // add the app to System Settings → Privacy & Security → Accessibility.
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedApp: CFTypeRef?
+        _ = AXUIElementCopyAttributeValue(
+            systemWide,
+            kAXFocusedApplicationAttribute as CFString,
+            &focusedApp
+        )
+
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
+
         isAccessibilityTrusted = AXIsProcessTrusted()
     }
 

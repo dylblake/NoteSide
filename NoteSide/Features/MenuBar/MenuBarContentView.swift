@@ -8,7 +8,7 @@ struct MenuBarContentView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Side Note")
+                    Text("NoteSide")
                         .font(.title3.weight(.semibold))
                     Text("Leave notes for the app, page, or file you are in.")
                         .font(.subheadline)

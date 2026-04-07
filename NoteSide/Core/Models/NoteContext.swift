@@ -1,6 +1,6 @@
 import Foundation
 
-struct NoteContext: Codable, Hashable, Identifiable {
+nonisolated struct NoteContext: Codable, Hashable, Identifiable, Sendable {
     enum Kind: String, Codable, CaseIterable {
         case application
         case url
