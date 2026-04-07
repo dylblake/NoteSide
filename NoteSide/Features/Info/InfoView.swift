@@ -61,7 +61,6 @@ struct InfoView: View {
                 .foregroundStyle(NoteSideTheme.tertiaryText)
 
             HStack(spacing: 12) {
-                footerLink("Apple EULA", destination: "https://www.apple.com/legal/macapps/stdeula/")
                 footerLink("Privacy Settings", destination: "https://www.dylblake.dev/noteside/privacy-settings")
             }
         }

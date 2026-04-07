@@ -40,6 +40,7 @@ final class AppState: ObservableObject {
     @Published var isEditorUnderlineActive = false
     @Published var isActiveNotePinned = false
     @Published var infoStatusMessage: String?
+    @Published var selectedNoteIDs: Set<UUID> = []
 
     private let store: NoteStore
     private let contextResolver: ContextResolver
@@ -232,6 +233,7 @@ final class AppState: ObservableObject {
 
     private func presentAllNotesWindow() {
         allNotesScrollResetID = UUID()
+        selectedNoteIDs.removeAll()
         allNotesWindow.present()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -322,6 +324,59 @@ final class AppState: ObservableObject {
     func delete(_ note: ContextNote) {
         notes.removeAll { $0.id == note.id }
         store.save(notes: notes)
+    }
+
+    func toggleSelection(_ noteID: UUID) {
+        if selectedNoteIDs.contains(noteID) {
+            selectedNoteIDs.remove(noteID)
+        } else {
+            selectedNoteIDs.insert(noteID)
+        }
+    }
+
+    func clearSelection() {
+        selectedNoteIDs.removeAll()
+    }
+
+    func deleteSelectedNotes() {
+        guard !selectedNoteIDs.isEmpty else { return }
+        let toDelete = selectedNoteIDs
+        notes.removeAll { toDelete.contains($0.id) }
+        store.save(notes: notes)
+        selectedNoteIDs.removeAll()
+    }
+
+    func togglePinForSelectedNotes() {
+        guard !selectedNoteIDs.isEmpty else { return }
+        let selected = selectedNoteIDs
+        // If everything in the selection is already pinned, unpin all.
+        // Otherwise, pin everything (so a mixed selection becomes all-pinned).
+        let selectedNotes = notes.filter { selected.contains($0.id) }
+        let allPinned = selectedNotes.allSatisfy(\.isPinned)
+        let nextPinned = !allPinned
+
+        notes = notes.map { note in
+            guard selected.contains(note.id) else { return note }
+            return ContextNote(
+                id: note.id,
+                context: note.context,
+                body: note.body,
+                richTextData: note.richTextData,
+                createdAt: note.createdAt,
+                updatedAt: .now,
+                isPinned: nextPinned
+            )
+        }
+        store.save(notes: notes)
+
+        // Sync the editor's pin state if its active note was in the selection.
+        if let context = activeContext,
+           let active = note(for: context),
+           selected.contains(active.id) {
+            isActiveNotePinned = nextPinned
+        }
+
+        selectedNoteIDs.removeAll()
     }
 
     func togglePin(_ note: ContextNote) {

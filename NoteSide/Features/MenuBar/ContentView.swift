@@ -10,23 +10,29 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var showingBulkDeleteConfirmation = false
 
     private let columns = [
-        GridItem(.adaptive(minimum: 280, maximum: 360), spacing: 18, alignment: .top)
+        GridItem(.flexible(), spacing: 18, alignment: .top),
+        GridItem(.flexible(), spacing: 18, alignment: .top)
     ]
 
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
                 VStack(spacing: 0) {
-                    HStack {
+                    HStack(spacing: 12) {
                         Text("All Notes")
                             .font(.largeTitle.weight(.bold))
                         Spacer()
+                        if !appState.selectedNoteIDs.isEmpty {
+                            bulkActionBar
+                        }
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 24)
                     .padding(.bottom, 18)
+                    .animation(.easeInOut(duration: 0.15), value: appState.selectedNoteIDs.isEmpty)
 
                     ScrollView {
                         Color.clear
@@ -55,6 +61,55 @@ struct ContentView: View {
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
+    private var bulkActionBar: some View {
+        HStack(spacing: 14) {
+            Text("\(appState.selectedNoteIDs.count) selected")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Button {
+                appState.clearSelection()
+            } label: {
+                Text("Clear")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.borderless)
+
+            Button {
+                appState.togglePinForSelectedNotes()
+            } label: {
+                Image(systemName: "pin")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Pin or unpin selected")
+
+            Button(role: .destructive) {
+                showingBulkDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Delete selected")
+            .popover(isPresented: $showingBulkDeleteConfirmation, arrowEdge: .bottom) {
+                DeleteConfirmationPopover(
+                    onConfirm: {
+                        showingBulkDeleteConfirmation = false
+                        appState.deleteSelectedNotes()
+                    },
+                    onCancel: {
+                        showingBulkDeleteConfirmation = false
+                    }
+                )
+            }
+        }
+    }
+
     private var noteSections: [NoteTileSectionModel] {
         let notes = appState.filteredNotes
         let pinnedNotes = notes.filter(\.isPinned)
@@ -81,12 +136,11 @@ struct ContentView: View {
                 title: "Files",
                 notes: regularFileNotes,
                 key: { fileGroupKey(for: $0.context) },
-                groupTitle: { notes in
-                    fileGroupTitle(for: notes[0].context)
-                },
-                subtitle: { notes in
-                    fileGroupSubtitle(for: notes[0].context)
-                }
+                // The file name + parent directory now live inside each card
+                // (see NoteTile.headerLabel / subheaderLabel) so the group
+                // wrapper doesn't repeat them.
+                groupTitle: { _ in "" },
+                subtitle: { _ in nil }
             )
         ]
     }
@@ -186,12 +240,11 @@ struct ContentView: View {
                     title: shortenedPath(rootPath),
                     notes: rootNotes,
                     key: { codeEditorGroupKey(for: $0.context) },
-                    groupTitle: { notes in
-                        codeEditorGroupTitle(for: notes[0].context)
-                    },
-                    subtitle: { notes in
-                        notes[0].context.sourceRootPath
-                    }
+                    // File name + project root are now rendered inside the
+                    // card body (NoteTile.headerLabel / subheaderLabel), so
+                    // the group wrapper above the card stays empty.
+                    groupTitle: { _ in "" },
+                    subtitle: { _ in nil }
                 )
             }
             .sorted { lhs, rhs in
@@ -307,7 +360,8 @@ private struct NoteTileSection: View {
     let section: NoteTileSectionModel
 
     private let columns = [
-        GridItem(.adaptive(minimum: 280, maximum: 360), spacing: 18, alignment: .top)
+        GridItem(.flexible(), spacing: 18, alignment: .top),
+        GridItem(.flexible(), spacing: 18, alignment: .top)
     ]
 
     var body: some View {
@@ -337,22 +391,20 @@ private struct NoteGroupTile: View {
     let group: NoteTileGroup
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                if !group.title.isEmpty {
-                    Text(group.title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            if !group.title.isEmpty {
+                Text(group.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
 
-                if let subtitle = group.subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
+            if let subtitle = group.subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
 
             ForEach(group.notes) { note in
@@ -360,16 +412,7 @@ private struct NoteGroupTile: View {
                     .environmentObject(appState)
             }
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(NoteSideTheme.contentBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(NoteSideTheme.border.opacity(0.8), lineWidth: 1)
-                )
-        )
     }
 }
 
@@ -379,12 +422,33 @@ private struct NoteTile: View {
 
     let note: ContextNote
 
+    private var isSelected: Bool {
+        appState.selectedNoteIDs.contains(note.id)
+    }
+
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack(alignment: .topLeading) {
             Button {
                 appState.open(note)
             } label: {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let headerLabel, !headerLabel.isEmpty {
+                        Text(headerLabel)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+
+                    if let subheaderLabel, !subheaderLabel.isEmpty {
+                        Text(subheaderLabel)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+
                     if let siteLabel, !siteLabel.isEmpty {
                         Text(siteLabel)
                             .font(.caption)
@@ -396,7 +460,18 @@ private struct NoteTile: View {
                     Text(note.body)
                         .font(.body)
                         .foregroundStyle(.primary)
-                        .lineLimit(5)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.top, 2)
+
+                    if let detailLabel, !detailLabel.isEmpty {
+                        Text(detailLabel)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
 
                     HStack {
                         Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
@@ -405,16 +480,42 @@ private struct NoteTile: View {
 
                         Spacer()
 
+                        // Reserve enough vertical space for the 44×44 pin and
+                        // trash overlays so they don't ride up over the path
+                        // / detail line above the date.
                         Color.clear
-                            .frame(width: 84, height: 24)
+                            .frame(width: 96, height: 44)
                     }
+                    .padding(.top, 4)
                 }
-                .padding(14)
+                .padding(.top, 14)
+                // Extra left padding so the checkbox overlay doesn't overlap
+                // the header / preview text.
+                .padding(.leading, 40)
+                .padding(.trailing, 14)
+                .padding(.bottom, 14)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(tileBackground)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+
+            // Checkbox overlay anchored to the top-left of the colored tile.
+            // Drawn after the card button so it sits on top in z-order and
+            // intercepts taps before they reach the underlying open action.
+            Button {
+                appState.toggleSelection(note.id)
+            } label: {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(isSelected ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .padding(.leading, 6)
+            .padding(.top, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             HStack(spacing: 4) {
                 Button {
@@ -458,6 +559,7 @@ private struct NoteTile: View {
             }
             .padding(.trailing, 14)
             .padding(.bottom, 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
     }
 
@@ -502,6 +604,60 @@ private struct NoteTile: View {
             return components.dropFirst().joined(separator: " / ")
         case .file:
             return nil
+        }
+    }
+
+    /// Small detail line shown under the preview body, giving extra context
+    /// about where the note belongs (full URL for web notes, file path for
+    /// file notes). Hidden when nothing useful is available.
+    private var detailLabel: String? {
+        switch note.context.kind {
+        case .url:
+            return note.context.secondaryLabel ?? note.context.identifier
+        case .file:
+            return note.context.secondaryLabel ?? note.context.identifier
+        case .application:
+            return nil
+        }
+    }
+
+    /// Bold top line for file notes — file name plus the source editor
+    /// (e.g. "gradlew.bat (VSCode)"). Other note kinds rely on siteLabel.
+    private var headerLabel: String? {
+        guard note.context.kind == .file else { return nil }
+        if let editorName = NoteTile.editorName(for: note.context.sourceBundleIdentifier) {
+            return "\(note.context.displayName) (\(editorName))"
+        }
+        return note.context.displayName
+    }
+
+    /// Caption line directly under the header — the project root or parent
+    /// directory the file lives in.
+    private var subheaderLabel: String? {
+        guard note.context.kind == .file else { return nil }
+        return note.context.sourceRootPath
+    }
+
+    private static func editorName(for bundleIdentifier: String?) -> String? {
+        guard let bundleIdentifier else { return nil }
+        switch bundleIdentifier {
+        case "com.apple.dt.Xcode":
+            return "Xcode"
+        case "com.microsoft.VSCode":
+            return "VSCode"
+        case "com.microsoft.VSCodeInsiders":
+            return "VSCode Insiders"
+        case "com.visualstudio.code.oss":
+            return "Code OSS"
+        case "com.apple.finder":
+            return nil
+        default:
+            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
+                  let bundle = Bundle(url: appURL) else {
+                return nil
+            }
+            return bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
         }
     }
 }
