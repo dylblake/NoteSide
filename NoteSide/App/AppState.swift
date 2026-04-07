@@ -105,10 +105,10 @@ final class AppState: ObservableObject {
             }
             .store(in: &cancellables)
 
-        Timer.publish(every: 2.0, on: .main, in: .common)
+        Timer.publish(every: 0.6, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
-                guard let self, self.shouldRefreshDetailedContext else { return }
+                guard let self, self.isEditorPresented, self.shouldRefreshDetailedContext else { return }
                 self.refreshEditorContextIfNeeded()
             }
             .store(in: &cancellables)
@@ -609,9 +609,24 @@ final class AppState: ObservableObject {
             return false
         }
 
-        // Poll only when page-level browser context can change without an app switch.
-        return browserPermissionStates[bundleIdentifier] == .granted
+        // Poll whenever the in-app context can change without an app switch:
+        // browser tabs (granted browsers) and code editors (file focus moves
+        // within the same process, so didActivateApplication never fires).
+        if browserPermissionStates[bundleIdentifier] == .granted {
+            return true
+        }
+        return Self.intraAppPollingBundleIdentifiers.contains(bundleIdentifier)
     }
+
+    private static let intraAppPollingBundleIdentifiers: Set<String> = [
+        "com.apple.dt.Xcode",
+        "com.microsoft.VSCode",
+        "com.microsoft.VSCodeInsiders",
+        "com.visualstudio.code.oss",
+        "com.tinyspeck.slackmacgap",
+        "com.tinyspeck.slackmacgap2",
+        "com.figma.Desktop"
+    ]
 
     private func attributedText(for context: NoteContext) -> NSAttributedString {
         guard let note = note(for: context) else {
