@@ -349,7 +349,24 @@ final class AppState: ObservableObject {
         let currentAttributedText = currentEditorAttributedTextSnapshot()
         let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // If there's an existing note, update its pin state even if the editor is currently empty
+        // If editor has content, save it with the new pin state
+        if !trimmed.isEmpty {
+            let existingID = note(for: context)?.id ?? UUID()
+            let createdAt = note(for: context)?.createdAt ?? .now
+            let updatedNote = ContextNote(
+                id: existingID,
+                context: context,
+                body: trimmed,
+                richTextData: archivedRichText(from: currentAttributedText),
+                createdAt: createdAt,
+                updatedAt: .now,
+                isPinned: nextPinnedState
+            )
+            upsert(updatedNote)
+            return
+        }
+
+        // If editor is empty but there's an existing note, just update the pin state
         if let existingNote = note(for: context) {
             let updatedNote = ContextNote(
                 id: existingNote.id,
@@ -361,22 +378,7 @@ final class AppState: ObservableObject {
                 isPinned: nextPinnedState
             )
             upsert(updatedNote)
-            return
         }
-
-        // For new notes, only save if there's content
-        guard !trimmed.isEmpty else { return }
-
-        let note = ContextNote(
-            id: UUID(),
-            context: context,
-            body: trimmed,
-            richTextData: archivedRichText(from: currentAttributedText),
-            createdAt: .now,
-            updatedAt: .now,
-            isPinned: nextPinnedState
-        )
-        upsert(note)
     }
 
     func applyHeadingStyle() {
