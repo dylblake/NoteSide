@@ -107,6 +107,7 @@ struct FloatingNoteEditorView: View {
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, minHeight: 380, maxHeight: .infinity, alignment: .topLeading)
+                .clipped()
                 .background(
                     RoundedRectangle(cornerRadius: noteCardCornerRadius, style: .continuous)
                         .fill(NoteSideTheme.secondaryBackground)
@@ -117,55 +118,50 @@ struct FloatingNoteEditorView: View {
                 )
 
                 ZStack {
-                    Text("Press the hotkey again or Escape to dismiss.")
-                        .font(.footnote)
-                        .foregroundStyle(NoteSideTheme.tertiaryText)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    HStack {
+                        Spacer()
+                        Text("Press the hotkey again or Escape to dismiss.")
+                            .font(.footnote)
+                            .foregroundStyle(NoteSideTheme.tertiaryText)
+                        Spacer()
+                    }
 
-                    HStack(spacing: 4) {
+                    HStack {
                         Spacer()
 
-                        Button {
-                            appState.togglePinForActiveNote()
-                        } label: {
-                            ZStack {
-                                Color.clear
-                                Image(systemName: appState.isActiveNotePinned ? "pin.fill" : "pin")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(appState.isActiveNotePinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
+                        HStack(spacing: 4) {
+                            ClickableIconView(
+                                iconName: appState.isActiveNotePinned ? "pin.fill" : "pin",
+                                iconColor: appState.isActiveNotePinned ? .controlAccentColor : .secondaryLabelColor,
+                                size: 16
+                            ) {
+                                appState.togglePinForActiveNote()
                             }
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+                            .frame(width: 50, height: 50)
 
-                        Button(role: .destructive) {
-                            showingDeleteConfirmation = true
-                        } label: {
-                            ZStack {
-                                Color.clear
-                                Image(systemName: "trash")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(NoteSideTheme.secondaryText)
+                            ClickableIconView(
+                                iconName: "trash",
+                                iconColor: .secondaryLabelColor,
+                                size: 16
+                            ) {
+                                showingDeleteConfirmation = true
                             }
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
-                            DeleteConfirmationPopover(
-                                onConfirm: {
-                                    showingDeleteConfirmation = false
-                                    appState.deleteActiveNote()
-                                },
-                                onCancel: {
-                                    showingDeleteConfirmation = false
-                                }
-                            )
+                            .frame(width: 50, height: 50)
+                            .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
+                                DeleteConfirmationPopover(
+                                    onConfirm: {
+                                        showingDeleteConfirmation = false
+                                        appState.deleteActiveNote()
+                                    },
+                                    onCancel: {
+                                        showingDeleteConfirmation = false
+                                    }
+                                )
+                            }
                         }
                     }
                 }
-                .frame(maxWidth: .infinity)
+                .frame(height: 50)
 
                 Spacer(minLength: 0)
             }
