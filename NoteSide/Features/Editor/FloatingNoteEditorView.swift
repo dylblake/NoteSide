@@ -118,12 +118,22 @@ struct FloatingNoteEditorView: View {
                 )
 
                 ZStack {
-                    HStack {
-                        Spacer()
-                        Text("Press the hotkey again or Escape to dismiss.")
-                            .font(.footnote)
-                            .foregroundStyle(NoteSideTheme.secondaryText)
-                        Spacer()
+                    GeometryReader { geometry in
+                        // Hide the dismiss hint when the panel is too
+                        // narrow (e.g. portrait / vertical displays where
+                        // pane width = screen.width / 3 is small) — the
+                        // text would otherwise overlap the pin/trash
+                        // icons in the right-hand HStack.
+                        if geometry.size.width >= 380 {
+                            HStack {
+                                Spacer()
+                                Text("Press the hotkey again or Escape to dismiss.")
+                                    .font(.footnote)
+                                    .foregroundStyle(NoteSideTheme.secondaryText)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
 
                     HStack {
@@ -162,6 +172,7 @@ struct FloatingNoteEditorView: View {
                     }
                 }
                 .frame(height: 50)
+                .background(footerRadialBackdrop)
 
                 Spacer(minLength: 0)
             }
@@ -180,6 +191,39 @@ struct FloatingNoteEditorView: View {
         }
         .onExitCommand {
             appState.saveAndDismissEditor()
+        }
+    }
+
+    /// Soft radial blur sitting behind the footer row (pin / trash / hint).
+    /// Strong system blur in the middle, fading out to fully transparent at
+    /// the edges so the effect looks like a spotlight rather than a hard
+    /// rectangle. Uses the system Material as the fill so it picks up the
+    /// `behindWindow` blending automatically (the panel is a transparent
+    /// NSPanel, so the material blurs whatever is on the desktop behind it).
+    private var footerRadialBackdrop: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let radius = max(size.width, size.height) / 2
+
+            Rectangle()
+                .fill(.regularMaterial)
+                .mask(
+                    RadialGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: .black, location: 0.0),
+                            .init(color: .black.opacity(0.85), location: 0.35),
+                            .init(color: .clear, location: 1.0)
+                        ]),
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: radius
+                    )
+                )
+                // Let the blur extend a little past the row so the soft
+                // outer edge isn't clipped against the icons / text.
+                .padding(.horizontal, -40)
+                .padding(.vertical, -16)
+                .allowsHitTesting(false)
         }
     }
 
