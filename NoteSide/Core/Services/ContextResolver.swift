@@ -36,14 +36,18 @@ nonisolated struct ContextResolver: Sendable {
         let appName = app.localizedName ?? "Unknown App"
 
         if bundleIdentifier == "com.apple.finder", let finderURL = currentFinderContextURL() {
-            return NoteContext(
-                kind: .file,
-                identifier: finderURL.path(percentEncoded: false),
-                displayName: fileDisplayName(for: finderURL),
-                secondaryLabel: fileSecondaryLabel(for: finderURL),
-                navigationTarget: nil,
+            // Route Finder selections through fileContext(...) so they pick
+            // up a stable inode-based fileSystemIdentifier. Without it, a
+            // rename in Finder changes the NoteContext.id and the rename
+            // detection in refreshEditorContextIfNeeded treats it as a brand
+            // new file instead of updating the existing note.
+            let finderRootPath = isDirectory(finderURL)
+                ? finderURL.path(percentEncoded: false)
+                : finderURL.deletingLastPathComponent().path(percentEncoded: false)
+            return fileContext(
+                for: finderURL,
                 sourceBundleIdentifier: bundleIdentifier,
-                sourceRootPath: isDirectory(finderURL) ? finderURL.path(percentEncoded: false) : finderURL.deletingLastPathComponent().path(percentEncoded: false)
+                sourceRootPath: finderRootPath
             )
         }
 
