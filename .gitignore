@@ -1,0 +1,9 @@
+# Build artifacts produced by scripts/release.sh
+build/
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+
+# macOS junk
+.DS_Store
