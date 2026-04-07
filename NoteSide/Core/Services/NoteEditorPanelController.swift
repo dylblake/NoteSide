@@ -28,6 +28,15 @@ final class NoteEditorPanelController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
+
+        // Clip the hosting layer so SwiftUI content transitions can never
+        // bleed past the panel frame onto an adjacent display when the panel
+        // is anchored to a screen edge.
+        if let contentView = panel.contentView {
+            contentView.wantsLayer = true
+            contentView.layer?.masksToBounds = true
+        }
+
         self.panel = panel
     }
 
