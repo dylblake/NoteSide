@@ -416,28 +416,32 @@ private struct NoteTile: View {
             }
             .buttonStyle(.plain)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 Button {
                     appState.togglePin(note)
                 } label: {
-                    Image(systemName: note.isPinned ? "pin.fill" : "pin")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                        .frame(width: 38, height: 38)
+                    ZStack {
+                        Color.clear
+                        Image(systemName: note.isPinned ? "pin.fill" : "pin")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
 
                 Button(role: .destructive) {
                     showingDeleteConfirmation = true
                 } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(NoteSideTheme.secondaryText)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                        .frame(width: 38, height: 38)
+                    ZStack {
+                        Color.clear
+                        Image(systemName: "trash")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(NoteSideTheme.secondaryText)
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {

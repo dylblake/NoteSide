@@ -122,30 +122,34 @@ struct FloatingNoteEditorView: View {
                         .foregroundStyle(NoteSideTheme.tertiaryText)
                         .frame(maxWidth: .infinity, alignment: .center)
 
-                    HStack {
+                    HStack(spacing: 4) {
                         Spacer()
 
                         Button {
                             appState.togglePinForActiveNote()
                         } label: {
-                            Image(systemName: appState.isActiveNotePinned ? "pin.fill" : "pin")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(appState.isActiveNotePinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                                .frame(width: 20, height: 20)
-                                .contentShape(Rectangle())
-                                .frame(width: 36, height: 36)
+                            ZStack {
+                                Color.clear
+                                Image(systemName: appState.isActiveNotePinned ? "pin.fill" : "pin")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(appState.isActiveNotePinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
+                            }
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
 
                         Button(role: .destructive) {
                             showingDeleteConfirmation = true
                         } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(NoteSideTheme.secondaryText)
-                                .frame(width: 20, height: 20)
-                                .contentShape(Rectangle())
-                                .frame(width: 36, height: 36)
+                            ZStack {
+                                Color.clear
+                                Image(systemName: "trash")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(NoteSideTheme.secondaryText)
+                            }
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
