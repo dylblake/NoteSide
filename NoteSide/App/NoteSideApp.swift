@@ -16,6 +16,11 @@ struct SideNoteApp: App {
         MenuBarExtra {
             MenuBarContentView()
                 .environmentObject(appState)
+                .onAppear {
+                    if !appState.isLicensed {
+                        appState.presentLicenseWindow()
+                    }
+                }
         } label: {
             MenuBarIconView()
         }

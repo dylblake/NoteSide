@@ -42,6 +42,7 @@ final class AppState: ObservableObject {
     @Published var isActiveNotePinned = false
     @Published var infoStatusMessage: String?
     @Published var selectedNoteIDs: Set<UUID> = []
+    @Published var isLicensed: Bool = false
 
     private let store: NoteStore
     private let contextResolver: ContextResolver
@@ -52,6 +53,7 @@ final class AppState: ObservableObject {
     private var allNotesWindowController: AllNotesWindowController?
     private var onboardingWindowController: OnboardingWindowController?
     private var infoWindowController: InfoWindowController?
+    private var licenseWindowController: LicenseWindowController?
     private var cancellables: Set<AnyCancellable> = []
     private var pendingAutomationRequests: Set<String> = []
     private var isAllNotesWindowVisible = false
@@ -146,6 +148,7 @@ final class AppState: ObservableObject {
 
         refreshPermissionStatus()
         applyDockIconPreference()
+        checkStoredLicense()
 
     }
 
@@ -158,6 +161,12 @@ final class AppState: ObservableObject {
     }
 
     func toggleQuickNote() async {
+        // License gate: require a valid license before opening the editor.
+        if !isLicensed {
+            presentLicenseWindow()
+            return
+        }
+
         // First-run gate: if we don't have Accessibility yet, surface the
         // system prompt and bail out without opening the panel. The user
         // grants permission, then their next hotkey press opens the editor
@@ -554,6 +563,39 @@ final class AppState: ObservableObject {
 
     func checkForUpdates() {
         infoStatusMessage = "Automatic update checks are not configured in this build yet."
+    }
+
+    // MARK: - License
+
+    private func checkStoredLicense() {
+        guard let key = LicenseValidator.storedLicenseKey() else {
+            isLicensed = false
+            return
+        }
+        do {
+            try LicenseValidator.validate(key)
+            isLicensed = true
+        } catch {
+            isLicensed = false
+        }
+    }
+
+    func presentLicenseWindow() {
+        if licenseWindowController == nil {
+            let controller = LicenseWindowController()
+            controller.install(appState: self)
+            licenseWindowController = controller
+        }
+        licenseWindowController?.present()
+    }
+
+    func dismissLicenseWindow() {
+        licenseWindowController?.dismiss()
+    }
+
+    func deactivateLicense() {
+        LicenseValidator.removeLicenseKey()
+        isLicensed = false
     }
 
     var hotKeyDisplayString: String {

@@ -130,6 +130,33 @@ struct MenuBarContentView: View {
 
             Divider()
 
+            if appState.isLicensed {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(NoteSideTheme.success)
+                    Text("Licensed")
+                        .font(.subheadline)
+                        .foregroundStyle(NoteSideTheme.secondaryText)
+                    Spacer()
+                    Button("Deactivate") {
+                        appState.deactivateLicense()
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(NoteSideTheme.tertiaryText)
+                }
+            } else {
+                Button {
+                    dismiss()
+                    appState.presentLicenseWindow()
+                } label: {
+                    Label("Activate License", systemImage: "key")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            Divider()
+
             Button {
                 NSApp.terminate(nil)
             } label: {
