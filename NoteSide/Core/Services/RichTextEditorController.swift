@@ -418,6 +418,18 @@ final class RichTextEditorController {
             }
         }
 
+        // Check roman numerals BEFORE alphabetic so that "i.", "v.", "x."
+        // etc. are detected as roman rather than single letters.
+        if let regex = try? NSRegularExpression(pattern: #"^(i{1,3}|iv|v|vi{0,3}|ix|x)\."#, options: [.caseInsensitive]) {
+            let range = NSRange(location: 0, length: paragraph.utf16.count)
+            if
+                let match = regex.firstMatch(in: paragraph, options: [], range: range),
+                let romanRange = Range(match.range(at: 1), in: paragraph)
+            {
+                return .roman(String(paragraph[romanRange]).lowercased())
+            }
+        }
+
         if let regex = try? NSRegularExpression(pattern: #"^([a-z])\."#, options: [.caseInsensitive]) {
             let range = NSRange(location: 0, length: paragraph.utf16.count)
             if
@@ -426,16 +438,6 @@ final class RichTextEditorController {
                 let value = paragraph[letterRange].lowercased().first
             {
                 return .alphabetic(value)
-            }
-        }
-
-        if let regex = try? NSRegularExpression(pattern: #"^(i{1,3}|iv|v|vi{0,3}|ix|x)\."#, options: [.caseInsensitive]) {
-            let range = NSRange(location: 0, length: paragraph.utf16.count)
-            if
-                let match = regex.firstMatch(in: paragraph, options: [], range: range),
-                let romanRange = Range(match.range(at: 1), in: paragraph)
-            {
-                return .roman(String(paragraph[romanRange]).lowercased())
             }
         }
 

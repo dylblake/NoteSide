@@ -139,6 +139,7 @@ final class AppState: ObservableObject {
                     self?.panelController?.repositionToActiveScreenIfNeeded(
                         oldContextSnapshot: oldSnapshot
                     )
+                    self?.allNotesPanelCtrl?.repositionToActiveScreenIfNeeded()
                 }
             }
             .store(in: &cancellables)
@@ -690,6 +691,17 @@ final class AppState: ObservableObject {
 
     var filteredNotes: [ContextNote] {
         guard !searchText.isEmpty else { return sortedNotes }
+
+        // Tag-specific search: when the query is "#tag", match against extracted tags
+        if searchText.hasPrefix("#") {
+            let tagQuery = String(searchText.dropFirst()).trimmingCharacters(in: .whitespaces).lowercased()
+            if !tagQuery.isEmpty {
+                return sortedNotes.filter { note in
+                    note.tags.contains { $0.localizedCaseInsensitiveContains(tagQuery) }
+                }
+            }
+        }
+
         return sortedNotes.filter { note in
             note.context.displayName.localizedCaseInsensitiveContains(searchText)
                 || note.context.identifier.localizedCaseInsensitiveContains(searchText)

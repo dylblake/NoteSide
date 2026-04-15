@@ -49,6 +49,7 @@ struct RichTextEditor: NSViewRepresentable {
 
         scrollView.documentView = textView
         controller.attach(textView)
+        Coordinator.colorTags(in: textView)
         DispatchQueue.main.async {
             controller.notifySelectionAttributesChange()
         }
@@ -62,6 +63,7 @@ struct RichTextEditor: NSViewRepresentable {
         let normalized = controller.normalizedAttributedText(attributedText)
         if !textView.attributedString().isEqual(to: normalized) {
             textView.textStorage?.setAttributedString(normalized)
+            Coordinator.colorTags(in: textView)
             DispatchQueue.main.async {
                 controller.notifySelectionAttributesChange()
             }
@@ -77,7 +79,26 @@ struct RichTextEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            Self.colorTags(in: textView)
             parent.attributedText = NSAttributedString(attributedString: textView.attributedString())
+        }
+
+        private static let tagPattern = try! NSRegularExpression(pattern: #"#\w+"#)
+
+        static func colorTags(in textView: NSTextView) {
+            guard let storage = textView.textStorage else { return }
+            let fullRange = NSRange(location: 0, length: storage.length)
+            let text = storage.string
+
+            storage.beginEditing()
+            // Reset all tag-colored text back to label color
+            storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: fullRange)
+            // Apply accent color to #tags
+            let matches = tagPattern.matches(in: text, range: fullRange)
+            for match in matches {
+                storage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: match.range)
+            }
+            storage.endEditing()
         }
 
         func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
@@ -135,6 +156,12 @@ private final class EditorTextView: NSTextView {
             return true
         case "u":
             onToggleUnderline?()
+            return true
+        case "z" where modifiers == [.command]:
+            undoManager?.undo()
+            return true
+        case "z" where modifiers == [.command, .shift]:
+            undoManager?.redo()
             return true
         default:
             return super.performKeyEquivalent(with: event)
