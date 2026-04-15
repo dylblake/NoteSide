@@ -614,26 +614,23 @@ private enum NoteCardStyle {
         }
     }
 
-    /// Bold top line. Identifies *what* the note is attached to: the file
-    /// name (with editor), the page title, or the app name.
+    /// Bold top line. Shows the note's custom title if set, otherwise
+    /// identifies *what* the note is attached to.
     static func primaryTitle(for note: ContextNote) -> String {
-        switch note.context.kind {
-        case .file:
-            if let editorName = editorName(for: note.context.sourceBundleIdentifier) {
-                return "\(note.context.displayName) · \(editorName)"
-            }
-            return note.context.displayName
-        case .url:
-            return note.context.displayName
-        case .application:
-            let components = note.context.displayName.components(separatedBy: " / ")
-            return components.first ?? note.context.displayName
+        if let title = note.title, !title.isEmpty {
+            return title
         }
+        return contextDerivedTitle(for: note)
     }
 
-    /// Caption line under the title — source location (project root, host,
-    /// or app sub-context). Returns nil when nothing meaningful exists.
+    /// Caption line under the title. When a note has an explicit title,
+    /// the context-derived name becomes the subtitle. Otherwise falls back
+    /// to source location (project root, host, or app sub-context).
     static func secondarySubtitle(for note: ContextNote) -> String? {
+        if let title = note.title, !title.isEmpty {
+            return contextDerivedTitle(for: note)
+        }
+
         switch note.context.kind {
         case .file:
             return note.context.sourceRootPath ?? note.context.secondaryLabel
@@ -652,6 +649,22 @@ private enum NoteCardStyle {
             let components = note.context.displayName.components(separatedBy: " / ")
             guard components.count > 1 else { return nil }
             return components.dropFirst().joined(separator: " / ")
+        }
+    }
+
+    /// The original context-based title (file name, page title, app name).
+    private static func contextDerivedTitle(for note: ContextNote) -> String {
+        switch note.context.kind {
+        case .file:
+            if let editorName = editorName(for: note.context.sourceBundleIdentifier) {
+                return "\(note.context.displayName) · \(editorName)"
+            }
+            return note.context.displayName
+        case .url:
+            return note.context.displayName
+        case .application:
+            let components = note.context.displayName.components(separatedBy: " / ")
+            return components.first ?? note.context.displayName
         }
     }
 

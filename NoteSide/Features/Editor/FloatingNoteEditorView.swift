@@ -8,48 +8,56 @@ struct FloatingNoteEditorView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Current context")
-                        .font(.caption.weight(.semibold))
-                        .textCase(.uppercase)
-                        .tracking(0.7)
-                        .foregroundStyle(NoteSideTheme.secondaryText)
-
-                    Text(appState.activeContext?.displayName ?? "Current Context")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(NoteSideTheme.primaryText)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    if let secondaryLabel = appState.activeContext?.secondaryLabel, !secondaryLabel.isEmpty {
-                        Text(secondaryLabel)
-                            .font(.subheadline)
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Title")
+                            .font(.caption.weight(.semibold))
+                            .textCase(.uppercase)
+                            .tracking(0.7)
                             .foregroundStyle(NoteSideTheme.secondaryText)
-                            .textSelection(.enabled)
+
+                        TextField("Note title", text: $appState.editorTitle)
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(NoteSideTheme.primaryText)
+                            .textFieldStyle(.plain)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 14)
+
+                    Divider()
+                        .padding(.horizontal, 14)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Current context")
+                            .font(.caption.weight(.semibold))
+                            .textCase(.uppercase)
+                            .tracking(0.7)
+                            .foregroundStyle(NoteSideTheme.secondaryText)
+
+                        Text(appState.activeContext?.displayName ?? "Current Context")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(NoteSideTheme.primaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                    }
 
-                    if let errorMessage = appState.editorErrorMessage, !errorMessage.isEmpty {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(NoteSideTheme.warning)
-                            .lineLimit(2)
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(NoteSideTheme.contentBackground)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(NoteSideTheme.border.opacity(0.8), lineWidth: 1)
-                        )
-                )
+                        if let secondaryLabel = appState.activeContext?.secondaryLabel, !secondaryLabel.isEmpty {
+                            Text(secondaryLabel)
+                                .font(.subheadline)
+                                .foregroundStyle(NoteSideTheme.secondaryText)
+                                .textSelection(.enabled)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
 
-                VStack(alignment: .leading, spacing: 14) {
+                        if let errorMessage = appState.editorErrorMessage, !errorMessage.isEmpty {
+                            Text(errorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(NoteSideTheme.warning)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(.horizontal, 18)
+
                     HStack(spacing: 10) {
                         Spacer(minLength: 0)
 
@@ -105,7 +113,8 @@ struct FloatingNoteEditorView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
                 .frame(maxWidth: .infinity, minHeight: 380, maxHeight: .infinity, alignment: .topLeading)
                 .clipped()
                 .background(
@@ -201,30 +210,25 @@ struct FloatingNoteEditorView: View {
     /// `behindWindow` blending automatically (the panel is a transparent
     /// NSPanel, so the material blurs whatever is on the desktop behind it).
     private var footerRadialBackdrop: some View {
-        GeometryReader { geometry in
-            let size = geometry.size
-            let radius = max(size.width, size.height) / 2
-
-            Rectangle()
-                .fill(.regularMaterial)
-                .mask(
-                    RadialGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: .black, location: 0.0),
-                            .init(color: .black.opacity(0.85), location: 0.35),
-                            .init(color: .clear, location: 1.0)
-                        ]),
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: radius
-                    )
+        Rectangle()
+            .fill(.thickMaterial)
+            .mask(
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black.opacity(0.6), location: 0.15),
+                        .init(color: .black, location: 0.35),
+                        .init(color: .black, location: 0.65),
+                        .init(color: .black.opacity(0.6), location: 0.85),
+                        .init(color: .clear, location: 1.0)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
                 )
-                // Let the blur extend a little past the row so the soft
-                // outer edge isn't clipped against the icons / text.
-                .padding(.horizontal, -40)
-                .padding(.vertical, -16)
-                .allowsHitTesting(false)
-        }
+            )
+            .padding(.horizontal, -40)
+            .padding(.vertical, -16)
+            .allowsHitTesting(false)
     }
 
     private func formattingButton(_ title: String, isActive: Bool = false, action: @escaping () -> Void) -> some View {
