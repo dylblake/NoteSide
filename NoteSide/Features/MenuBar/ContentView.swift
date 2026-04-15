@@ -18,6 +18,8 @@ struct ContentView: View {
     @State private var showingBulkDeleteConfirmation = false
     @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
 
+    var isFloatingPanel = false
+
     private var viewMode: AllNotesViewMode {
         AllNotesViewMode(rawValue: viewModeRaw) ?? .grid
     }
@@ -28,54 +30,76 @@ struct ContentView: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-                VStack(spacing: 0) {
-                    HStack(spacing: 12) {
-                        Text("All Notes")
-                            .font(.largeTitle.weight(.bold))
-                        viewModeToggle
-                        Spacer()
-                        if !appState.selectedNoteIDs.isEmpty {
-                            bulkActionBar
-                        }
+        let content = ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Text("All Notes")
+                        .font(isFloatingPanel ? .title2.weight(.bold) : .largeTitle.weight(.bold))
+                    viewModeToggle
+                    Spacer()
+                    if !appState.selectedNoteIDs.isEmpty {
+                        bulkActionBar
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 24)
-                    .padding(.bottom, 18)
-                    .animation(.easeInOut(duration: 0.15), value: appState.selectedNoteIDs.isEmpty)
+                }
+                .padding(.horizontal, isFloatingPanel ? 18 : 24)
+                .padding(.top, isFloatingPanel ? 18 : 24)
+                .padding(.bottom, isFloatingPanel ? 14 : 18)
+                .animation(.easeInOut(duration: 0.15), value: appState.selectedNoteIDs.isEmpty)
 
-                    ScrollView {
-                        Color.clear
-                            .frame(height: 0)
-                            .id("top")
+                if isFloatingPanel {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField("Search notes", text: $appState.searchText)
+                            .textFieldStyle(.plain)
+                    }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.primary.opacity(0.06))
+                    )
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 10)
+                }
 
-                        VStack(alignment: .leading, spacing: 28) {
-                            ForEach(noteSections) { section in
-                                if !section.groups.isEmpty {
-                                    switch viewMode {
-                                    case .grid:
-                                        NoteTileSection(section: section)
+                ScrollView {
+                    Color.clear
+                        .frame(height: 0)
+                        .id("top")
+
+                    VStack(alignment: .leading, spacing: 28) {
+                        ForEach(noteSections) { section in
+                            if !section.groups.isEmpty {
+                                switch viewMode {
+                                case .grid:
+                                    NoteTileSection(section: section)
                                             .environmentObject(appState)
-                                    case .list:
-                                        NoteListSection(section: section)
-                                            .environmentObject(appState)
-                                    }
+                                case .list:
+                                    NoteListSection(section: section)
+                                        .environmentObject(appState)
                                 }
                             }
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 24)
                     }
-                    .searchable(text: $appState.searchText, prompt: "Search notes")
+                    .padding(.horizontal, isFloatingPanel ? 18 : 24)
+                    .padding(.bottom, isFloatingPanel ? 18 : 24)
                 }
-                .onChange(of: appState.allNotesScrollResetID) { _, _ in
-                    proxy.scrollTo("top", anchor: .top)
-                }
+                .searchable(text: $appState.searchText, prompt: "Search notes")
+            }
+            .onChange(of: appState.allNotesScrollResetID) { _, _ in
+                proxy.scrollTo("top", anchor: .top)
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
-        .background(Color(nsColor: .windowBackgroundColor))
+
+        if isFloatingPanel {
+            content
+        } else {
+            NavigationStack {
+                content
+            }
+            .frame(minWidth: 820, minHeight: 560)
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
     }
 
     private var viewModeToggle: some View {

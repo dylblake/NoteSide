@@ -21,6 +21,11 @@ struct HotKeyShortcut: Codable, Equatable, Hashable {
         modifiers: commandModifier | shiftModifier
     )
 
+    static let allNotesDefault = HotKeyShortcut(
+        keyCode: UInt32(kVK_ANSI_A),
+        modifiers: commandModifier | shiftModifier
+    )
+
     static let availableKeys: [KeyOption] = [
         ("A", kVK_ANSI_A), ("B", kVK_ANSI_B), ("C", kVK_ANSI_C), ("D", kVK_ANSI_D),
         ("E", kVK_ANSI_E), ("F", kVK_ANSI_F), ("G", kVK_ANSI_G), ("H", kVK_ANSI_H),
@@ -101,66 +106,79 @@ enum GlobalHotKeyError: LocalizedError {
 }
 
 final class GlobalHotKeyMonitor {
-    var onKeyDown: (() -> Void)?
+    private static let signature = OSType(0x534E4F54)
 
-    private var hotKeyRef: EventHotKeyRef?
+    private var callbacks: [UInt32: () -> Void] = [:]
+    private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
     private var eventHandlerRef: EventHandlerRef?
-    private let hotKeyID = EventHotKeyID(signature: OSType(0x534E4F54), id: 1)
 
-    func start(shortcut: HotKeyShortcut) throws {
-        if eventHandlerRef == nil {
-            var eventSpec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-            let callback: EventHandlerUPP = { _, event, userData in
-                guard
-                    let userData,
-                    let event
-                else { return noErr }
+    func register(id: UInt32, shortcut: HotKeyShortcut, callback: @escaping () -> Void) throws {
+        installEventHandlerIfNeeded()
+        callbacks[id] = callback
 
-                let monitor = Unmanaged<GlobalHotKeyMonitor>.fromOpaque(userData).takeUnretainedValue()
-                var hotKeyID = EventHotKeyID()
-                let status = GetEventParameter(
-                    event,
-                    EventParamName(kEventParamDirectObject),
-                    EventParamType(typeEventHotKeyID),
-                    nil,
-                    MemoryLayout<EventHotKeyID>.size,
-                    nil,
-                    &hotKeyID
-                )
-
-                if status == noErr, hotKeyID.signature == monitor.hotKeyID.signature, hotKeyID.id == monitor.hotKeyID.id {
-                    monitor.onKeyDown?()
-                }
-
-                return noErr
-            }
-
-            InstallEventHandler(
-                GetApplicationEventTarget(),
-                callback,
-                1,
-                &eventSpec,
-                UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
-                &eventHandlerRef
-            )
+        if let existing = hotKeyRefs[id] {
+            UnregisterEventHotKey(existing)
+            hotKeyRefs[id] = nil
         }
 
-        if hotKeyRef != nil {
-            UnregisterEventHotKey(hotKeyRef)
-            hotKeyRef = nil
-        }
-
+        let hotKeyID = EventHotKeyID(signature: Self.signature, id: id)
+        var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(
             shortcut.keyCode,
             shortcut.modifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
-            &hotKeyRef
+            &ref
         )
 
         guard status == noErr else {
             throw GlobalHotKeyError.registrationFailed(status)
         }
+
+        hotKeyRefs[id] = ref
+    }
+
+    func unregister(id: UInt32) {
+        if let ref = hotKeyRefs.removeValue(forKey: id) {
+            UnregisterEventHotKey(ref)
+        }
+        callbacks.removeValue(forKey: id)
+    }
+
+    private func installEventHandlerIfNeeded() {
+        guard eventHandlerRef == nil else { return }
+
+        var eventSpec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        let callback: EventHandlerUPP = { _, event, userData in
+            guard let userData, let event else { return noErr }
+
+            let monitor = Unmanaged<GlobalHotKeyMonitor>.fromOpaque(userData).takeUnretainedValue()
+            var hotKeyID = EventHotKeyID()
+            let status = GetEventParameter(
+                event,
+                EventParamName(kEventParamDirectObject),
+                EventParamType(typeEventHotKeyID),
+                nil,
+                MemoryLayout<EventHotKeyID>.size,
+                nil,
+                &hotKeyID
+            )
+
+            if status == noErr, hotKeyID.signature == GlobalHotKeyMonitor.signature {
+                monitor.callbacks[hotKeyID.id]?()
+            }
+
+            return noErr
+        }
+
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            callback,
+            1,
+            &eventSpec,
+            UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
+            &eventHandlerRef
+        )
     }
 }
