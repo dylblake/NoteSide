@@ -7,8 +7,8 @@ final class AllNotesPanelController {
     private var panel: NoteEditorPanel?
     private var animationSequence = 0
 
-    private static let presentDuration: TimeInterval = 0.46
-    private static let dismissDuration: TimeInterval = 0.38
+    private static let presentDuration: TimeInterval = 0.6
+    private static let dismissDuration: TimeInterval = 0.45
 
     private static let smoothEaseOut = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
     private static let smoothEaseIn = CAMediaTimingFunction(controlPoints: 0.7, 0.0, 0.84, 0.0)
@@ -48,14 +48,9 @@ final class AllNotesPanelController {
         let sequence = animationSequence
         let finalFrame = paneFrame(for: screen)
 
-        let offScreenFrame = NSRect(
-            x: screen.visibleFrame.maxX,
-            y: finalFrame.minY,
-            width: finalFrame.width,
-            height: finalFrame.height
-        )
-
-        panel.setFrame(offScreenFrame, display: false)
+        // Start as a collapsed sliver at the right edge of the active
+        // screen, then expand leftward — no bleed onto adjacent monitors.
+        panel.setFrame(collapsedFrame(for: screen), display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         panel.makeKey()
