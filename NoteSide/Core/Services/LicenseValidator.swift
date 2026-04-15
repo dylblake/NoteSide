@@ -73,6 +73,39 @@ struct LicenseValidator {
     private static let keychainAccount = "license-key"
 
     static func storedLicenseKey() -> String? {
+        // Try the modern data protection keychain first.
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseDataProtectionKeychain as String: true,
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        if status == errSecSuccess,
+           let data = result as? Data,
+           let key = String(data: data, encoding: .utf8) {
+            return key
+        }
+
+        // Fall back to the legacy file-based keychain for users
+        // upgrading from a version that stored the key there.
+        // If found, migrate it to the data protection keychain
+        // and delete the legacy entry.
+        if let key = legacyStoredLicenseKey() {
+            storeLicenseKey(key)
+            deleteLegacyLicenseKey()
+            return key
+        }
+
+        return nil
+    }
+
+    private static func legacyStoredLicenseKey() -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -80,17 +113,22 @@ struct LicenseValidator {
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-
         guard status == errSecSuccess,
               let data = result as? Data,
               let key = String(data: data, encoding: .utf8)
-        else {
-            return nil
-        }
+        else { return nil }
         return key
+    }
+
+    private static func deleteLegacyLicenseKey() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     static func storeLicenseKey(_ key: String) {
@@ -101,6 +139,7 @@ struct LicenseValidator {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
+            kSecUseDataProtectionKeychain as String: true,
         ]
         SecItemDelete(deleteQuery as CFDictionary)
 
@@ -109,6 +148,7 @@ struct LicenseValidator {
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
             kSecValueData as String: data,
+            kSecUseDataProtectionKeychain as String: true,
         ]
         SecItemAdd(addQuery as CFDictionary, nil)
     }
@@ -118,6 +158,7 @@ struct LicenseValidator {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
+            kSecUseDataProtectionKeychain as String: true,
         ]
         SecItemDelete(query as CFDictionary)
     }
