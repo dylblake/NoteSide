@@ -33,6 +33,8 @@ final class AppState: ObservableObject {
     @Published var isEditorPresented = false
     @Published var searchText = ""
     @Published var hotKeyShortcut: HotKeyShortcut
+    @Published var allNotesHotKeyShortcut: HotKeyShortcut
+    @Published var isAllNotesPanelPresented = false
     @Published var showsDockIcon: Bool
     @Published var allNotesScrollResetID = UUID()
     @Published var currentEditorTextStyle: RichTextEditorController.TextStyle = .body
@@ -55,18 +57,19 @@ final class AppState: ObservableObject {
     let richTextController = RichTextEditorController()
     private let hotKeyMonitor: GlobalHotKeyMonitor
     private var panelController: NoteEditorPanelController?
-    private var allNotesWindowController: AllNotesWindowController?
+    private var allNotesPanelCtrl: AllNotesPanelController?
     private var onboardingWindowController: OnboardingWindowController?
     private var infoWindowController: InfoWindowController?
     private var licenseWindowController: LicenseWindowController?
     private var cancellables: Set<AnyCancellable> = []
     private var pendingAutomationRequests: Set<String> = []
-    private var isAllNotesWindowVisible = false
+    private var isAllNotesPanelVisible = false
     private var isOnboardingWindowVisible = false
     private var isInfoWindowVisible = false
 
     private static let onboardingDefaultsKey = "hasCompletedOnboarding"
     private static let hotKeyDefaultsKey = "globalHotKeyShortcut"
+    private static let allNotesHotKeyDefaultsKey = "allNotesHotKeyShortcut"
     private static let browserPermissionDefaultsPrefix = "browserPermissionState."
     private static let browserPermissionMigrationKey = "browserPermissionStatesMigratedV2"
     static let supportedBrowsers = BrowserURLProvider.supportedBrowsers
@@ -83,14 +86,9 @@ final class AppState: ObservableObject {
         hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingDefaultsKey)
         isAutoTitleEnabled = UserDefaults.standard.object(forKey: "autoTitleEnabled") as? Bool ?? true
         hotKeyShortcut = Self.loadHotKeyShortcut()
+        allNotesHotKeyShortcut = Self.loadAllNotesHotKeyShortcut()
         showsDockIcon = false
         notes = store.loadNotes()
-
-        hotKeyMonitor.onKeyDown = { [weak self] in
-            Task { @MainActor [weak self] in
-                await self?.toggleQuickNote()
-            }
-        }
 
         richTextController.onSelectionAttributesChange = { [weak self] formattingState in
             self?.currentEditorTextStyle = formattingState.textStyle
@@ -100,6 +98,7 @@ final class AppState: ObservableObject {
         }
 
         registerHotKey()
+        registerAllNotesHotKey()
 
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .receive(on: RunLoop.main)
@@ -181,6 +180,10 @@ final class AppState: ObservableObject {
         if !AXIsProcessTrusted() {
             requestAccessibilityAccessIfNeeded()
             return
+        }
+
+        if isAllNotesPanelPresented {
+            dismissAllNotesPanel()
         }
 
         if isEditorPresented {
@@ -270,14 +273,7 @@ final class AppState: ObservableObject {
     }
 
     func openAllNotes() {
-        if isEditorPresented {
-            saveAndDismissEditor()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-                self?.presentAllNotesWindow()
-            }
-            return
-        }
-        presentAllNotesWindow()
+        toggleAllNotesPanel()
     }
 
     func showOnboarding() {
@@ -302,11 +298,43 @@ final class AppState: ObservableObject {
         presentInfoWindow()
     }
 
-    private func presentAllNotesWindow() {
+    func toggleAllNotesPanel() {
+        if !isLicensed {
+            presentLicenseWindow()
+            return
+        }
+
+        if !AXIsProcessTrusted() {
+            requestAccessibilityAccessIfNeeded()
+            return
+        }
+
+        if isAllNotesPanelPresented {
+            dismissAllNotesPanel()
+            return
+        }
+
+        if isEditorPresented {
+            saveAndDismissEditor()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                self?.presentAllNotesPanel()
+            }
+            return
+        }
+
+        presentAllNotesPanel()
+    }
+
+    private func presentAllNotesPanel() {
         allNotesScrollResetID = UUID()
         selectedNoteIDs.removeAll()
-        allNotesWindow.present()
-        NSApp.activate(ignoringOtherApps: true)
+        isAllNotesPanelPresented = true
+        allNotesPanelController.present()
+    }
+
+    func dismissAllNotesPanel() {
+        isAllNotesPanelPresented = false
+        allNotesPanelCtrl?.dismiss()
     }
 
     private func presentOnboardingWindow() {
@@ -389,7 +417,7 @@ final class AppState: ObservableObject {
     }
 
     func open(_ note: ContextNote) {
-        allNotesWindow.dismiss()
+        dismissAllNotesPanel()
         navigate(to: note.context)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
@@ -580,13 +608,22 @@ final class AppState: ObservableObject {
         persistAndRegisterHotKey()
     }
 
+    func setAllNotesHotKeyShortcut(_ shortcut: HotKeyShortcut) {
+        allNotesHotKeyShortcut = shortcut
+        persistAndRegisterAllNotesHotKey()
+    }
+
+    var allNotesHotKeyDisplayString: String {
+        allNotesHotKeyShortcut.displayString
+    }
+
     func setShowsDockIcon(_ showsDockIcon: Bool) {
         self.showsDockIcon = false
         applyDockIconPreference()
     }
 
-    func setAllNotesWindowVisible(_ isVisible: Bool) {
-        isAllNotesWindowVisible = isVisible
+    func setAllNotesPanelVisible(_ isVisible: Bool) {
+        isAllNotesPanelVisible = isVisible
         applyDockIconPreference()
     }
 
@@ -696,6 +733,17 @@ final class AppState: ObservableObject {
             let shortcut = try? JSONDecoder().decode(HotKeyShortcut.self, from: data)
         else {
             return .default
+        }
+
+        return shortcut
+    }
+
+    private static func loadAllNotesHotKeyShortcut() -> HotKeyShortcut {
+        guard
+            let data = UserDefaults.standard.data(forKey: allNotesHotKeyDefaultsKey),
+            let shortcut = try? JSONDecoder().decode(HotKeyShortcut.self, from: data)
+        else {
+            return .allNotesDefault
         }
 
         return shortcut
@@ -953,16 +1001,40 @@ final class AppState: ObservableObject {
         registerHotKey()
     }
 
+    private func persistAndRegisterAllNotesHotKey() {
+        if let data = try? JSONEncoder().encode(allNotesHotKeyShortcut) {
+            UserDefaults.standard.set(data, forKey: Self.allNotesHotKeyDefaultsKey)
+        }
+
+        registerAllNotesHotKey()
+    }
+
     private func applyDockIconPreference() {
-        let shouldShowDockIcon = isAllNotesWindowVisible || isOnboardingWindowVisible || isInfoWindowVisible
+        let shouldShowDockIcon = isAllNotesPanelVisible || isOnboardingWindowVisible || isInfoWindowVisible
         showsDockIcon = shouldShowDockIcon
         NSApp.setActivationPolicy(shouldShowDockIcon ? .regular : .accessory)
     }
 
     private func registerHotKey() {
         do {
-            try hotKeyMonitor.start(shortcut: hotKeyShortcut)
+            try hotKeyMonitor.register(id: 1, shortcut: hotKeyShortcut) { [weak self] in
+                Task { @MainActor [weak self] in
+                    await self?.toggleQuickNote()
+                }
+            }
             editorErrorMessage = nil
+        } catch {
+            editorErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func registerAllNotesHotKey() {
+        do {
+            try hotKeyMonitor.register(id: 2, shortcut: allNotesHotKeyShortcut) { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.toggleAllNotesPanel()
+                }
+            }
         } catch {
             editorErrorMessage = error.localizedDescription
         }
@@ -1289,14 +1361,14 @@ final class AppState: ObservableObject {
         return controller
     }
 
-    private var allNotesWindow: AllNotesWindowController {
-        if let allNotesWindowController {
-            return allNotesWindowController
+    private var allNotesPanelController: AllNotesPanelController {
+        if let allNotesPanelCtrl {
+            return allNotesPanelCtrl
         }
 
-        let controller = AllNotesWindowController()
+        let controller = AllNotesPanelController()
         controller.install(appState: self)
-        allNotesWindowController = controller
+        allNotesPanelCtrl = controller
         return controller
     }
 

@@ -51,7 +51,7 @@ struct MenuBarContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Hotkey")
+                Text("Note Hotkey")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
@@ -63,7 +63,20 @@ struct MenuBarContentView: View {
                 }
                 .fixedSize()
 
-                Text("Click the box, then press the shortcut you want.")
+                Text("All Notes Hotkey")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+
+                Text(appState.allNotesHotKeyDisplayString)
+                    .font(.subheadline.weight(.medium))
+
+                ShortcutRecorderView(displayText: appState.allNotesHotKeyDisplayString) { shortcut in
+                    appState.setAllNotesHotKeyShortcut(shortcut)
+                }
+                .fixedSize()
+
+                Text("Click a box, then press the shortcut you want.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
