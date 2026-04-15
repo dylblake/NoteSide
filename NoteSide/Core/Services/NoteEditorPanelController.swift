@@ -14,8 +14,8 @@ final class NoteEditorPanelController {
     // Present is slightly longer than dismiss because the eye reads "appear"
     // as the more meaningful event; dismiss can be slightly faster without
     // feeling rushed.
-    private static let presentDuration: TimeInterval = 0.46
-    private static let dismissDuration: TimeInterval = 0.38
+    private static let presentDuration: TimeInterval = 0.6
+    private static let dismissDuration: TimeInterval = 0.45
 
     // Cubic-bezier curves chosen for smoothness:
     //  - smoothEaseOut: gentle decel — used for present (and the expand
@@ -66,18 +66,11 @@ final class NoteEditorPanelController {
         lastPresentedScreen = screen
         let finalFrame = paneFrame(for: screen)
 
-        // Start the panel at full width but positioned off-screen to the
-        // right. As it slides left into place, the content is always
-        // rendered at full width — no clipping, so the title, context,
-        // and note body are visible throughout the animation.
-        let offScreenFrame = NSRect(
-            x: screen.visibleFrame.maxX,
-            y: finalFrame.minY,
-            width: finalFrame.width,
-            height: finalFrame.height
-        )
-
-        panel.setFrame(offScreenFrame, display: false)
+        // Start the panel as a collapsed sliver at the right edge of the
+        // active screen, then expand leftward. This keeps the entire
+        // animation within the active display — no bleed onto an
+        // adjacent monitor.
+        panel.setFrame(collapsedFrame(for: screen), display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         panel.makeKey()
