@@ -8,6 +8,7 @@ struct ContextNote: Codable, Identifiable, Hashable {
     let createdAt: Date
     let updatedAt: Date
     let isPinned: Bool
+    let title: String?
 
     init(
         id: UUID,
@@ -16,7 +17,8 @@ struct ContextNote: Codable, Identifiable, Hashable {
         richTextData: Data?,
         createdAt: Date,
         updatedAt: Date,
-        isPinned: Bool = false
+        isPinned: Bool = false,
+        title: String? = nil
     ) {
         self.id = id
         self.context = context
@@ -25,6 +27,7 @@ struct ContextNote: Codable, Identifiable, Hashable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isPinned = isPinned
+        self.title = title
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -35,6 +38,7 @@ struct ContextNote: Codable, Identifiable, Hashable {
         case createdAt
         case updatedAt
         case isPinned
+        case title
     }
 
     init(from decoder: Decoder) throws {
@@ -46,5 +50,6 @@ struct ContextNote: Codable, Identifiable, Hashable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        title = try container.decodeIfPresent(String.self, forKey: .title)
     }
 }

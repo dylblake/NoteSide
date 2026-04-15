@@ -65,10 +65,19 @@ final class NoteEditorPanelController {
         let sequence = animationSequence
         lastPresentedScreen = screen
         let finalFrame = paneFrame(for: screen)
-        let startFrame = collapsedFrame(for: screen)
 
-        panel.animator().alphaValue = panel.alphaValue
-        panel.setFrame(startFrame, display: false)
+        // Start the panel at full width but positioned off-screen to the
+        // right. As it slides left into place, the content is always
+        // rendered at full width — no clipping, so the title, context,
+        // and note body are visible throughout the animation.
+        let offScreenFrame = NSRect(
+            x: screen.visibleFrame.maxX,
+            y: finalFrame.minY,
+            width: finalFrame.width,
+            height: finalFrame.height
+        )
+
+        panel.setFrame(offScreenFrame, display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         panel.makeKey()

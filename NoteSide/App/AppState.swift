@@ -40,11 +40,16 @@ final class AppState: ObservableObject {
     @Published var isEditorItalicActive = false
     @Published var isEditorUnderlineActive = false
     @Published var isActiveNotePinned = false
+    @Published var editorTitle = ""
+    @Published var isAutoTitleEnabled: Bool {
+        didSet { UserDefaults.standard.set(isAutoTitleEnabled, forKey: "autoTitleEnabled") }
+    }
     @Published var infoStatusMessage: String?
     @Published var selectedNoteIDs: Set<UUID> = []
     @Published var isLicensed: Bool = false
 
     private let store: NoteStore
+    private let titleGenerator = NoteTitleGenerator()
     private let contextResolver: ContextResolver
     private let browserURLProvider = BrowserURLProvider()
     let richTextController = RichTextEditorController()
@@ -76,6 +81,7 @@ final class AppState: ObservableObject {
         self.hotKeyMonitor = hotKeyMonitor
         Self.migrateBrowserPermissionStatesIfNeeded()
         hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingDefaultsKey)
+        isAutoTitleEnabled = UserDefaults.standard.object(forKey: "autoTitleEnabled") as? Bool ?? true
         hotKeyShortcut = Self.loadHotKeyShortcut()
         showsDockIcon = false
         notes = store.loadNotes()
@@ -187,15 +193,33 @@ final class AppState: ObservableObject {
         let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
         let fallbackContext = quickApplicationContext(for: frontmostApp)
 
-        activeContext = fallbackContext
-        editorAttributedText = attributedText(for: fallbackContext)
+        // Try to resolve the full context (URL, file, etc.) immediately
+        // so the panel opens with the correct context instead of briefly
+        // flashing the generic app name.
+        let resolvedContext = resolveCurrentContext(preferredBundleIdentifier: sourceBundleIdentifier)
+        let initialContext = resolvedContext.id != fallbackContext.id ? resolvedContext : fallbackContext
+
+        activeContext = initialContext
+        let existingNote = note(for: initialContext)
+        editorAttributedText = attributedText(for: initialContext)
         editorText = editorAttributedText.string
-        isActiveNotePinned = note(for: fallbackContext)?.isPinned ?? false
+        editorTitle = existingNote?.title ?? ""
+        isActiveNotePinned = existingNote?.isPinned ?? false
         isEditorPresented = true
         noteEditorPanelController.present()
 
+        // Generate a title if the note has none and auto-title is on.
+        if isAutoTitleEnabled && editorTitle.isEmpty {
+            if let existingNote, !existingNote.body.isEmpty {
+                generateTitleIfNeeded(noteID: existingNote.id, body: existingNote.body, context: initialContext)
+            } else {
+                // New note with no body yet — generate from context alone.
+                generateTitleFromContext(context: initialContext)
+            }
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.resolveInitialQuickNoteContext(from: fallbackContext, sourceBundleIdentifier: sourceBundleIdentifier)
+            self?.resolveInitialQuickNoteContext(from: initialContext, sourceBundleIdentifier: sourceBundleIdentifier)
             self?.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
         }
     }
@@ -214,8 +238,11 @@ final class AppState: ObservableObject {
                 store.save(notes: notes)
             }
         } else {
-            let existingID = note(for: context)?.id ?? UUID()
-            let createdAt = note(for: context)?.createdAt ?? .now
+            let existingNote = note(for: context)
+            let existingID = existingNote?.id ?? UUID()
+            let createdAt = existingNote?.createdAt ?? .now
+            let userTitle = editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            let currentTitle: String? = userTitle.isEmpty ? existingNote?.title : userTitle
             let note = ContextNote(
                 id: existingID,
                 context: context,
@@ -223,9 +250,14 @@ final class AppState: ObservableObject {
                 richTextData: archivedRichText(from: currentAttributedText),
                 createdAt: createdAt,
                 updatedAt: .now,
-                isPinned: note(for: context)?.isPinned ?? isActiveNotePinned
+                isPinned: existingNote?.isPinned ?? isActiveNotePinned,
+                title: currentTitle
             )
             upsert(note)
+
+            if currentTitle == nil && isAutoTitleEnabled {
+                generateTitleIfNeeded(noteID: existingID, body: trimmed, context: context)
+            }
         }
 
         dismissEditor()
@@ -345,10 +377,15 @@ final class AppState: ObservableObject {
         activeContext = note.context
         editorAttributedText = attributedText(for: note)
         editorText = editorAttributedText.string
+        editorTitle = note.title ?? ""
         editorErrorMessage = nil
         isActiveNotePinned = note.isPinned
         isEditorPresented = true
         noteEditorPanelController.present()
+
+        if isAutoTitleEnabled && editorTitle.isEmpty && !note.body.isEmpty {
+            generateTitleIfNeeded(noteID: note.id, body: note.body, context: note.context)
+        }
     }
 
     func open(_ note: ContextNote) {
@@ -403,7 +440,8 @@ final class AppState: ObservableObject {
                 richTextData: note.richTextData,
                 createdAt: note.createdAt,
                 updatedAt: .now,
-                isPinned: nextPinned
+                isPinned: nextPinned,
+                title: note.title
             )
         }
         store.save(notes: notes)
@@ -426,7 +464,8 @@ final class AppState: ObservableObject {
             richTextData: note.richTextData,
             createdAt: note.createdAt,
             updatedAt: .now,
-            isPinned: !note.isPinned
+            isPinned: !note.isPinned,
+            title: note.title
         )
         upsert(updatedNote)
 
@@ -442,6 +481,7 @@ final class AppState: ObservableObject {
 
         editorAttributedText = NSAttributedString(string: "")
         editorText = ""
+        editorTitle = ""
         editorErrorMessage = nil
         isActiveNotePinned = false
         dismissEditor()
@@ -458,8 +498,11 @@ final class AppState: ObservableObject {
 
         // If editor has content, save it with the new pin state
         if !trimmed.isEmpty {
-            let existingID = note(for: context)?.id ?? UUID()
-            let createdAt = note(for: context)?.createdAt ?? .now
+            let existing = note(for: context)
+            let existingID = existing?.id ?? UUID()
+            let createdAt = existing?.createdAt ?? .now
+            let userTitle = editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            let currentTitle: String? = userTitle.isEmpty ? existing?.title : userTitle
             let updatedNote = ContextNote(
                 id: existingID,
                 context: context,
@@ -467,7 +510,8 @@ final class AppState: ObservableObject {
                 richTextData: archivedRichText(from: currentAttributedText),
                 createdAt: createdAt,
                 updatedAt: .now,
-                isPinned: nextPinnedState
+                isPinned: nextPinnedState,
+                title: currentTitle
             )
             upsert(updatedNote)
             return
@@ -482,7 +526,8 @@ final class AppState: ObservableObject {
                 richTextData: existingNote.richTextData,
                 createdAt: existingNote.createdAt,
                 updatedAt: .now,
-                isPinned: nextPinnedState
+                isPinned: nextPinnedState,
+                title: existingNote.title
             )
             upsert(updatedNote)
         }
@@ -613,6 +658,7 @@ final class AppState: ObservableObject {
                 || note.context.identifier.localizedCaseInsensitiveContains(searchText)
                 || (note.context.secondaryLabel?.localizedCaseInsensitiveContains(searchText) ?? false)
                 || note.body.localizedCaseInsensitiveContains(searchText)
+                || (note.title?.localizedCaseInsensitiveContains(searchText) ?? false)
         }
     }
 
@@ -681,6 +727,7 @@ final class AppState: ObservableObject {
         activeContext = context
         editorAttributedText = attributedText(for: context)
         editorText = editorAttributedText.string
+        editorTitle = note(for: context)?.title ?? ""
         editorErrorMessage = nil
         isActiveNotePinned = note(for: context)?.isPinned ?? false
     }
@@ -705,7 +752,8 @@ final class AppState: ObservableObject {
                     richTextData: existing.richTextData,
                     createdAt: existing.createdAt,
                     updatedAt: existing.updatedAt,
-                    isPinned: existing.isPinned
+                    isPinned: existing.isPinned,
+                    title: existing.title
                 )
                 upsert(updated)
             }
@@ -716,6 +764,7 @@ final class AppState: ObservableObject {
         activeContext = context
         editorAttributedText = attributedText(for: context)
         editorText = editorAttributedText.string
+        editorTitle = note(for: context)?.title ?? ""
         editorErrorMessage = nil
         isActiveNotePinned = note(for: context)?.isPinned ?? false
     }
@@ -822,8 +871,11 @@ final class AppState: ObservableObject {
             return
         }
 
-        let existingID = note(for: context)?.id ?? UUID()
-        let createdAt = note(for: context)?.createdAt ?? .now
+        let existingNote = note(for: context)
+        let existingID = existingNote?.id ?? UUID()
+        let createdAt = existingNote?.createdAt ?? .now
+        let userTitle = editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentTitle: String? = userTitle.isEmpty ? existingNote?.title : userTitle
         let note = ContextNote(
             id: existingID,
             context: context,
@@ -831,9 +883,55 @@ final class AppState: ObservableObject {
             richTextData: archivedRichText(from: currentAttributedText),
             createdAt: createdAt,
             updatedAt: .now,
-            isPinned: note(for: context)?.isPinned ?? isActiveNotePinned
+            isPinned: existingNote?.isPinned ?? isActiveNotePinned,
+            title: currentTitle
         )
         upsert(note)
+
+        if currentTitle == nil && isAutoTitleEnabled {
+            generateTitleIfNeeded(noteID: existingID, body: trimmed, context: context)
+        }
+    }
+
+    private func generateTitleIfNeeded(noteID: UUID, body: String, context: NoteContext) {
+        Task { [weak self] in
+            guard let self else { return }
+            if let generated = await self.titleGenerator.generateTitle(body: body, context: context) {
+                guard let idx = self.notes.firstIndex(where: { $0.id == noteID }) else { return }
+                let existing = self.notes[idx]
+                // Don't overwrite if a title was set in the meantime
+                guard existing.title == nil || existing.title?.isEmpty == true else { return }
+                let updated = ContextNote(
+                    id: existing.id,
+                    context: existing.context,
+                    body: existing.body,
+                    richTextData: existing.richTextData,
+                    createdAt: existing.createdAt,
+                    updatedAt: existing.updatedAt,
+                    isPinned: existing.isPinned,
+                    title: generated
+                )
+                self.upsert(updated)
+
+                // Update the editor title if the note is currently open
+                if self.isEditorPresented,
+                   self.activeContext?.id == context.id,
+                   self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.editorTitle = generated
+                }
+            }
+        }
+    }
+
+    private func generateTitleFromContext(context: NoteContext) {
+        Task { [weak self] in
+            guard let self else { return }
+            if let generated = await self.titleGenerator.generateTitle(body: "", context: context) {
+                // Only apply if the user hasn't typed a title in the meantime
+                guard self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                self.editorTitle = generated
+            }
+        }
     }
 
     private func currentEditorAttributedTextSnapshot() -> NSAttributedString {

@@ -74,6 +74,10 @@ struct MenuBarContentView: View {
                         setLaunchAtLogin(newValue)
                     }
 
+                Toggle("Auto-generate note titles", isOn: $appState.isAutoTitleEnabled)
+                    .toggleStyle(.checkbox)
+                    .font(.subheadline)
+
                 if launchAtLoginNeedsApproval {
                     HStack(spacing: 6) {
                         Text("Enable NoteSide in System Settings to allow launch on startup.")
