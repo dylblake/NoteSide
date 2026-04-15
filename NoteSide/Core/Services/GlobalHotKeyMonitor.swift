@@ -26,6 +26,11 @@ struct HotKeyShortcut: Codable, Equatable, Hashable {
         modifiers: commandModifier | shiftModifier
     )
 
+    static let dictationDefault = HotKeyShortcut(
+        keyCode: UInt32(kVK_ANSI_D),
+        modifiers: commandModifier | shiftModifier
+    )
+
     static let availableKeys: [KeyOption] = [
         ("A", kVK_ANSI_A), ("B", kVK_ANSI_B), ("C", kVK_ANSI_C), ("D", kVK_ANSI_D),
         ("E", kVK_ANSI_E), ("F", kVK_ANSI_F), ("G", kVK_ANSI_G), ("H", kVK_ANSI_H),
@@ -82,6 +87,15 @@ struct HotKeyShortcut: Codable, Equatable, Hashable {
         let keyCode = UInt32(event.keyCode)
         guard label(for: keyCode) != "?" else { return nil }
         return HotKeyShortcut(keyCode: keyCode, modifiers: modifiers)
+    }
+
+    var nsEventModifierFlags: NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if contains(Self.commandModifier) { flags.insert(.command) }
+        if contains(Self.shiftModifier) { flags.insert(.shift) }
+        if contains(Self.optionModifier) { flags.insert(.option) }
+        if contains(Self.controlModifier) { flags.insert(.control) }
+        return flags
     }
 
     private static func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {

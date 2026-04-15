@@ -76,6 +76,19 @@ struct MenuBarContentView: View {
                 }
                 .fixedSize()
 
+                Text("Dictation Hotkey (Hold)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+
+                Text(appState.dictationHotKeyDisplayString)
+                    .font(.subheadline.weight(.medium))
+
+                ShortcutRecorderView(displayText: appState.dictationHotKeyDisplayString) { shortcut in
+                    appState.setDictationHotKeyShortcut(shortcut)
+                }
+                .fixedSize()
+
                 Text("Click a box, then press the shortcut you want.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

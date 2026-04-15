@@ -49,6 +49,11 @@ final class AppState: ObservableObject {
     @Published var infoStatusMessage: String?
     @Published var selectedNoteIDs: Set<UUID> = []
     @Published var isLicensed: Bool = false
+    @Published var isDictating = false
+    @Published var dictationPartialText = ""
+    @Published var dictationHotKeyShortcut: HotKeyShortcut
+    @Published var isMicrophoneAuthorized = false
+    @Published var isSpeechRecognitionAuthorized = false
 
     private let store: NoteStore
     private let titleGenerator = NoteTitleGenerator()
@@ -56,6 +61,8 @@ final class AppState: ObservableObject {
     private let browserURLProvider = BrowserURLProvider()
     let richTextController = RichTextEditorController()
     private let hotKeyMonitor: GlobalHotKeyMonitor
+    let dictationService = DictationService()
+    private let dictationHotKeyMonitor = DictationHotKeyMonitor()
     private var panelController: NoteEditorPanelController?
     private var allNotesPanelCtrl: AllNotesPanelController?
     private var onboardingWindowController: OnboardingWindowController?
@@ -70,6 +77,7 @@ final class AppState: ObservableObject {
     private static let onboardingDefaultsKey = "hasCompletedOnboarding"
     private static let hotKeyDefaultsKey = "globalHotKeyShortcut"
     private static let allNotesHotKeyDefaultsKey = "allNotesHotKeyShortcut"
+    private static let dictationHotKeyDefaultsKey = "dictationHotKeyShortcut"
     private static let browserPermissionDefaultsPrefix = "browserPermissionState."
     private static let browserPermissionMigrationKey = "browserPermissionStatesMigratedV2"
     static let supportedBrowsers = BrowserURLProvider.supportedBrowsers
@@ -87,6 +95,7 @@ final class AppState: ObservableObject {
         isAutoTitleEnabled = UserDefaults.standard.object(forKey: "autoTitleEnabled") as? Bool ?? true
         hotKeyShortcut = Self.loadHotKeyShortcut()
         allNotesHotKeyShortcut = Self.loadAllNotesHotKeyShortcut()
+        dictationHotKeyShortcut = Self.loadDictationHotKeyShortcut()
         showsDockIcon = false
         notes = store.loadNotes()
 
@@ -99,6 +108,23 @@ final class AppState: ObservableObject {
 
         registerHotKey()
         registerAllNotesHotKey()
+        registerDictationHotKey()
+
+        dictationHotKeyMonitor.onRelease = { [weak self] in
+            self?.stopDictation()
+        }
+
+        dictationService.$partialTranscript
+            .receive(on: RunLoop.main)
+            .assign(to: &$dictationPartialText)
+
+        dictationService.$isMicrophoneAuthorized
+            .receive(on: RunLoop.main)
+            .assign(to: &$isMicrophoneAuthorized)
+
+        dictationService.$isSpeechRecognitionAuthorized
+            .receive(on: RunLoop.main)
+            .assign(to: &$isSpeechRecognitionAuthorized)
 
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .receive(on: RunLoop.main)
@@ -170,16 +196,6 @@ final class AppState: ObservableObject {
         // License gate: require a valid license before opening the editor.
         if !isLicensed {
             presentLicenseWindow()
-            return
-        }
-
-        // First-run gate: if we don't have Accessibility yet, surface the
-        // system prompt and bail out without opening the panel. The user
-        // grants permission, then their next hotkey press opens the editor
-        // for real. This avoids showing an empty/incomplete panel behind the
-        // permission dialog.
-        if !AXIsProcessTrusted() {
-            requestAccessibilityAccessIfNeeded()
             return
         }
 
@@ -305,11 +321,6 @@ final class AppState: ObservableObject {
             return
         }
 
-        if !AXIsProcessTrusted() {
-            requestAccessibilityAccessIfNeeded()
-            return
-        }
-
         if isAllNotesPanelPresented {
             dismissAllNotesPanel()
             return
@@ -357,14 +368,6 @@ final class AppState: ObservableObject {
 
     func openAccessibilitySettings() {
         requestAccessibilityAccessIfNeeded()
-
-        openSettingsPane(candidates: [
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension",
-            "x-apple.systempreferences:com.apple.preference.security"
-        ])
-
         refreshPermissionStatus()
     }
 
@@ -375,6 +378,8 @@ final class AppState: ObservableObject {
         if !wasAccessibilityTrusted && isAccessibilityTrusted {
             refreshBrowserPermissionStates()
         }
+
+        dictationService.refreshPermissionStatus()
     }
 
     func previewCurrentContext() {
@@ -614,8 +619,17 @@ final class AppState: ObservableObject {
         persistAndRegisterAllNotesHotKey()
     }
 
+    func setDictationHotKeyShortcut(_ shortcut: HotKeyShortcut) {
+        dictationHotKeyShortcut = shortcut
+        persistAndRegisterDictationHotKey()
+    }
+
     var allNotesHotKeyDisplayString: String {
         allNotesHotKeyShortcut.displayString
+    }
+
+    var dictationHotKeyDisplayString: String {
+        dictationHotKeyShortcut.displayString
     }
 
     func setShowsDockIcon(_ showsDockIcon: Bool) {
@@ -674,6 +688,12 @@ final class AppState: ObservableObject {
 
     func dismissLicenseWindow() {
         licenseWindowController?.dismiss()
+
+        if isLicensed && !hasCompletedOnboarding {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.presentOnboardingWindow()
+            }
+        }
     }
 
     func deactivateLicense() {
@@ -756,6 +776,17 @@ final class AppState: ObservableObject {
             let shortcut = try? JSONDecoder().decode(HotKeyShortcut.self, from: data)
         else {
             return .allNotesDefault
+        }
+
+        return shortcut
+    }
+
+    private static func loadDictationHotKeyShortcut() -> HotKeyShortcut {
+        guard
+            let data = UserDefaults.standard.data(forKey: dictationHotKeyDefaultsKey),
+            let shortcut = try? JSONDecoder().decode(HotKeyShortcut.self, from: data)
+        else {
+            return .dictationDefault
         }
 
         return shortcut
@@ -1021,6 +1052,14 @@ final class AppState: ObservableObject {
         registerAllNotesHotKey()
     }
 
+    private func persistAndRegisterDictationHotKey() {
+        if let data = try? JSONEncoder().encode(dictationHotKeyShortcut) {
+            UserDefaults.standard.set(data, forKey: Self.dictationHotKeyDefaultsKey)
+        }
+
+        registerDictationHotKey()
+    }
+
     private func applyDockIconPreference() {
         let shouldShowDockIcon = isAllNotesPanelVisible || isOnboardingWindowVisible || isInfoWindowVisible
         showsDockIcon = shouldShowDockIcon
@@ -1031,7 +1070,12 @@ final class AppState: ObservableObject {
         do {
             try hotKeyMonitor.register(id: 1, shortcut: hotKeyShortcut) { [weak self] in
                 Task { @MainActor [weak self] in
-                    await self?.toggleQuickNote()
+                    guard let self else { return }
+                    if !AXIsProcessTrusted() {
+                        self.requestAccessibilityAccessIfNeeded()
+                        return
+                    }
+                    await self.toggleQuickNote()
                 }
             }
             editorErrorMessage = nil
@@ -1044,12 +1088,80 @@ final class AppState: ObservableObject {
         do {
             try hotKeyMonitor.register(id: 2, shortcut: allNotesHotKeyShortcut) { [weak self] in
                 Task { @MainActor [weak self] in
-                    self?.toggleAllNotesPanel()
+                    guard let self else { return }
+                    if !AXIsProcessTrusted() {
+                        self.requestAccessibilityAccessIfNeeded()
+                        return
+                    }
+                    self.toggleAllNotesPanel()
                 }
             }
         } catch {
             editorErrorMessage = error.localizedDescription
         }
+    }
+
+    private func registerDictationHotKey() {
+        do {
+            try hotKeyMonitor.register(id: 3, shortcut: dictationHotKeyShortcut) { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if !AXIsProcessTrusted() {
+                        self.requestAccessibilityAccessIfNeeded()
+                        return
+                    }
+                    self.startDictation()
+                }
+            }
+        } catch {
+            editorErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func startDictation() {
+        guard isEditorPresented, !isDictating else { return }
+
+        guard dictationService.isFullyAuthorized else {
+            requestDictationPermissionsIfNeeded()
+            return
+        }
+
+        dictationService.startListening()
+
+        guard dictationService.state == .listening else { return }
+
+        isDictating = true
+        dictationHotKeyMonitor.startMonitoringRelease(
+            modifiers: dictationHotKeyShortcut.nsEventModifierFlags
+        )
+    }
+
+    private func stopDictation() {
+        guard isDictating else { return }
+        let transcript = dictationService.stopListening()
+        isDictating = false
+        dictationPartialText = ""
+
+        if !transcript.isEmpty {
+            richTextController.insertDictatedText(transcript)
+        }
+    }
+
+    func requestDictationPermissionsIfNeeded() {
+        if !dictationService.isMicrophoneAuthorized {
+            dictationService.requestMicrophonePermission()
+        }
+        if !dictationService.isSpeechRecognitionAuthorized {
+            dictationService.requestSpeechRecognitionPermission()
+        }
+    }
+
+    func requestMicrophoneAccess() {
+        dictationService.requestMicrophonePermission()
+    }
+
+    func requestSpeechRecognitionAccess() {
+        dictationService.requestSpeechRecognitionPermission()
     }
 
     private func navigate(to context: NoteContext) {

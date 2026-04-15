@@ -63,8 +63,9 @@ struct OnboardingView: View {
                         Text("2. Press `\(appState.hotKeyDisplayString)` to open a note for that context.")
                         Text("3. Type your note and press the hotkey again to save.")
                         Text("4. Press `\(appState.allNotesHotKeyDisplayString)` to view all your notes in a panel.")
-                        Text("5. Add #tags to organize notes across contexts.")
-                        Text("6. Notes are automatically titled using on-device AI.")
+                        Text("5. Hold `\(appState.dictationHotKeyDisplayString)` to dictate — release to insert text.")
+                        Text("6. Add #tags to organize notes across contexts.")
+                        Text("7. Notes are automatically titled using on-device AI.")
                     }
 
                     Spacer(minLength: 16)
@@ -91,7 +92,7 @@ struct OnboardingView: View {
     private var permissionsCard: some View {
         onboardingCard(title: "Permissions", systemImage: "lock.shield") {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Accessibility is required for the global hotkey and context capture.")
+                Text("Accessibility is required for the global hotkey and context capture. Microphone and Speech Recognition enable voice-to-text dictation (optional).")
                     .font(.subheadline)
                     .foregroundStyle(NoteSideTheme.secondaryText)
 
@@ -128,7 +129,48 @@ struct OnboardingView: View {
                         browserRequestRow(title: browser.title, bundleIdentifier: browser.bundleIdentifier)
                     }
                 }
+
+                dictationPermissionsSection
             }
+        }
+    }
+
+    private var dictationPermissionsSection: some View {
+        let micDetail: String = appState.isMicrophoneAuthorized
+            ? "Enabled. NoteSide can capture audio for dictation."
+            : "Not enabled. Required for voice-to-text dictation in notes."
+        let micButton: String? = appState.isMicrophoneAuthorized ? nil : "Request Access"
+        let micAction: (() -> Void)? = appState.isMicrophoneAuthorized ? nil : { [appState] in appState.requestMicrophoneAccess() }
+
+        let speechDetail: String = appState.isSpeechRecognitionAuthorized
+            ? "Enabled. On-device speech recognition is available."
+            : "Not enabled. Required for converting speech to text."
+        let speechButton: String? = appState.isSpeechRecognitionAuthorized ? nil : "Request Access"
+        let speechAction: (() -> Void)? = appState.isSpeechRecognitionAuthorized ? nil : { [appState] in appState.requestSpeechRecognitionAccess() }
+
+        return VStack(alignment: .leading, spacing: 16) {
+            Divider()
+                .padding(.vertical, 4)
+
+            Text("Voice-to-Text Dictation")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(NoteSideTheme.primaryText)
+
+            permissionStatusRow(
+                title: "Microphone",
+                detail: micDetail,
+                isGranted: appState.isMicrophoneAuthorized,
+                buttonTitle: micButton,
+                action: micAction
+            )
+
+            permissionStatusRow(
+                title: "Speech Recognition",
+                detail: speechDetail,
+                isGranted: appState.isSpeechRecognitionAuthorized,
+                buttonTitle: speechButton,
+                action: speechAction
+            )
         }
     }
 

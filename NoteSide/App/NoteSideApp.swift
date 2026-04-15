@@ -14,13 +14,18 @@ struct SideNoteApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarContentView()
-                .environmentObject(appState)
-                .onAppear {
-                    if !appState.isLicensed {
-                        appState.presentLicenseWindow()
-                    }
+            Group {
+                if appState.isLicensed {
+                    MenuBarContentView()
+                        .environmentObject(appState)
+                } else {
+                    Color.clear
+                        .frame(width: 0, height: 0)
+                        .onAppear {
+                            appState.presentLicenseWindow()
+                        }
                 }
+            }
         } label: {
             MenuBarIconView()
         }
