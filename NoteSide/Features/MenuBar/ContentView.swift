@@ -46,21 +46,9 @@ struct ContentView: View {
                 .padding(.bottom, isFloatingPanel ? 14 : 18)
                 .animation(.easeInOut(duration: 0.15), value: appState.selectedNoteIDs.isEmpty)
 
-                if isFloatingPanel {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
-                        TextField("Search notes", text: $appState.searchText)
-                            .textFieldStyle(.plain)
-                    }
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.primary.opacity(0.06))
-                    )
-                    .padding(.horizontal, 18)
+                TagSearchField(text: $appState.searchText)
+                    .padding(.horizontal, isFloatingPanel ? 18 : 24)
                     .padding(.bottom, 10)
-                }
 
                 ScrollView {
                     Color.clear
@@ -84,7 +72,6 @@ struct ContentView: View {
                     .padding(.horizontal, isFloatingPanel ? 18 : 24)
                     .padding(.bottom, isFloatingPanel ? 18 : 24)
                 }
-                .searchable(text: $appState.searchText, prompt: "Search notes")
             }
             .onChange(of: appState.allNotesScrollResetID) { _, _ in
                 proxy.scrollTo("top", anchor: .top)
@@ -539,6 +526,10 @@ private struct NoteTile: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            if !note.tags.isEmpty {
+                NoteTagPills(tags: note.tags)
+            }
+
             Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -805,41 +796,33 @@ private struct NoteListRow: View {
     }
 
     private var rowContent: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Circle()
-                .fill(tint)
-                .frame(width: 8, height: 8)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 12) {
+                Circle()
+                    .fill(tint)
+                    .frame(width: 8, height: 8)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(NoteCardStyle.primaryTitle(for: note))
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                if let subtitle = NoteCardStyle.secondarySubtitle(for: note), !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(NoteCardStyle.primaryTitle(for: note))
+                        .font(.headline)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
+                        .truncationMode(.tail)
+
+                    if let subtitle = NoteCardStyle.secondarySubtitle(for: note), !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
                 }
-            }
-            .frame(width: 220, alignment: .leading)
+                .frame(width: 220, alignment: .leading)
 
-            if !note.body.isEmpty {
-                Text(note.body)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
                 Spacer(minLength: 0)
-            }
 
-            Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -879,6 +862,21 @@ private struct NoteListRow: View {
                     }
                 )
             }
+            }
+
+            if !note.body.isEmpty {
+                Text(note.body)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.leading, 20)
+            }
+
+            if !note.tags.isEmpty {
+                NoteTagPills(tags: note.tags, limit: 3)
+                    .padding(.leading, 20)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -894,6 +892,153 @@ private struct NoteListRow: View {
         .contentShape(Rectangle())
         .onTapGesture {
             appState.open(note)
+        }
+    }
+}
+
+private struct TagSearchField: View {
+    @Binding var text: String
+    @State private var shouldPlaceCursor = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TagColoredTextField(text: $text, placeCursorAtEnd: shouldPlaceCursor)
+                .onChange(of: shouldPlaceCursor) { _, newValue in
+                    if newValue {
+                        DispatchQueue.main.async { shouldPlaceCursor = false }
+                    }
+                }
+
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                if !text.hasPrefix("#") {
+                    text = "#"
+                }
+                shouldPlaceCursor = true
+            } label: {
+                Text("#")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(text.hasPrefix("#") ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
+                    .frame(width: 24, height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(text.hasPrefix("#") ? NoteSideTheme.accent.opacity(0.15) : Color.primary.opacity(0.06))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Search by tag")
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+    }
+}
+
+private struct TagColoredTextField: NSViewRepresentable {
+    @Binding var text: String
+    var placeCursorAtEnd: Bool = false
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField()
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 13)
+        field.placeholderString = "Search notes"
+        field.delegate = context.coordinator
+        field.cell?.lineBreakMode = .byTruncatingTail
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        if field.stringValue != text {
+            field.stringValue = text
+            Coordinator.applyTagColoring(to: field)
+
+            if placeCursorAtEnd {
+                DispatchQueue.main.async {
+                    field.window?.makeFirstResponder(field)
+                    if let editor = field.currentEditor() {
+                        editor.selectedRange = NSRange(location: field.stringValue.count, length: 0)
+                    }
+                    Coordinator.applyTagColoring(to: field)
+                }
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        private let parent: TagColoredTextField
+        private static let tagPattern = try! NSRegularExpression(pattern: #"#\w+"#)
+
+        init(_ parent: TagColoredTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            parent.text = field.stringValue
+            Self.applyTagColoring(to: field)
+        }
+
+        static func applyTagColoring(to field: NSTextField) {
+            guard let editor = field.currentEditor() as? NSTextView,
+                  let storage = editor.textStorage else { return }
+            let text = storage.string
+            let fullRange = NSRange(location: 0, length: storage.length)
+
+            storage.beginEditing()
+            storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: fullRange)
+            let matches = tagPattern.matches(in: text, range: fullRange)
+            for match in matches {
+                storage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: match.range)
+            }
+            storage.endEditing()
+        }
+    }
+}
+
+private struct NoteTagPills: View {
+    let tags: [String]
+    var limit: Int = 10
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(tags.prefix(limit), id: \.self) { tag in
+                Text("#\(tag)")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(NoteSideTheme.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(NoteSideTheme.accent.opacity(0.15))
+                    )
+            }
+            if tags.count > limit {
+                Text("+\(tags.count - limit)")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+            }
         }
     }
 }

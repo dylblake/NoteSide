@@ -41,6 +41,22 @@ struct ContextNote: Codable, Identifiable, Hashable {
         case title
     }
 
+    private static let tagRegex = try! NSRegularExpression(pattern: #"(?:^|\s)#(\w+)"#)
+
+    var tags: [String] {
+        let nsBody = body as NSString
+        let matches = Self.tagRegex.matches(in: body, range: NSRange(location: 0, length: nsBody.length))
+        var seen = Set<String>()
+        var result: [String] = []
+        for match in matches {
+            let tag = nsBody.substring(with: match.range(at: 1)).lowercased()
+            if seen.insert(tag).inserted {
+                result.append(tag)
+            }
+        }
+        return result
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)

@@ -47,20 +47,15 @@ final class AllNotesPanelController {
         animationSequence += 1
         let sequence = animationSequence
         let finalFrame = paneFrame(for: screen)
-        let startFrame = collapsedFrame(for: screen)
 
-        if let contentView = panel.contentView {
-            contentView.autoresizingMask = [.height]
-            contentView.frame = NSRect(
-                x: startFrame.width - finalFrame.width,
-                y: 0,
-                width: finalFrame.width,
-                height: startFrame.height
-            )
-        }
+        let offScreenFrame = NSRect(
+            x: screen.visibleFrame.maxX,
+            y: finalFrame.minY,
+            width: finalFrame.width,
+            height: finalFrame.height
+        )
 
-        panel.animator().alphaValue = panel.alphaValue
-        panel.setFrame(startFrame, display: false)
+        panel.setFrame(offScreenFrame, display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         panel.makeKey()
@@ -71,22 +66,11 @@ final class AllNotesPanelController {
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(finalFrame, display: true)
             panel.animator().alphaValue = 1
-            if let contentView = panel.contentView {
-                contentView.animator().frame = NSRect(
-                    origin: .zero,
-                    size: finalFrame.size
-                )
-            }
         }, completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.animationSequence == sequence else { return }
                 panel.setFrame(finalFrame, display: false)
                 panel.alphaValue = 1
-
-                if let contentView = panel.contentView {
-                    contentView.autoresizingMask = [.width, .height]
-                    contentView.frame = NSRect(origin: .zero, size: finalFrame.size)
-                }
             }
         })
     }
@@ -115,6 +99,14 @@ final class AllNotesPanelController {
                 panel.alphaValue = 1
             }
         })
+    }
+
+    func repositionToActiveScreenIfNeeded() {
+        guard let panel, panel.isVisible else { return }
+        let pointerLocation = NSEvent.mouseLocation
+        guard let target = NSScreen.screens.first(where: { NSMouseInRect(pointerLocation, $0.frame, false) }) else { return }
+        guard let currentScreen = panel.screen, currentScreen.frame != target.frame else { return }
+        panel.setFrame(paneFrame(for: target), display: true, animate: false)
     }
 
     private func paneFrame(for screen: NSScreen) -> NSRect {

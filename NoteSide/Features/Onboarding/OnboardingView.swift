@@ -59,17 +59,25 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("1. Switch to any app, browser tab, or Finder item.")
-                        Text("2. Press `\(appState.hotKeyDisplayString)`.")
-                        Text("3. Type a short note and press the hotkey again to save.")
-                        Text("4. Return to that same context later and press the hotkey to see the note again.")
+                        Text("1. Switch to any app, browser tab, or file.")
+                        Text("2. Press `\(appState.hotKeyDisplayString)` to open a note for that context.")
+                        Text("3. Type your note and press the hotkey again to save.")
+                        Text("4. Press `\(appState.allNotesHotKeyDisplayString)` to view all your notes in a panel.")
+                        Text("5. Add #tags to organize notes across contexts.")
+                        Text("6. Notes are automatically titled using on-device AI.")
                     }
 
                     Spacer(minLength: 16)
 
-                    primaryButton("Open a Context Note") {
-                        Task {
-                            await appState.toggleQuickNote()
+                    VStack(spacing: 10) {
+                        primaryButton("Open a Context Note") {
+                            Task {
+                                await appState.toggleQuickNote()
+                            }
+                        }
+
+                        primaryButton("Open All Notes") {
+                            appState.toggleAllNotesPanel()
                         }
                     }
                 }
