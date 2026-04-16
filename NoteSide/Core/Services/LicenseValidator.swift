@@ -67,99 +67,88 @@ struct LicenseValidator {
         return payload
     }
 
-    // MARK: - Persistence (Keychain)
+    // MARK: - Persistence (UserDefaults)
 
-    private static let keychainService = "com.noteside.license"
-    private static let keychainAccount = "license-key"
+    private static let licenseDefaultsKey = "com.noteside.license-key"
 
     static func storedLicenseKey() -> String? {
-        // Try the modern data protection keychain first.
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseDataProtectionKeychain as String: true,
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        if status == errSecSuccess,
-           let data = result as? Data,
-           let key = String(data: data, encoding: .utf8) {
+        if let key = UserDefaults.standard.string(forKey: licenseDefaultsKey) {
             return key
         }
 
-        // Fall back to the legacy file-based keychain for users
-        // upgrading from a version that stored the key there.
-        // If found, migrate it to the data protection keychain
-        // and delete the legacy entry.
-        if let key = legacyStoredLicenseKey() {
+        // Migrate from legacy keychain storage for users upgrading
+        // from a version that stored the key there.
+        if let key = legacyKeychainLicenseKey() {
             storeLicenseKey(key)
-            deleteLegacyLicenseKey()
+            deleteLegacyKeychainKey()
             return key
         }
 
         return nil
     }
 
-    private static func legacyStoredLicenseKey() -> String? {
-        let query: [String: Any] = [
+    static func storeLicenseKey(_ key: String) {
+        UserDefaults.standard.set(key, forKey: licenseDefaultsKey)
+    }
+
+    static func removeLicenseKey() {
+        UserDefaults.standard.removeObject(forKey: licenseDefaultsKey)
+    }
+
+    // MARK: - Legacy keychain migration
+
+    private static let keychainService = "com.noteside.license"
+    private static let keychainAccount = "license-key"
+
+    private static func legacyKeychainLicenseKey() -> String? {
+        // Check data protection keychain
+        let dpQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseDataProtectionKeychain as String: true,
+        ]
+        var result: AnyObject?
+        if SecItemCopyMatching(dpQuery as CFDictionary, &result) == errSecSuccess,
+           let data = result as? Data,
+           let key = String(data: data, encoding: .utf8) {
+            return key
+        }
+
+        // Check legacy file-based keychain
+        let legacyQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let key = String(data: data, encoding: .utf8)
-        else { return nil }
-        return key
+        result = nil
+        if SecItemCopyMatching(legacyQuery as CFDictionary, &result) == errSecSuccess,
+           let data = result as? Data,
+           let key = String(data: data, encoding: .utf8) {
+            return key
+        }
+
+        return nil
     }
 
-    private static func deleteLegacyLicenseKey() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-        ]
-        SecItemDelete(query as CFDictionary)
-    }
-
-    static func storeLicenseKey(_ key: String) {
-        let data = Data(key.utf8)
-
-        // Delete any existing entry first
-        let deleteQuery: [String: Any] = [
+    private static func deleteLegacyKeychainKey() {
+        let dpQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
             kSecUseDataProtectionKeychain as String: true,
         ]
-        SecItemDelete(deleteQuery as CFDictionary)
+        SecItemDelete(dpQuery as CFDictionary)
 
-        let addQuery: [String: Any] = [
+        let legacyQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount,
-            kSecValueData as String: data,
-            kSecUseDataProtectionKeychain as String: true,
         ]
-        SecItemAdd(addQuery as CFDictionary, nil)
-    }
-
-    static func removeLicenseKey() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-            kSecUseDataProtectionKeychain as String: true,
-        ]
-        SecItemDelete(query as CFDictionary)
+        SecItemDelete(legacyQuery as CFDictionary)
     }
 }
