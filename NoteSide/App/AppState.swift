@@ -678,6 +678,7 @@ final class AppState: ObservableObject {
     }
 
     func presentLicenseWindow() {
+        guard !isLicensed else { return }
         if licenseWindowController == nil {
             let controller = LicenseWindowController()
             controller.install(appState: self)

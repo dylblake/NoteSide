@@ -21,6 +21,9 @@ struct LicenseView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(background)
+        .onAppear {
+            isActivated = false
+        }
     }
 
     private var background: some View {
