@@ -60,8 +60,8 @@ The app prompts for these when needed.
 ## Version
 
 <!-- VERSION_BLOCK_START -->
-- Version: `1.0.1`
-- Build: `7`
+- Version: `1.2.1`
+- Build: `10`
 <!-- VERSION_BLOCK_END -->
 
 ## Notes

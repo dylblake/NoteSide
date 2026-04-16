@@ -66,6 +66,13 @@ final class RichTextEditorController {
         textView.window?.makeFirstResponder(textView)
     }
 
+    func insertDictatedText(_ text: String) {
+        guard let textView, !text.isEmpty else { return }
+        let range = textView.selectedRange()
+        textView.insertText(text, replacementRange: range)
+        textView.didChangeText()
+    }
+
     func currentAttributedText() -> NSAttributedString? {
         guard let textView else { return nil }
         return NSAttributedString(attributedString: textView.attributedString())

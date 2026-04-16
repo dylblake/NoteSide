@@ -112,6 +112,14 @@ struct FloatingNoteEditorView: View {
                         controller: appState.richTextController
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                    DictationIndicatorView(
+                        isDictating: appState.isDictating,
+                        partialText: appState.dictationPartialText,
+                        hotkeyLabel: appState.dictationHotKeyDisplayString
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(.easeInOut(duration: 0.2), value: appState.isDictating)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
@@ -248,5 +256,45 @@ struct FloatingNoteEditorView: View {
                 Capsule(style: .continuous)
                     .fill(isActive ? NoteSideTheme.accent : NoteSideTheme.contentBackground)
             )
+    }
+}
+
+private struct DictationIndicatorView: View {
+    let isDictating: Bool
+    let partialText: String
+    let hotkeyLabel: String
+    @State private var scale: CGFloat = 1.0
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "waveform")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isDictating ? NoteSideTheme.accent : NoteSideTheme.quaternaryText)
+                .scaleEffect(x: 1.0, y: isDictating ? scale : 1.0)
+                .animation(
+                    isDictating
+                        ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true)
+                        : .default,
+                    value: scale
+                )
+
+            if isDictating {
+                if !partialText.isEmpty {
+                    Text(partialText)
+                        .font(.caption)
+                        .foregroundStyle(NoteSideTheme.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+            } else {
+                Text("Hold \(hotkeyLabel) for voice dictation")
+                    .font(.caption)
+                    .foregroundStyle(NoteSideTheme.quaternaryText)
+            }
+        }
+        .padding(.bottom, 4)
+        .onChange(of: isDictating) { _, active in
+            scale = active ? 1.4 : 1.0
+        }
     }
 }
