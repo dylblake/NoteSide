@@ -70,7 +70,6 @@ final class RichTextEditorController {
         guard let textView, !text.isEmpty else { return }
         let range = textView.selectedRange()
         textView.insertText(text, replacementRange: range)
-        textView.didChangeText()
     }
 
     func currentAttributedText() -> NSAttributedString? {
@@ -189,13 +188,11 @@ final class RichTextEditorController {
 
         if trimmedParagraph == "•" {
             textView.insertText("", replacementRange: paragraphRange)
-            textView.didChangeText()
             return true
         }
 
         if let kind = numberedListKind(in: trimmedParagraph), trimmedParagraph == listMarker(for: kind) {
             textView.insertText("", replacementRange: paragraphRange)
-            textView.didChangeText()
             return true
         }
 
@@ -287,7 +284,6 @@ final class RichTextEditorController {
         let indent = leadingIndent(in: beforeCaret)
         let lineRange = NSRange(location: paragraphRange.location, length: beforeCaret.utf16.count)
         textView.insertText(indent + replacement, replacementRange: lineRange)
-        textView.didChangeText()
         notifySelectionAttributesChange()
         return true
     }
@@ -351,7 +347,6 @@ final class RichTextEditorController {
 
         let updatedText = transformedLines.joined(separator: "\n")
         textView.insertText(updatedText, replacementRange: paragraphRange)
-        textView.didChangeText()
         notifySelectionAttributesChange()
     }
 
@@ -378,7 +373,6 @@ final class RichTextEditorController {
         let normalizedBlockText = renumberNumberedLists(in: updatedBlockText)
 
         textView.insertText(normalizedBlockText, replacementRange: blockRange)
-        textView.didChangeText()
         notifySelectionAttributesChange()
         return true
     }
@@ -390,7 +384,6 @@ final class RichTextEditorController {
         textView.insertText(prefix, replacementRange: textView.selectedRange())
         let insertedRange = NSRange(location: textView.selectedRange().location - prefix.count, length: prefix.count)
         textView.textStorage?.addAttributes(insertionAttributes, range: insertedRange)
-        textView.didChangeText()
         notifySelectionAttributesChange()
     }
 
@@ -402,7 +395,6 @@ final class RichTextEditorController {
         attributes[.font] = font(for: .body, basedOn: currentFont)
         textView.typingAttributes = attributes
         textView.insertText("\n", replacementRange: textView.selectedRange())
-        textView.didChangeText()
         notifySelectionAttributesChange()
     }
 

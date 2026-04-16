@@ -27,6 +27,11 @@ struct RichTextEditor: NSViewRepresentable {
         textView.insertionPointColor = .labelColor
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticLinkDetectionEnabled = false
         textView.textContainerInset = NSSize(width: 0, height: 4)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
@@ -60,10 +65,12 @@ struct RichTextEditor: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         controller.attach(textView)
 
-        let normalized = controller.normalizedAttributedText(attributedText)
-        if !textView.attributedString().isEqual(to: normalized) {
+        if textView.string != attributedText.string {
+            let savedOrigin = scrollView.contentView.bounds.origin
+            let normalized = controller.normalizedAttributedText(attributedText)
             textView.textStorage?.setAttributedString(normalized)
             Coordinator.colorTags(in: textView)
+            scrollView.contentView.setBoundsOrigin(savedOrigin)
             DispatchQueue.main.async {
                 controller.notifySelectionAttributesChange()
             }
@@ -86,19 +93,17 @@ struct RichTextEditor: NSViewRepresentable {
         private static let tagPattern = try! NSRegularExpression(pattern: #"#\w+"#)
 
         static func colorTags(in textView: NSTextView) {
-            guard let storage = textView.textStorage else { return }
+            guard let layoutManager = textView.layoutManager,
+                  let storage = textView.textStorage else { return }
             let fullRange = NSRange(location: 0, length: storage.length)
             let text = storage.string
 
-            storage.beginEditing()
-            // Reset all tag-colored text back to label color
-            storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: fullRange)
-            // Apply accent color to #tags
+            // Use temporary attributes (display-only) to avoid layout invalidation
+            layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
             let matches = tagPattern.matches(in: text, range: fullRange)
             for match in matches {
-                storage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: match.range)
+                layoutManager.addTemporaryAttribute(.foregroundColor, value: NSColor.controlAccentColor, forCharacterRange: match.range)
             }
-            storage.endEditing()
         }
 
         func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
