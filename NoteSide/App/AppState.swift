@@ -222,19 +222,29 @@ final class AppState {
         editorText = editorAttributedText.string
         editorTitle = existingNote?.title ?? ""
         isActiveNotePinned = existingNote?.isPinned ?? false
+
+        // Generate title BEFORE presenting so it's visible during the open animation.
+        if isAutoTitleEnabled && editorTitle.isEmpty {
+            if let existingNote, !existingNote.body.isEmpty {
+                if let generated = await titleGenerator.generateTitle(body: existingNote.body, context: initialContext) {
+                    editorTitle = generated
+                    let updated = ContextNote(
+                        id: existingNote.id, context: existingNote.context, body: existingNote.body,
+                        richTextData: existingNote.richTextData, createdAt: existingNote.createdAt,
+                        updatedAt: existingNote.updatedAt, isPinned: existingNote.isPinned, title: generated
+                    )
+                    upsert(updated)
+                }
+            } else {
+                if let generated = await titleGenerator.generateTitle(body: "", context: initialContext) {
+                    editorTitle = generated
+                }
+            }
+        }
+
         isEditorPresented = true
         startContextPolling()
         noteEditorPanelController.present()
-
-        // Generate a title if the note has none and auto-title is on.
-        if isAutoTitleEnabled && editorTitle.isEmpty {
-            if let existingNote, !existingNote.body.isEmpty {
-                generateTitleIfNeeded(noteID: existingNote.id, body: existingNote.body, context: initialContext)
-            } else {
-                // New note with no body yet — generate from context alone.
-                generateTitleFromContext(context: initialContext)
-            }
-        }
 
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
@@ -408,28 +418,39 @@ final class AppState {
         ])
     }
 
-    func edit(_ note: ContextNote) {
+    func edit(_ note: ContextNote) async {
         activeContext = note.context
         editorAttributedText = attributedText(for: note)
         editorText = editorAttributedText.string
         editorTitle = note.title ?? ""
         editorErrorMessage = nil
         isActiveNotePinned = note.isPinned
+
+        // Generate title BEFORE presenting so it's visible during the open animation.
+        if isAutoTitleEnabled && editorTitle.isEmpty && !note.body.isEmpty {
+            if let generated = await titleGenerator.generateTitle(body: note.body, context: note.context) {
+                editorTitle = generated
+                let updated = ContextNote(
+                    id: note.id, context: note.context, body: note.body,
+                    richTextData: note.richTextData, createdAt: note.createdAt,
+                    updatedAt: note.updatedAt, isPinned: note.isPinned, title: generated
+                )
+                upsert(updated)
+            }
+        }
+
         isEditorPresented = true
         startContextPolling()
         noteEditorPanelController.present()
-
-        if isAutoTitleEnabled && editorTitle.isEmpty && !note.body.isEmpty {
-            generateTitleIfNeeded(noteID: note.id, body: note.body, context: note.context)
-        }
     }
 
     func open(_ note: ContextNote) {
         dismissAllNotesPanel()
         navigate(to: note.context)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.edit(note)
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            await self?.edit(note)
         }
     }
 
