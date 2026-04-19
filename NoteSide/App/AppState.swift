@@ -269,7 +269,7 @@ final class AppState {
         if trimmed.isEmpty {
             if let existing = note(for: context) {
                 notes.removeAll { $0.id == existing.id }
-                store.save(notes: notes)
+                persistNotes()
             }
         } else {
             let existingNote = note(for: context)
@@ -459,7 +459,7 @@ final class AppState {
 
     func delete(_ note: ContextNote) {
         notes.removeAll { $0.id == note.id }
-        store.save(notes: notes)
+        persistNotes()
     }
 
     func toggleSelection(_ noteID: UUID) {
@@ -478,7 +478,7 @@ final class AppState {
         guard !selectedNoteIDs.isEmpty else { return }
         let toDelete = selectedNoteIDs
         notes.removeAll { toDelete.contains($0.id) }
-        store.save(notes: notes)
+        persistNotes()
         selectedNoteIDs.removeAll()
     }
 
@@ -504,7 +504,7 @@ final class AppState {
                 title: note.title
             )
         }
-        store.save(notes: notes)
+        persistNotes()
 
         // Sync the editor's pin state if its active note was in the selection.
         if let context = activeContext,
@@ -1066,7 +1066,15 @@ final class AppState {
     private func upsert(_ note: ContextNote) {
         notes.removeAll { $0.context.id == note.context.id }
         notes.append(note)
-        store.save(notes: notes)
+        persistNotes()
+    }
+
+    private func persistNotes() {
+        do {
+            try store.save(notes: notes)
+        } catch {
+            editorErrorMessage = "Could not save notes: \(error.localizedDescription)"
+        }
     }
 
     private func persistEditorStateForActiveContext() {
@@ -1077,7 +1085,7 @@ final class AppState {
         if trimmed.isEmpty {
             if let existing = note(for: context) {
                 notes.removeAll { $0.id == existing.id }
-                store.save(notes: notes)
+                persistNotes()
             }
             return
         }
