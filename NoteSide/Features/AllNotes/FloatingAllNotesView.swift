@@ -1,14 +1,14 @@
 import SwiftUI
 
 struct FloatingAllNotesView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
     private let cardCornerRadius: CGFloat = 28
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 16) {
                 ContentView(isFloatingPanel: true)
-                    .environmentObject(appState)
+                    .environment(appState)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .clipped()
                     .background(

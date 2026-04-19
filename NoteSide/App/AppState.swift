@@ -9,51 +9,53 @@ import AppKit
 import ApplicationServices
 import Combine
 import Foundation
+import Observation
 import SwiftUI
 
 @MainActor
-final class AppState: ObservableObject {
+@Observable
+final class AppState {
     enum BrowserPermissionState: String {
         case notInstalled
         case notGranted
         case granted
     }
 
-    @Published var hasCompletedOnboarding: Bool
-    @Published var isAccessibilityTrusted = AXIsProcessTrusted()
-    @Published var isBrowserAutomationGranted = false
-    @Published var onboardingContextPreview: NoteContext?
-    @Published var browserAutomationMessage = "Put Safari, Chrome, or Arc in front, then test browser access."
-    @Published private(set) var browserPermissionStates: [String: BrowserPermissionState] = [:]
-    @Published private(set) var notes: [ContextNote] = []
-    @Published var activeContext: NoteContext?
-    @Published var editorText = ""
-    @Published var editorAttributedText = NSAttributedString(string: "")
-    @Published var editorErrorMessage: String?
-    @Published var isEditorPresented = false
-    @Published var searchText = ""
-    @Published var hotKeyShortcut: HotKeyShortcut
-    @Published var allNotesHotKeyShortcut: HotKeyShortcut
-    @Published var isAllNotesPanelPresented = false
-    @Published var showsDockIcon: Bool
-    @Published var allNotesScrollResetID = UUID()
-    @Published var currentEditorTextStyle: RichTextEditorController.TextStyle = .body
-    @Published var isEditorBoldActive = false
-    @Published var isEditorItalicActive = false
-    @Published var isEditorUnderlineActive = false
-    @Published var isActiveNotePinned = false
-    @Published var editorTitle = ""
-    @Published var isAutoTitleEnabled: Bool {
+    var hasCompletedOnboarding: Bool
+    var isAccessibilityTrusted = AXIsProcessTrusted()
+    var isBrowserAutomationGranted = false
+    var onboardingContextPreview: NoteContext?
+    var browserAutomationMessage = "Put Safari, Chrome, or Arc in front, then test browser access."
+    private(set) var browserPermissionStates: [String: BrowserPermissionState] = [:]
+    private(set) var notes: [ContextNote] = []
+    var activeContext: NoteContext?
+    var editorText = ""
+    var editorAttributedText = NSAttributedString(string: "")
+    var editorErrorMessage: String?
+    var isEditorPresented = false
+    var searchText = ""
+    var hotKeyShortcut: HotKeyShortcut
+    var allNotesHotKeyShortcut: HotKeyShortcut
+    var isAllNotesPanelPresented = false
+    var showsDockIcon: Bool
+    var allNotesScrollResetID = UUID()
+    var currentEditorTextStyle: RichTextEditorController.TextStyle = .body
+    var isEditorBoldActive = false
+    var isEditorItalicActive = false
+    var isEditorUnderlineActive = false
+    var isActiveNotePinned = false
+    var editorTitle = ""
+    var isAutoTitleEnabled: Bool {
         didSet { UserDefaults.standard.set(isAutoTitleEnabled, forKey: "autoTitleEnabled") }
     }
-    @Published var infoStatusMessage: String?
-    @Published var selectedNoteIDs: Set<UUID> = []
-    @Published var isLicensed: Bool = false
-    @Published var isDictating = false
-    @Published var dictationPartialText = ""
-    @Published var dictationHotKeyShortcut: HotKeyShortcut
-    @Published var isMicrophoneAuthorized = false
-    @Published var isSpeechRecognitionAuthorized = false
+    var infoStatusMessage: String?
+    var selectedNoteIDs: Set<UUID> = []
+    var isLicensed: Bool = false
+    var isDictating = false
+    var dictationPartialText = ""
+    var dictationHotKeyShortcut: HotKeyShortcut
+    var isMicrophoneAuthorized = false
+    var isSpeechRecognitionAuthorized = false
 
     private let store: NoteStore
     private let titleGenerator = NoteTitleGenerator()
@@ -117,15 +119,18 @@ final class AppState: ObservableObject {
 
         dictationService.$partialTranscript
             .receive(on: RunLoop.main)
-            .assign(to: &$dictationPartialText)
+            .sink { [weak self] value in self?.dictationPartialText = value }
+            .store(in: &cancellables)
 
         dictationService.$isMicrophoneAuthorized
             .receive(on: RunLoop.main)
-            .assign(to: &$isMicrophoneAuthorized)
+            .sink { [weak self] value in self?.isMicrophoneAuthorized = value }
+            .store(in: &cancellables)
 
         dictationService.$isSpeechRecognitionAuthorized
             .receive(on: RunLoop.main)
-            .assign(to: &$isSpeechRecognitionAuthorized)
+            .sink { [weak self] value in self?.isSpeechRecognitionAuthorized = value }
+            .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .receive(on: RunLoop.main)
@@ -1156,7 +1161,7 @@ final class AppState: ObservableObject {
     private func applyDockIconPreference() {
         let shouldShowDockIcon = isAllNotesPanelVisible || isOnboardingWindowVisible || isInfoWindowVisible
         showsDockIcon = shouldShowDockIcon
-        NSApp.setActivationPolicy(shouldShowDockIcon ? .regular : .accessory)
+        NSApp?.setActivationPolicy(shouldShowDockIcon ? .regular : .accessory)
     }
 
     private func registerHotKey() {

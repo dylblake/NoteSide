@@ -11,7 +11,7 @@ final class LicenseWindowController: NSObject, NSWindowDelegate {
         self.appState = appState
 
         let rootView = LicenseView()
-            .environmentObject(appState)
+            .environment(appState)
 
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(

@@ -11,7 +11,7 @@ final class InfoWindowController: NSObject, NSWindowDelegate {
         self.appState = appState
 
         let rootView = InfoView()
-            .environmentObject(appState)
+            .environment(appState)
 
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(

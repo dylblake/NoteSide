@@ -15,7 +15,7 @@ final class AllNotesPanelController {
 
     func install(appState: AppState) {
         let rootView = FloatingAllNotesView()
-            .environmentObject(appState)
+            .environment(appState)
 
         let hostingController = NSHostingController(rootView: rootView)
         let panel = NoteEditorPanel(

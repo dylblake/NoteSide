@@ -11,7 +11,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         self.appState = appState
 
         let rootView = OnboardingView()
-            .environmentObject(appState)
+            .environment(appState)
 
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(
