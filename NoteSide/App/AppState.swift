@@ -295,7 +295,6 @@ final class AppState {
 
     func dismissEditor() {
         isEditorPresented = false
-        isActiveNotePinned = false
         stopContextPolling()
         panelController?.dismiss()
     }
