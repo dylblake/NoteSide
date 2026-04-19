@@ -387,21 +387,14 @@ nonisolated struct ContextResolver: Sendable {
             return documentURL
         }
 
-        var focusedWindowValue: CFTypeRef?
-        let focusedWindowStatus = AXUIElementCopyAttributeValue(
-            appElement,
+        guard let focusedWindow = axElementAttribute(
             kAXFocusedWindowAttribute as CFString,
-            &focusedWindowValue
-        )
-
-        guard
-            focusedWindowStatus == .success,
-            let focusedWindow = focusedWindowValue
-        else {
+            from: appElement
+        ) else {
             return nil
         }
 
-        return preferredDocumentURL(startingAt: focusedWindow as! AXUIElement)
+        return preferredDocumentURL(startingAt: focusedWindow)
     }
 
     private func preferredWorkspaceRootURL(for app: NSRunningApplication) -> URL? {
@@ -1044,6 +1037,7 @@ nonisolated struct ContextResolver: Sendable {
     }
 
     private func axElementAttribute(_ attribute: CFString, from element: AXUIElement) -> AXUIElement? {
+        // AXUIElement is a CoreFoundation type — the cast always succeeds when non-nil.
         copyAttribute(attribute, from: element).map { $0 as! AXUIElement }
     }
 
