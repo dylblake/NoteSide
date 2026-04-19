@@ -27,7 +27,10 @@ final class AppState {
     var onboardingContextPreview: NoteContext?
     var browserAutomationMessage = "Put Safari, Chrome, or Arc in front, then test browser access."
     private(set) var browserPermissionStates: [String: BrowserPermissionState] = [:]
-    private(set) var notes: [ContextNote] = []
+    private(set) var notes: [ContextNote] = [] {
+        didSet { _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt } }
+    }
+    private var _sortedNotes: [ContextNote] = []
     var activeContext: NoteContext?
     var editorText = ""
     var editorAttributedText = NSAttributedString(string: "")
@@ -101,6 +104,7 @@ final class AppState {
         dictationHotKeyShortcut = Self.loadDictationHotKeyShortcut()
         showsDockIcon = false
         notes = store.loadNotes()
+        _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
 
         richTextController.onSelectionAttributesChange = { [weak self] formattingState in
             self?.currentEditorTextStyle = formattingState.textStyle
@@ -764,9 +768,7 @@ final class AppState {
         Array(sortedNotes.prefix(5))
     }
 
-    private var sortedNotes: [ContextNote] {
-        notes.sorted { $0.updatedAt > $1.updatedAt }
-    }
+    private var sortedNotes: [ContextNote] { _sortedNotes }
 
     private static func migrateBrowserPermissionStatesIfNeeded() {
         let defaults = UserDefaults.standard

@@ -9,6 +9,7 @@ struct ContextNote: Codable, Identifiable, Hashable {
     let updatedAt: Date
     let isPinned: Bool
     let title: String?
+    let tags: [String]
 
     init(
         id: UUID,
@@ -28,6 +29,7 @@ struct ContextNote: Codable, Identifiable, Hashable {
         self.updatedAt = updatedAt
         self.isPinned = isPinned
         self.title = title
+        self.tags = Self.extractTags(from: body)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -43,9 +45,9 @@ struct ContextNote: Codable, Identifiable, Hashable {
 
     private static let tagRegex = try! NSRegularExpression(pattern: #"(?:^|\s)#(\w+)"#)
 
-    var tags: [String] {
+    private static func extractTags(from body: String) -> [String] {
         let nsBody = body as NSString
-        let matches = Self.tagRegex.matches(in: body, range: NSRange(location: 0, length: nsBody.length))
+        let matches = tagRegex.matches(in: body, range: NSRange(location: 0, length: nsBody.length))
         var seen = Set<String>()
         var result: [String] = []
         for match in matches {
@@ -67,5 +69,18 @@ struct ContextNote: Codable, Identifiable, Hashable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
         title = try container.decodeIfPresent(String.self, forKey: .title)
+        tags = Self.extractTags(from: body)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(context, forKey: .context)
+        try container.encode(body, forKey: .body)
+        try container.encodeIfPresent(richTextData, forKey: .richTextData)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(isPinned, forKey: .isPinned)
+        try container.encodeIfPresent(title, forKey: .title)
     }
 }

@@ -384,6 +384,8 @@ struct ContentView: View {
         return components[0]
     }
 
+    private static var editorNameCache: [String: String] = [:]
+
     private func editorName(for bundleIdentifier: String?) -> String? {
         guard let bundleIdentifier else { return nil }
 
@@ -397,13 +399,19 @@ struct ContentView: View {
         case "com.visualstudio.code.oss":
             return "Code OSS"
         default:
+            if let cached = Self.editorNameCache[bundleIdentifier] {
+                return cached
+            }
             guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
                   let bundle = Bundle(url: appURL) else {
                 return nil
             }
-
-            return bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                 ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+            if let name {
+                Self.editorNameCache[bundleIdentifier] = name
+            }
+            return name
         }
     }
 }
