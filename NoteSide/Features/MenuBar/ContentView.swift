@@ -14,7 +14,7 @@ private enum AllNotesViewMode: String {
 }
 
 struct ContentView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
     @State private var showingBulkDeleteConfirmation = false
     @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
 
@@ -30,6 +30,7 @@ struct ContentView: View {
     ]
 
     var body: some View {
+        @Bindable var appState = appState
         let content = ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -61,10 +62,10 @@ struct ContentView: View {
                                 switch viewMode {
                                 case .grid:
                                     NoteTileSection(section: section)
-                                            .environmentObject(appState)
+                                            .environment(appState)
                                 case .list:
                                     NoteListSection(section: section)
-                                        .environmentObject(appState)
+                                        .environment(appState)
                                 }
                             }
                         }
@@ -383,6 +384,8 @@ struct ContentView: View {
         return components[0]
     }
 
+    private static var editorNameCache: [String: String] = [:]
+
     private func editorName(for bundleIdentifier: String?) -> String? {
         guard let bundleIdentifier else { return nil }
 
@@ -396,13 +399,19 @@ struct ContentView: View {
         case "com.visualstudio.code.oss":
             return "Code OSS"
         default:
+            if let cached = Self.editorNameCache[bundleIdentifier] {
+                return cached
+            }
             guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
                   let bundle = Bundle(url: appURL) else {
                 return nil
             }
-
-            return bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                 ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+            if let name {
+                Self.editorNameCache[bundleIdentifier] = name
+            }
+            return name
         }
     }
 }
@@ -422,7 +431,7 @@ private struct NoteTileGroup: Identifiable {
 }
 
 private struct NoteTileSection: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
 
     let section: NoteTileSectionModel
 
@@ -440,7 +449,7 @@ private struct NoteTileSection: View {
             VStack(alignment: .leading, spacing: 18) {
                 ForEach(section.groups) { group in
                     NoteGroupTile(group: group)
-                        .environmentObject(appState)
+                        .environment(appState)
                 }
             }
         }
@@ -448,7 +457,7 @@ private struct NoteTileSection: View {
 }
 
 private struct NoteGroupTile: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
 
     let group: NoteTileGroup
 
@@ -477,7 +486,7 @@ private struct NoteGroupTile: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
                 ForEach(group.notes) { note in
                     NoteTile(note: note)
-                        .environmentObject(appState)
+                        .environment(appState)
                 }
             }
         }
@@ -486,7 +495,7 @@ private struct NoteGroupTile: View {
 }
 
 private struct NoteTile: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
     @State private var showingDeleteConfirmation = false
 
     let note: ContextNote
@@ -708,7 +717,7 @@ private enum NoteCardStyle {
 }
 
 private struct NoteListSection: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
 
     let section: NoteTileSectionModel
 
@@ -726,7 +735,7 @@ private struct NoteListSection: View {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(section.groups) { group in
                     NoteListGroup(group: group)
-                        .environmentObject(appState)
+                        .environment(appState)
                 }
             }
         }
@@ -734,7 +743,7 @@ private struct NoteListSection: View {
 }
 
 private struct NoteListGroup: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
 
     let group: NoteTileGroup
 
@@ -758,7 +767,7 @@ private struct NoteListGroup: View {
             VStack(spacing: 6) {
                 ForEach(group.notes) { note in
                     NoteListRow(note: note)
-                        .environmentObject(appState)
+                        .environment(appState)
                 }
             }
         }
@@ -767,7 +776,7 @@ private struct NoteListGroup: View {
 }
 
 private struct NoteListRow: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
     @State private var showingDeleteConfirmation = false
 
     let note: ContextNote

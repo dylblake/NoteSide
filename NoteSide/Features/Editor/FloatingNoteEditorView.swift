@@ -1,11 +1,12 @@
 import SwiftUI
 
 struct FloatingNoteEditorView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
     @State private var showingDeleteConfirmation = false
     private let noteCardCornerRadius: CGFloat = 28
 
     var body: some View {
+        @Bindable var appState = appState
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 14) {

@@ -4,13 +4,14 @@ import ServiceManagement
 import SwiftUI
 
 struct MenuBarContentView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
     @StateObject private var updateChecker = UpdateChecker()
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @State private var launchAtLoginNeedsApproval: Bool = false
 
     var body: some View {
+        @Bindable var appState = appState
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {

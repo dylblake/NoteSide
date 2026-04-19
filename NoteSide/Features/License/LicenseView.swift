@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LicenseView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(AppState.self) private var appState
     @State private var licenseKey = ""
     @State private var errorMessage: String?
     @State private var isActivated = false

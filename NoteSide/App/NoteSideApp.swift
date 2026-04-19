@@ -10,14 +10,14 @@ import SwiftUI
 
 @main
 struct SideNoteApp: App {
-    @StateObject private var appState = AppState()
+    @State private var appState = AppState()
 
     var body: some Scene {
         MenuBarExtra {
             Group {
                 if appState.isLicensed {
                     MenuBarContentView()
-                        .environmentObject(appState)
+                        .environment(appState)
                 } else {
                     Color.clear
                         .frame(width: 0, height: 0)
