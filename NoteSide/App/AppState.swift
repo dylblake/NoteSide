@@ -70,6 +70,7 @@ final class AppState: ObservableObject {
     private var licenseWindowController: LicenseWindowController?
     private var cancellables: Set<AnyCancellable> = []
     private var pendingAutomationRequests: Set<String> = []
+    private var contextPollingTask: Task<Void, Never>?
     private var isAllNotesPanelVisible = false
     private var isOnboardingWindowVisible = false
     private var isInfoWindowVisible = false
@@ -138,43 +139,34 @@ final class AppState: ObservableObject {
             .sink { [weak self] _ in
                 guard let self else { return }
 
-                // Capture the panel's current visual state BEFORE the
-                // context refresh so the cross-screen transition has an
-                // image of the *old* context to use for the collapsing
-                // ghost. The expanding ghost on the new screen will use
-                // a fresh snapshot taken inside repositionToActiveScreenIfNeeded
-                // after SwiftUI has re-rendered the panel for the new
-                // context.
                 let oldSnapshot = self.panelController?.captureCurrentSnapshot()
 
-                // Refresh inside a no-animation Transaction so SwiftUI's
-                // contentTransition / .animation(value: activeContext.id)
-                // on the editor header doesn't cross-fade the title and
-                // path text. Without this, the snapshot we take below would
-                // land mid-fade and capture an invisible header — exactly
-                // the bug where the expanding ghost showed an empty editor.
-                withTransaction(Transaction(animation: nil)) {
-                    self.refreshEditorContextIfNeeded()
-                }
+                Task { [weak self] in
+                    guard let self else { return }
 
-                // Defer the reposition by one runloop tick so SwiftUI's
-                // re-render of the editor for the new context has time to
-                // commit to the contentView's layer. Without this hop the
-                // "new" snapshot would still show the old context.
-                DispatchQueue.main.async { [weak self] in
-                    self?.panelController?.repositionToActiveScreenIfNeeded(
-                        oldContextSnapshot: oldSnapshot
-                    )
-                    self?.allNotesPanelCtrl?.repositionToActiveScreenIfNeeded()
-                }
-            }
-            .store(in: &cancellables)
+                    if self.isEditorPresented {
+                        // Resolve context on a background thread so
+                        // AppleScript / Accessibility API calls don't
+                        // block the UI.
+                        let context = await self.resolveCurrentContextAsync()
+                        guard self.isEditorPresented else { return }
 
-        Timer.publish(every: 0.6, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                guard let self, self.isEditorPresented, self.shouldRefreshDetailedContext else { return }
-                self.refreshEditorContextIfNeeded()
+                        // Suppress SwiftUI's contentTransition animation
+                        // so the snapshot captured below isn't mid-fade.
+                        withTransaction(Transaction(animation: nil)) {
+                            self.applyRefreshedContext(context)
+                        }
+                    }
+
+                    // Defer the reposition by one runloop tick so SwiftUI's
+                    // re-render has time to commit to the layer.
+                    DispatchQueue.main.async { [weak self] in
+                        self?.panelController?.repositionToActiveScreenIfNeeded(
+                            oldContextSnapshot: oldSnapshot
+                        )
+                        self?.allNotesPanelCtrl?.repositionToActiveScreenIfNeeded()
+                    }
+                }
             }
             .store(in: &cancellables)
 
@@ -226,6 +218,7 @@ final class AppState: ObservableObject {
         editorTitle = existingNote?.title ?? ""
         isActiveNotePinned = existingNote?.isPinned ?? false
         isEditorPresented = true
+        startContextPolling()
         noteEditorPanelController.present()
 
         // Generate a title if the note has none and auto-title is on.
@@ -238,9 +231,11 @@ final class AppState: ObservableObject {
             }
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.resolveInitialQuickNoteContext(from: initialContext, sourceBundleIdentifier: sourceBundleIdentifier)
-            self?.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard let self, self.isEditorPresented else { return }
+            await self.resolveInitialQuickNoteContextAsync(from: initialContext, sourceBundleIdentifier: sourceBundleIdentifier)
+            self.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
         }
     }
 
@@ -286,6 +281,7 @@ final class AppState: ObservableObject {
     func dismissEditor() {
         isEditorPresented = false
         isActiveNotePinned = false
+        stopContextPolling()
         panelController?.dismiss()
     }
 
@@ -415,6 +411,7 @@ final class AppState: ObservableObject {
         editorErrorMessage = nil
         isActiveNotePinned = note.isPinned
         isEditorPresented = true
+        startContextPolling()
         noteEditorPanelController.present()
 
         if isAutoTitleEnabled && editorTitle.isEmpty && !note.body.isEmpty {
@@ -824,11 +821,30 @@ final class AppState: ObservableObject {
         isActiveNotePinned = note(for: context)?.isPinned ?? false
     }
 
+    private func resolveInitialQuickNoteContextAsync(from fallbackContext: NoteContext, sourceBundleIdentifier: String?) async {
+        guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
+
+        let context = await resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier)
+        guard context.id != fallbackContext.id else { return }
+
+        let hasUnsavedEditorText = !editorAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !hasUnsavedEditorText else { return }
+
+        activeContext = context
+        editorAttributedText = attributedText(for: context)
+        editorText = editorAttributedText.string
+        editorTitle = note(for: context)?.title ?? ""
+        editorErrorMessage = nil
+        isActiveNotePinned = note(for: context)?.isPinned ?? false
+    }
+
     private func refreshEditorContextIfNeeded() {
         guard isEditorPresented else { return }
-
         let context = resolveCurrentContext()
+        applyRefreshedContext(context)
+    }
 
+    private func applyRefreshedContext(_ context: NoteContext) {
         // Same logical note (matching id), but the file was renamed/moved or
         // some display field changed. Refresh the active context and rewrite
         // the persisted note's context so the panel shows the new name and
@@ -897,6 +913,56 @@ final class AppState: ObservableObject {
         return contextResolver.resolveCurrentContext(allowBrowserAutomation: allowBrowserAutomation)
     }
 
+    /// Async version of resolveCurrentContext that runs AppleScript and
+    /// Accessibility API calls on a background thread, keeping the main
+    /// thread free for UI work.
+    private func resolveCurrentContextAsync(preferredBundleIdentifier: String? = nil) async -> NoteContext {
+        let bundleIdentifier = preferredBundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let permissionStates = browserPermissionStates
+        let browserProvider = browserURLProvider
+        let resolver = contextResolver
+
+        let shouldAttemptBrowserAutomation: Bool = {
+            guard let bundleId = bundleIdentifier else { return false }
+            guard browserProvider.supports(bundleIdentifier: bundleId) else { return false }
+            let state = permissionStates[bundleId]
+            return state == .granted || state == nil
+        }()
+        let isFirstAttempt = shouldAttemptBrowserAutomation
+            && (bundleIdentifier.map { permissionStates[$0] == nil } ?? false)
+
+        // Run the heavy AppleScript / Accessibility work off the main thread
+        let (context, probeSuccess): (NoteContext, Bool?) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var probeSuccess: Bool? = nil
+
+                if isFirstAttempt, let bundleId = bundleIdentifier {
+                    let attempt = browserProvider.accessAttempt(bundleIdentifier: bundleId, activatesBrowser: false)
+                    switch attempt.result {
+                    case .success: probeSuccess = true
+                    case .automationDenied: probeSuccess = false
+                    default: break
+                    }
+                }
+
+                var allowBrowserAutomation = bundleIdentifier.map { permissionStates[$0] == .granted } ?? false
+                if probeSuccess == true {
+                    allowBrowserAutomation = true
+                }
+
+                let resolved = resolver.resolveCurrentContext(allowBrowserAutomation: allowBrowserAutomation)
+                continuation.resume(returning: (resolved, probeSuccess))
+            }
+        }
+
+        // Apply probe results back on main actor
+        if let probeSuccess, let bundleId = bundleIdentifier {
+            setBrowserPermissionState(probeSuccess ? .granted : .notGranted, for: bundleId)
+        }
+
+        return context
+    }
+
     private var shouldRefreshDetailedContext: Bool {
         guard let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else {
             return false
@@ -909,6 +975,32 @@ final class AppState: ObservableObject {
             return true
         }
         return Self.intraAppPollingBundleIdentifiers.contains(bundleIdentifier)
+    }
+
+    /// Starts a background polling loop that periodically re-resolves the
+    /// current context for apps that support intra-app context changes
+    /// (browser tabs, editor files, Slack channels, etc.). The heavy
+    /// AppleScript / Accessibility work runs off the main thread.
+    private func startContextPolling() {
+        stopContextPolling()
+        contextPollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { break }
+                guard let self, self.isEditorPresented, self.shouldRefreshDetailedContext else {
+                    if self == nil { break }
+                    continue
+                }
+                let context = await self.resolveCurrentContextAsync()
+                guard !Task.isCancelled, self.isEditorPresented else { break }
+                self.applyRefreshedContext(context)
+            }
+        }
+    }
+
+    private func stopContextPolling() {
+        contextPollingTask?.cancel()
+        contextPollingTask = nil
     }
 
     private static let intraAppPollingBundleIdentifiers: Set<String> = [
