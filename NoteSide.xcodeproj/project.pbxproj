@@ -411,7 +411,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_LSUIElement = NO;
+				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab and Finder selection so notes can attach to the right context.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dylan Evans";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "NoteSide uses the microphone for voice-to-text dictation in your notes.";
@@ -450,7 +450,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_LSUIElement = NO;
+				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab and Finder selection so notes can attach to the right context.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dylan Evans";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "NoteSide uses the microphone for voice-to-text dictation in your notes.";
