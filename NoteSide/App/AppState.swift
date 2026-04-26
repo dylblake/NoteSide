@@ -36,6 +36,7 @@ final class AppState {
     var editorAttributedText = NSAttributedString(string: "")
     var editorErrorMessage: String?
     var isEditorPresented = false
+    var isViewingOrphanedNote = false
     var searchText = ""
     var hotKeyShortcut: HotKeyShortcut
     var allNotesHotKeyShortcut: HotKeyShortcut
@@ -299,6 +300,7 @@ final class AppState {
 
     func dismissEditor() {
         isEditorPresented = false
+        isViewingOrphanedNote = false
         stopContextPolling()
         panelController?.dismiss()
     }
@@ -449,11 +451,19 @@ final class AppState {
 
     func open(_ note: ContextNote) {
         dismissAllNotesPanel()
-        navigate(to: note.context)
 
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(350))
-            await self?.edit(note)
+        if isContextReachable(note.context) {
+            navigate(to: note.context)
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(350))
+                await self?.edit(note)
+            }
+        } else {
+            isViewingOrphanedNote = true
+            Task { [weak self] in
+                await self?.edit(note)
+                self?.editorErrorMessage = "Original context is no longer available"
+            }
         }
     }
 
@@ -872,6 +882,11 @@ final class AppState {
     }
 
     private func applyRefreshedContext(_ context: NoteContext) {
+        // When the user explicitly opened an orphaned note (whose context no
+        // longer exists), don't let polling switch the editor to whatever app
+        // is currently in front.
+        if isViewingOrphanedNote { return }
+
         // Same logical note (matching id), but the file was renamed/moved or
         // some display field changed. Refresh the active context and rewrite
         // the persisted note's context so the panel shows the new name and
@@ -1367,6 +1382,36 @@ final class AppState {
         }
 
         NSWorkspace.shared.open(fileURL)
+    }
+
+    private func isContextReachable(_ context: NoteContext) -> Bool {
+        switch context.kind {
+        case .file:
+            if let bookmarkData = context.fileBookmarkData {
+                var isStale = false
+                if let resolvedURL = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: [.withoutUI, .withSecurityScope],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    let didStartAccessing = resolvedURL.startAccessingSecurityScopedResource()
+                    let exists = FileManager.default.fileExists(atPath: resolvedURL.path)
+                    if didStartAccessing { resolvedURL.stopAccessingSecurityScopedResource() }
+                    return exists
+                }
+            }
+            let path = context.secondaryLabel ?? context.identifier
+            return FileManager.default.fileExists(atPath: path)
+        case .url:
+            let urlString = context.secondaryLabel ?? context.identifier
+            if let url = URL(string: urlString), url.isFileURL {
+                return FileManager.default.fileExists(atPath: url.path)
+            }
+            return true
+        case .application:
+            return true
+        }
     }
 
     private func resolvedFileURL(for context: NoteContext) -> (url: URL, stopAccessing: Bool)? {
