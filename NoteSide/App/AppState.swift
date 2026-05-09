@@ -1153,12 +1153,15 @@ final class AppState {
 
     private func stopDictation() {
         guard isDictating else { return }
-        let transcript = dictationService.stopListening()
         isDictating = false
         dictationPartialText = ""
 
-        if !transcript.isEmpty {
-            richTextController.insertDictatedText(transcript)
+        Task { [weak self] in
+            guard let self else { return }
+            let transcript = await self.dictationService.stopListening()
+            if !transcript.isEmpty {
+                self.richTextController.insertDictatedText(transcript)
+            }
         }
     }
 
