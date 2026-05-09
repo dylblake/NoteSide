@@ -442,46 +442,38 @@ nonisolated struct ContextResolver: Sendable {
         return documentURLs.first
     }
 
-    private func ancestorDocumentURLs(startingAt element: AXUIElement) -> [URL] {
-        var currentElement: AXUIElement? = element
-        var urls: [URL] = []
-
-        for _ in 0..<12 {
-            guard let unwrappedElement = currentElement else { break }
-
-            if let documentURL = documentURL(from: unwrappedElement) {
-                urls.append(documentURL)
-            }
-
-            currentElement = copyAttribute(
-                kAXParentAttribute as CFString,
-                from: unwrappedElement
-            ) as! AXUIElement?
+    private func ancestorValues<T>(startingAt element: AXUIElement, maxDepth: Int = 12, extract: (AXUIElement) -> T?) -> [T] {
+        var current: AXUIElement? = element
+        var results: [T] = []
+        for _ in 0..<maxDepth {
+            guard let el = current else { break }
+            if let value = extract(el) { results.append(value) }
+            current = copyAttribute(kAXParentAttribute as CFString, from: el) as! AXUIElement?
         }
-
-        return urls
+        return results
     }
 
-    private func descendantDocumentURLs(startingAt element: AXUIElement) -> [URL] {
+    private func descendantValues<T>(startingAt element: AXUIElement, maxNodes: Int = 256, extract: (AXUIElement) -> T?) -> [T] {
         var queue: [AXUIElement] = [element]
-        var urls: [URL] = []
+        var results: [T] = []
         var visited = Set<CFHashCode>()
-
-        while !queue.isEmpty && visited.count < 256 {
+        while !queue.isEmpty && visited.count < maxNodes {
             let current = queue.removeFirst()
-            let currentHash = CFHash(current)
-            guard visited.insert(currentHash).inserted else { continue }
-
-            if let documentURL = documentURL(from: current) {
-                urls.append(documentURL)
-            }
-
+            guard visited.insert(CFHash(current)).inserted else { continue }
+            if let value = extract(current) { results.append(value) }
             if let children = copyAttribute(kAXChildrenAttribute as CFString, from: current) as? [AXUIElement] {
                 queue.append(contentsOf: children)
             }
         }
+        return results
+    }
 
-        return urls
+    private func ancestorDocumentURLs(startingAt element: AXUIElement) -> [URL] {
+        ancestorValues(startingAt: element, extract: documentURL(from:))
+    }
+
+    private func descendantDocumentURLs(startingAt element: AXUIElement) -> [URL] {
+        descendantValues(startingAt: element, extract: documentURL(from:))
     }
 
     private func documentURL(from element: AXUIElement) -> URL? {
@@ -955,45 +947,11 @@ nonisolated struct ContextResolver: Sendable {
     }
 
     private func ancestorDocumentStrings(startingAt element: AXUIElement) -> [String] {
-        var currentElement: AXUIElement? = element
-        var strings: [String] = []
-
-        for _ in 0..<12 {
-            guard let unwrappedElement = currentElement else { break }
-
-            if let documentString = documentString(from: unwrappedElement) {
-                strings.append(documentString)
-            }
-
-            currentElement = copyAttribute(
-                kAXParentAttribute as CFString,
-                from: unwrappedElement
-            ) as! AXUIElement?
-        }
-
-        return strings
+        ancestorValues(startingAt: element, extract: documentString(from:))
     }
 
     private func descendantDocumentStrings(startingAt element: AXUIElement) -> [String] {
-        var queue: [AXUIElement] = [element]
-        var strings: [String] = []
-        var visited = Set<CFHashCode>()
-
-        while !queue.isEmpty && visited.count < 256 {
-            let current = queue.removeFirst()
-            let currentHash = CFHash(current)
-            guard visited.insert(currentHash).inserted else { continue }
-
-            if let documentString = documentString(from: current) {
-                strings.append(documentString)
-            }
-
-            if let children = copyAttribute(kAXChildrenAttribute as CFString, from: current) as? [AXUIElement] {
-                queue.append(contentsOf: children)
-            }
-        }
-
-        return strings
+        descendantValues(startingAt: element, extract: documentString(from:))
     }
 
     private var slackIgnoredTokens: Set<String> {
