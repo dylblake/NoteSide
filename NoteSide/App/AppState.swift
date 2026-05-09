@@ -28,9 +28,13 @@ final class AppState {
     var browserAutomationMessage = "Put Safari, Chrome, or Arc in front, then test browser access."
     private(set) var browserPermissionStates: [String: BrowserPermissionState] = [:]
     private(set) var notes: [ContextNote] = [] {
-        didSet { _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt } }
+        didSet {
+            _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
+            _notesByContextID = Dictionary(uniqueKeysWithValues: notes.map { ($0.context.id, $0) })
+        }
     }
     private var _sortedNotes: [ContextNote] = []
+    private var _notesByContextID: [String: ContextNote] = [:]
     var activeContext: NoteContext?
     var editorText = ""
     var editorAttributedText = NSAttributedString(string: "")
@@ -106,6 +110,7 @@ final class AppState {
         showsDockIcon = false
         notes = store.loadNotes()
         _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
+        _notesByContextID = Dictionary(uniqueKeysWithValues: notes.map { ($0.context.id, $0) })
 
         richTextController.onSelectionAttributesChange = { [weak self] formattingState in
             self?.currentEditorTextStyle = formattingState.textStyle
@@ -819,7 +824,7 @@ final class AppState {
     }
 
     private func note(for context: NoteContext) -> ContextNote? {
-        notes.first { $0.context.id == context.id }
+        _notesByContextID[context.id]
     }
 
     private func quickApplicationContext(for app: NSRunningApplication?) -> NoteContext {
@@ -1070,8 +1075,9 @@ final class AppState {
     }
 
     private func upsert(_ note: ContextNote) {
-        notes.removeAll { $0.context.id == note.context.id }
-        notes.append(note)
+        var updated = notes.filter { $0.context.id != note.context.id }
+        updated.append(note)
+        notes = updated
         store.save(notes: notes)
     }
 
