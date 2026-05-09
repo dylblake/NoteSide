@@ -484,26 +484,13 @@ private struct NoteGroupTile: View {
 
 private struct NoteTile: View {
     @Environment(AppState.self) private var appState
-    @State private var showingDeleteConfirmation = false
 
     let note: ContextNote
 
-    private var isSelected: Bool {
-        appState.selectedNoteIDs.contains(note.id)
-    }
-
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Button {
-                appState.toggleSelection(note.id)
-            } label: {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isSelected ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
+            NoteSelectionCheckbox(noteID: note.id)
+                .environment(appState)
 
             cardContent
         }
@@ -560,40 +547,11 @@ private struct NoteTile: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                appState.togglePin(note)
-            } label: {
-                Image(systemName: note.isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help(note.isPinned ? "Unpin" : "Pin")
+            NotePinButton(note: note)
+                .environment(appState)
 
-            Button(role: .destructive) {
-                showingDeleteConfirmation = true
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(NoteSideTheme.secondaryText)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help("Delete")
-            .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
-                DeleteConfirmationPopover(
-                    onConfirm: {
-                        showingDeleteConfirmation = false
-                        appState.delete(note)
-                    },
-                    onCancel: {
-                        showingDeleteConfirmation = false
-                    }
-                )
-            }
+            NoteDeleteButton(note: note)
+                .environment(appState)
         }
     }
 
@@ -774,28 +732,15 @@ private struct NoteListGroup: View {
 
 private struct NoteListRow: View {
     @Environment(AppState.self) private var appState
-    @State private var showingDeleteConfirmation = false
 
     let note: ContextNote
-
-    private var isSelected: Bool {
-        appState.selectedNoteIDs.contains(note.id)
-    }
 
     private var tint: Color { NoteCardStyle.tint(for: note) }
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Button {
-                appState.toggleSelection(note.id)
-            } label: {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isSelected ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
+            NoteSelectionCheckbox(noteID: note.id)
+                .environment(appState)
 
             rowContent
         }
@@ -834,40 +779,11 @@ private struct NoteListRow: View {
                 .lineLimit(1)
                 .fixedSize()
 
-            Button {
-                appState.togglePin(note)
-            } label: {
-                Image(systemName: note.isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help(note.isPinned ? "Unpin" : "Pin")
+            NotePinButton(note: note)
+                .environment(appState)
 
-            Button(role: .destructive) {
-                showingDeleteConfirmation = true
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(NoteSideTheme.secondaryText)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help("Delete")
-            .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
-                DeleteConfirmationPopover(
-                    onConfirm: {
-                        showingDeleteConfirmation = false
-                        appState.delete(note)
-                    },
-                    onCancel: {
-                        showingDeleteConfirmation = false
-                    }
-                )
-            }
+            NoteDeleteButton(note: note)
+                .environment(appState)
             }
 
             if !note.body.isEmpty {
