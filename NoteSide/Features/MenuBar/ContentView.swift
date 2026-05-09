@@ -221,6 +221,7 @@ struct ContentView: View {
             helperText: nil,
             groups: sortedNotes.isEmpty ? [] : [
                 NoteTileGroup(
+                    id: "pinned",
                     title: "",
                     subtitle: nil,
                     notes: sortedNotes
@@ -238,8 +239,9 @@ struct ContentView: View {
         subtitle: ([ContextNote]) -> String?
     ) -> NoteTileSectionModel {
         let grouped = Dictionary(grouping: notes, by: key)
-            .map { _, notes in
+            .map { groupKey, notes in
                 NoteTileGroup(
+                    id: groupKey,
                     title: groupTitle(notes),
                     subtitle: subtitle(notes),
                     notes: notes.sorted { $0.updatedAt > $1.updatedAt }
@@ -335,6 +337,7 @@ struct ContentView: View {
                     helperText: nil,
                     groups: [
                         NoteTileGroup(
+                            id: site,
                             title: "",
                             subtitle: nil,
                             notes: siteNotes.sorted { $0.updatedAt > $1.updatedAt }
@@ -424,7 +427,7 @@ private struct NoteTileSectionModel: Identifiable {
 }
 
 private struct NoteTileGroup: Identifiable {
-    let id = UUID()
+    let id: String
     let title: String
     let subtitle: String?
     let notes: [ContextNote]
