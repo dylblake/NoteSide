@@ -603,7 +603,7 @@ final class AppState {
     }
 
     func setShowsDockIcon(_ showsDockIcon: Bool) {
-        self.showsDockIcon = false
+        self.showsDockIcon = showsDockIcon
         applyDockIconPreference()
     }
 

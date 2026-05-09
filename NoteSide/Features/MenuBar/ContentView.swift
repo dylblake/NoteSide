@@ -298,21 +298,6 @@ struct ContentView: View {
         return "\(editor)::\(root)"
     }
 
-    private func fileGroupTitle(for context: NoteContext) -> String {
-        let rootPath = context.sourceRootPath ?? context.secondaryLabel ?? context.identifier
-        let displayRoot = shortenedPath(rootPath)
-
-        if let editorName = NoteCardStyle.editorName(for: context.sourceBundleIdentifier) {
-            return "\(displayRoot) (\(editorName))"
-        }
-
-        return displayRoot
-    }
-
-    private func fileGroupSubtitle(for context: NoteContext) -> String? {
-        context.sourceRootPath ?? context.secondaryLabel
-    }
-
     private func codebaseSections(for notes: [ContextNote]) -> [NoteTileSectionModel] {
         let grouped = Dictionary(grouping: notes) { note in
             note.context.sourceRootPath ?? note.context.identifier
@@ -381,13 +366,6 @@ struct ContentView: View {
     private func codeEditorGroupKey(for context: NoteContext) -> String {
         let editor = context.sourceBundleIdentifier ?? "unknown"
         return "\(editor)::\(context.identifier)"
-    }
-
-    private func codeEditorGroupTitle(for context: NoteContext) -> String {
-        if let editorName = NoteCardStyle.editorName(for: context.sourceBundleIdentifier) {
-            return "\(context.displayName) (\(editorName))"
-        }
-        return context.displayName
     }
 
     private func shortenedPath(_ path: String) -> String {
