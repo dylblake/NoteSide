@@ -222,18 +222,29 @@ struct FloatingNoteEditorView: View {
         Rectangle()
             .fill(.thickMaterial)
             .mask(
-                LinearGradient(
-                    gradient: Gradient(stops: [
+                Canvas { context, size in
+                    // Horizontal fade: transparent at left/right edges, full in the middle
+                    let horizontal = Gradient(stops: [
                         .init(color: .clear, location: 0.0),
                         .init(color: .black.opacity(0.6), location: 0.15),
                         .init(color: .black, location: 0.35),
                         .init(color: .black, location: 0.65),
                         .init(color: .black.opacity(0.6), location: 0.85),
                         .init(color: .clear, location: 1.0)
-                    ]),
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
+                    ])
+                    // Vertical fade: transparent at top, full from ~40% down
+                    let vertical = Gradient(stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black, location: 0.4),
+                        .init(color: .black, location: 1.0)
+                    ])
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.drawLayer { ctx in
+                        ctx.fill(Path(rect), with: .linearGradient(horizontal, startPoint: .init(x: 0, y: size.height / 2), endPoint: .init(x: size.width, y: size.height / 2)))
+                    }
+                    context.blendMode = .destinationIn
+                    context.fill(Path(rect), with: .linearGradient(vertical, startPoint: .zero, endPoint: .init(x: 0, y: size.height)))
+                }
             )
             .padding(.horizontal, -40)
             .padding(.vertical, -16)
