@@ -506,16 +506,7 @@ final class AppState {
 
         notes = notes.map { note in
             guard selected.contains(note.id) else { return note }
-            return ContextNote(
-                id: note.id,
-                context: note.context,
-                body: note.body,
-                richTextData: note.richTextData,
-                createdAt: note.createdAt,
-                updatedAt: .now,
-                isPinned: nextPinned,
-                title: note.title
-            )
+            return note.copying(updatedAt: .now, isPinned: nextPinned)
         }
         store.save(notes: notes)
 
@@ -530,16 +521,7 @@ final class AppState {
     }
 
     func togglePin(_ note: ContextNote) {
-        let updatedNote = ContextNote(
-            id: note.id,
-            context: note.context,
-            body: note.body,
-            richTextData: note.richTextData,
-            createdAt: note.createdAt,
-            updatedAt: .now,
-            isPinned: !note.isPinned,
-            title: note.title
-        )
+        let updatedNote = note.copying(updatedAt: .now, isPinned: !note.isPinned)
         upsert(updatedNote)
 
         if activeContext?.id == note.context.id {
@@ -592,17 +574,7 @@ final class AppState {
 
         // If editor is empty but there's an existing note, just update the pin state
         if let existingNote = note(for: context) {
-            let updatedNote = ContextNote(
-                id: existingNote.id,
-                context: existingNote.context,
-                body: existingNote.body,
-                richTextData: existingNote.richTextData,
-                createdAt: existingNote.createdAt,
-                updatedAt: .now,
-                isPinned: nextPinnedState,
-                title: existingNote.title
-            )
-            upsert(updatedNote)
+            upsert(existingNote.copying(updatedAt: .now, isPinned: nextPinnedState))
         }
     }
 
@@ -893,17 +865,7 @@ final class AppState {
             guard context != active else { return }
             activeContext = context
             if let existing = note(for: context) {
-                let updated = ContextNote(
-                    id: existing.id,
-                    context: context,
-                    body: existing.body,
-                    richTextData: existing.richTextData,
-                    createdAt: existing.createdAt,
-                    updatedAt: existing.updatedAt,
-                    isPinned: existing.isPinned,
-                    title: existing.title
-                )
-                upsert(updated)
+                upsert(existing.copying(context: context))
             }
             return
         }
@@ -1135,17 +1097,7 @@ final class AppState {
                 let existing = self.notes[idx]
                 // Don't overwrite if a title was set in the meantime
                 guard existing.title == nil || existing.title?.isEmpty == true else { return }
-                let updated = ContextNote(
-                    id: existing.id,
-                    context: existing.context,
-                    body: existing.body,
-                    richTextData: existing.richTextData,
-                    createdAt: existing.createdAt,
-                    updatedAt: existing.updatedAt,
-                    isPinned: existing.isPinned,
-                    title: generated
-                )
-                self.upsert(updated)
+                self.upsert(existing.copying(title: .some(generated)))
 
                 // Update the editor title if the note is currently open
                 if self.isEditorPresented,
