@@ -180,6 +180,12 @@ final class AppState {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak self] _ in
+                self?.store.flush()
+            }
+            .store(in: &cancellables)
+
         refreshPermissionStatus()
         applyDockIconPreference()
         checkStoredLicense()
@@ -295,6 +301,7 @@ final class AppState {
             }
         }
 
+        store.flush()
         dismissEditor()
     }
 
