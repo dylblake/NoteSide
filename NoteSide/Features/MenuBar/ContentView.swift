@@ -302,7 +302,7 @@ struct ContentView: View {
         let rootPath = context.sourceRootPath ?? context.secondaryLabel ?? context.identifier
         let displayRoot = shortenedPath(rootPath)
 
-        if let editorName = editorName(for: context.sourceBundleIdentifier) {
+        if let editorName = NoteCardStyle.editorName(for: context.sourceBundleIdentifier) {
             return "\(displayRoot) (\(editorName))"
         }
 
@@ -384,7 +384,7 @@ struct ContentView: View {
     }
 
     private func codeEditorGroupTitle(for context: NoteContext) -> String {
-        if let editorName = editorName(for: context.sourceBundleIdentifier) {
+        if let editorName = NoteCardStyle.editorName(for: context.sourceBundleIdentifier) {
             return "\(context.displayName) (\(editorName))"
         }
         return context.displayName
@@ -402,36 +402,6 @@ struct ContentView: View {
         return components[0]
     }
 
-    private static var editorNameCache: [String: String] = [:]
-
-    private func editorName(for bundleIdentifier: String?) -> String? {
-        guard let bundleIdentifier else { return nil }
-
-        switch bundleIdentifier {
-        case "com.apple.dt.Xcode":
-            return "Xcode"
-        case "com.microsoft.VSCode":
-            return "VSCode"
-        case "com.microsoft.VSCodeInsiders":
-            return "VSCode Insiders"
-        case "com.visualstudio.code.oss":
-            return "Code OSS"
-        default:
-            if let cached = Self.editorNameCache[bundleIdentifier] {
-                return cached
-            }
-            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
-                  let bundle = Bundle(url: appURL) else {
-                return nil
-            }
-            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
-            if let name {
-                Self.editorNameCache[bundleIdentifier] = name
-            }
-            return name
-        }
-    }
 }
 
 private struct NoteTileSectionModel: Identifiable {
@@ -710,7 +680,9 @@ private enum NoteCardStyle {
         }
     }
 
-    private static func editorName(for bundleIdentifier: String?) -> String? {
+    private static var editorNameCache: [String: String] = [:]
+
+    static func editorName(for bundleIdentifier: String?) -> String? {
         guard let bundleIdentifier else { return nil }
         switch bundleIdentifier {
         case "com.apple.dt.Xcode":
@@ -724,12 +696,19 @@ private enum NoteCardStyle {
         case "com.apple.finder":
             return nil
         default:
+            if let cached = editorNameCache[bundleIdentifier] {
+                return cached
+            }
             guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
                   let bundle = Bundle(url: appURL) else {
                 return nil
             }
-            return bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                 ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+            if let name {
+                editorNameCache[bundleIdentifier] = name
+            }
+            return name
         }
     }
 }

@@ -126,9 +126,9 @@ final class AppState {
             self?.isEditorUnderlineActive = formattingState.isUnderlined
         }
 
-        registerHotKey()
-        registerAllNotesHotKey()
-        registerDictationHotKey()
+        registerHotKey(id: 1, shortcut: hotKeyShortcut) { [weak self] in self?.toggleQuickNote() }
+        registerHotKey(id: 2, shortcut: allNotesHotKeyShortcut) { [weak self] in self?.toggleAllNotesPanel() }
+        registerHotKey(id: 3, shortcut: dictationHotKeyShortcut) { [weak self] in self?.startDictation() }
 
         dictationHotKeyMonitor.onRelease = { [weak self] in
             self?.stopDictation()
@@ -571,27 +571,27 @@ final class AppState {
 
     func updateHotKeyKeyCode(_ keyCode: UInt32) {
         hotKeyShortcut = hotKeyShortcut.updating(keyCode: keyCode)
-        persistAndRegisterHotKey()
+        persistAndRegister(shortcut: hotKeyShortcut, defaultsKey: Self.hotKeyDefaultsKey, id: 1) { [weak self] in self?.toggleQuickNote() }
     }
 
     func setHotKeyShortcut(_ shortcut: HotKeyShortcut) {
         hotKeyShortcut = shortcut
-        persistAndRegisterHotKey()
+        persistAndRegister(shortcut: hotKeyShortcut, defaultsKey: Self.hotKeyDefaultsKey, id: 1) { [weak self] in self?.toggleQuickNote() }
     }
 
     func setHotKeyModifier(_ modifier: UInt32, enabled: Bool) {
         hotKeyShortcut = hotKeyShortcut.updating(set: modifier, enabled: enabled)
-        persistAndRegisterHotKey()
+        persistAndRegister(shortcut: hotKeyShortcut, defaultsKey: Self.hotKeyDefaultsKey, id: 1) { [weak self] in self?.toggleQuickNote() }
     }
 
     func setAllNotesHotKeyShortcut(_ shortcut: HotKeyShortcut) {
         allNotesHotKeyShortcut = shortcut
-        persistAndRegisterAllNotesHotKey()
+        persistAndRegister(shortcut: allNotesHotKeyShortcut, defaultsKey: Self.allNotesHotKeyDefaultsKey, id: 2) { [weak self] in self?.toggleAllNotesPanel() }
     }
 
     func setDictationHotKeyShortcut(_ shortcut: HotKeyShortcut) {
         dictationHotKeyShortcut = shortcut
-        persistAndRegisterDictationHotKey()
+        persistAndRegister(shortcut: dictationHotKeyShortcut, defaultsKey: Self.dictationHotKeyDefaultsKey, id: 3) { [weak self] in self?.startDictation() }
     }
 
     var allNotesHotKeyDisplayString: String {
@@ -1102,28 +1102,11 @@ final class AppState {
         )
     }
 
-    private func persistAndRegisterHotKey() {
-        if let data = try? JSONEncoder().encode(hotKeyShortcut) {
-            UserDefaults.standard.set(data, forKey: Self.hotKeyDefaultsKey)
+    private func persistAndRegister(shortcut: HotKeyShortcut, defaultsKey: String, id: UInt32, action: @escaping @MainActor () -> Void) {
+        if let data = try? JSONEncoder().encode(shortcut) {
+            UserDefaults.standard.set(data, forKey: defaultsKey)
         }
-
-        registerHotKey()
-    }
-
-    private func persistAndRegisterAllNotesHotKey() {
-        if let data = try? JSONEncoder().encode(allNotesHotKeyShortcut) {
-            UserDefaults.standard.set(data, forKey: Self.allNotesHotKeyDefaultsKey)
-        }
-
-        registerAllNotesHotKey()
-    }
-
-    private func persistAndRegisterDictationHotKey() {
-        if let data = try? JSONEncoder().encode(dictationHotKeyShortcut) {
-            UserDefaults.standard.set(data, forKey: Self.dictationHotKeyDefaultsKey)
-        }
-
-        registerDictationHotKey()
+        registerHotKey(id: id, shortcut: shortcut, action: action)
     }
 
     private func applyDockIconPreference() {
@@ -1132,53 +1115,19 @@ final class AppState {
         NSApp?.setActivationPolicy(shouldShowDockIcon ? .regular : .accessory)
     }
 
-    private func registerHotKey() {
+    private func registerHotKey(id: UInt32, shortcut: HotKeyShortcut, action: @escaping @MainActor () -> Void) {
         do {
-            try hotKeyMonitor.register(id: 1, shortcut: hotKeyShortcut) { [weak self] in
+            try hotKeyMonitor.register(id: id, shortcut: shortcut) { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     if !AXIsProcessTrusted() {
                         self.requestAccessibilityAccessIfNeeded()
                         return
                     }
-                    self.toggleQuickNote()
+                    action()
                 }
             }
             editorErrorMessage = nil
-        } catch {
-            editorErrorMessage = error.localizedDescription
-        }
-    }
-
-    private func registerAllNotesHotKey() {
-        do {
-            try hotKeyMonitor.register(id: 2, shortcut: allNotesHotKeyShortcut) { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    if !AXIsProcessTrusted() {
-                        self.requestAccessibilityAccessIfNeeded()
-                        return
-                    }
-                    self.toggleAllNotesPanel()
-                }
-            }
-        } catch {
-            editorErrorMessage = error.localizedDescription
-        }
-    }
-
-    private func registerDictationHotKey() {
-        do {
-            try hotKeyMonitor.register(id: 3, shortcut: dictationHotKeyShortcut) { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    if !AXIsProcessTrusted() {
-                        self.requestAccessibilityAccessIfNeeded()
-                        return
-                    }
-                    self.startDictation()
-                }
-            }
         } catch {
             editorErrorMessage = error.localizedDescription
         }
