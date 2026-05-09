@@ -910,11 +910,20 @@ final class AppState {
 
         persistEditorStateForActiveContext()
         activeContext = context
+        let existingNote = note(for: context)
         editorAttributedText = attributedText(for: context)
         editorText = editorAttributedText.string
-        editorTitle = note(for: context)?.title ?? ""
+        editorTitle = existingNote?.title ?? ""
         editorErrorMessage = nil
-        isActiveNotePinned = note(for: context)?.isPinned ?? false
+        isActiveNotePinned = existingNote?.isPinned ?? false
+
+        if isAutoTitleEnabled && editorTitle.isEmpty {
+            if let existingNote, !existingNote.body.isEmpty {
+                generateTitleIfNeeded(noteID: existingNote.id, body: existingNote.body, context: context)
+            } else {
+                generateTitleFromContext(context: context)
+            }
+        }
     }
 
     private func resolveCurrentContext(preferredBundleIdentifier: String? = nil) -> NoteContext {
