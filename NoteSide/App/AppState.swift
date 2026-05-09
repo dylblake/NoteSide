@@ -31,17 +31,22 @@ final class AppState {
         didSet {
             _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
             _notesByContextID = Dictionary(uniqueKeysWithValues: notes.map { ($0.context.id, $0) })
+            recomputeFilteredNotes()
         }
     }
     private var _sortedNotes: [ContextNote] = []
     private var _notesByContextID: [String: ContextNote] = [:]
+    private(set) var filteredNotes: [ContextNote] = []
+    private(set) var recentNotes: [ContextNote] = []
     var activeContext: NoteContext?
     var editorText = ""
     var editorAttributedText = NSAttributedString(string: "")
     var editorErrorMessage: String?
     var isEditorPresented = false
     var isViewingOrphanedNote = false
-    var searchText = ""
+    var searchText = "" {
+        didSet { if searchText != oldValue { recomputeFilteredNotes() } }
+    }
     var hotKeyShortcut: HotKeyShortcut
     var allNotesHotKeyShortcut: HotKeyShortcut
     var isAllNotesPanelPresented = false
@@ -111,6 +116,8 @@ final class AppState {
         notes = store.loadNotes()
         _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
         _notesByContextID = Dictionary(uniqueKeysWithValues: notes.map { ($0.context.id, $0) })
+        filteredNotes = _sortedNotes
+        recentNotes = Array(_sortedNotes.prefix(5))
 
         richTextController.onSelectionAttributesChange = { [weak self] formattingState in
             self?.currentEditorTextStyle = formattingState.textStyle
@@ -742,20 +749,27 @@ final class AppState {
         HotKeyShortcut.availableKeys
     }
 
-    var filteredNotes: [ContextNote] {
-        guard !searchText.isEmpty else { return sortedNotes }
+    private var sortedNotes: [ContextNote] { _sortedNotes }
 
-        // Tag-specific search: when the query is "#tag", match against extracted tags
+    private func recomputeFilteredNotes() {
+        recentNotes = Array(_sortedNotes.prefix(5))
+
+        guard !searchText.isEmpty else {
+            filteredNotes = _sortedNotes
+            return
+        }
+
         if searchText.hasPrefix("#") {
             let tagQuery = String(searchText.dropFirst()).trimmingCharacters(in: .whitespaces).lowercased()
             if !tagQuery.isEmpty {
-                return sortedNotes.filter { note in
+                filteredNotes = _sortedNotes.filter { note in
                     note.tags.contains { $0.localizedCaseInsensitiveContains(tagQuery) }
                 }
+                return
             }
         }
 
-        return sortedNotes.filter { note in
+        filteredNotes = _sortedNotes.filter { note in
             note.context.displayName.localizedCaseInsensitiveContains(searchText)
                 || note.context.identifier.localizedCaseInsensitiveContains(searchText)
                 || (note.context.secondaryLabel?.localizedCaseInsensitiveContains(searchText) ?? false)
@@ -763,18 +777,6 @@ final class AppState {
                 || (note.title?.localizedCaseInsensitiveContains(searchText) ?? false)
         }
     }
-
-    var groupedNotes: [(kind: NoteContext.Kind, notes: [ContextNote])] {
-        Dictionary(grouping: filteredNotes, by: \.context.kind)
-            .sorted { $0.key.sortOrder < $1.key.sortOrder }
-            .map { ($0.key, $0.value) }
-    }
-
-    var recentNotes: [ContextNote] {
-        Array(sortedNotes.prefix(5))
-    }
-
-    private var sortedNotes: [ContextNote] { _sortedNotes }
 
     private static func migrateBrowserPermissionStatesIfNeeded() {
         let defaults = UserDefaults.standard
