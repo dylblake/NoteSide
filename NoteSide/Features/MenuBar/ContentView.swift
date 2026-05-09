@@ -16,6 +16,7 @@ private enum AllNotesViewMode: String {
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var showingBulkDeleteConfirmation = false
+    @State private var isContentReady = false
     @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
 
     var isFloatingPanel = false
@@ -56,26 +57,40 @@ struct ContentView: View {
                         .frame(height: 0)
                         .id("top")
 
-                    VStack(alignment: .leading, spacing: 28) {
-                        ForEach(noteSections) { section in
-                            if !section.groups.isEmpty {
-                                switch viewMode {
-                                case .grid:
-                                    NoteTileSection(section: section)
+                    if isContentReady || !isFloatingPanel {
+                        VStack(alignment: .leading, spacing: 28) {
+                            ForEach(noteSections) { section in
+                                if !section.groups.isEmpty {
+                                    switch viewMode {
+                                    case .grid:
+                                        NoteTileSection(section: section)
+                                                .environment(appState)
+                                    case .list:
+                                        NoteListSection(section: section)
                                             .environment(appState)
-                                case .list:
-                                    NoteListSection(section: section)
-                                        .environment(appState)
+                                    }
                                 }
                             }
                         }
+                        .padding(.horizontal, isFloatingPanel ? 18 : 24)
+                        .padding(.bottom, isFloatingPanel ? 18 : 24)
                     }
-                    .padding(.horizontal, isFloatingPanel ? 18 : 24)
-                    .padding(.bottom, isFloatingPanel ? 18 : 24)
                 }
             }
             .onChange(of: appState.allNotesScrollResetID) { _, _ in
+                isContentReady = false
                 proxy.scrollTo("top", anchor: .top)
+                DispatchQueue.main.async {
+                    isContentReady = true
+                }
+            }
+            .onAppear {
+                if isFloatingPanel {
+                    isContentReady = false
+                    DispatchQueue.main.async {
+                        isContentReady = true
+                    }
+                }
             }
         }
 
