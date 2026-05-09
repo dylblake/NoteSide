@@ -241,10 +241,7 @@ final class AppState {
 
         activeContext = initialContext
         let existingNote = note(for: initialContext)
-        editorAttributedText = attributedText(for: initialContext)
-        editorText = editorAttributedText.string
-        editorTitle = existingNote?.title ?? ""
-        isActiveNotePinned = existingNote?.isPinned ?? false
+        loadEditorState(for: initialContext)
 
         isEditorPresented = true
         startContextPolling()
@@ -269,41 +266,7 @@ final class AppState {
     }
 
     func saveAndDismissEditor() {
-        guard let context = activeContext else {
-            dismissEditor()
-            return
-        }
-
-        let currentAttributedText = currentEditorAttributedTextSnapshot()
-        let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            if let existing = note(for: context) {
-                notes.removeAll { $0.id == existing.id }
-                store.save(notes: notes)
-            }
-        } else {
-            let existingNote = note(for: context)
-            let existingID = existingNote?.id ?? UUID()
-            let createdAt = existingNote?.createdAt ?? .now
-            let userTitle = editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            let currentTitle: String? = userTitle.isEmpty ? existingNote?.title : userTitle
-            let note = ContextNote(
-                id: existingID,
-                context: context,
-                body: trimmed,
-                richTextData: archivedRichText(from: currentAttributedText),
-                createdAt: createdAt,
-                updatedAt: .now,
-                isPinned: existingNote?.isPinned ?? isActiveNotePinned,
-                title: currentTitle
-            )
-            upsert(note)
-
-            if currentTitle == nil && isAutoTitleEnabled {
-                generateTitleIfNeeded(noteID: existingID, body: trimmed, context: context)
-            }
-        }
-
+        persistCurrentEditorContent()
         store.flush()
         dismissEditor()
     }
@@ -435,11 +398,7 @@ final class AppState {
 
     func edit(_ note: ContextNote) {
         activeContext = note.context
-        editorAttributedText = attributedText(for: note)
-        editorText = editorAttributedText.string
-        editorTitle = note.title ?? ""
-        editorErrorMessage = nil
-        isActiveNotePinned = note.isPinned
+        loadEditorState(for: note)
 
         isEditorPresented = true
         startContextPolling()
@@ -801,6 +760,23 @@ final class AppState {
         _notesByContextID[context.id]
     }
 
+    private func loadEditorState(for context: NoteContext) {
+        let existingNote = note(for: context)
+        editorAttributedText = attributedText(for: context)
+        editorText = editorAttributedText.string
+        editorTitle = existingNote?.title ?? ""
+        editorErrorMessage = nil
+        isActiveNotePinned = existingNote?.isPinned ?? false
+    }
+
+    private func loadEditorState(for note: ContextNote) {
+        editorAttributedText = attributedText(for: note)
+        editorText = editorAttributedText.string
+        editorTitle = note.title ?? ""
+        editorErrorMessage = nil
+        isActiveNotePinned = note.isPinned
+    }
+
     private func quickApplicationContext(for app: NSRunningApplication?) -> NoteContext {
         NoteContext(
             kind: .application,
@@ -821,11 +797,7 @@ final class AppState {
         guard !hasUnsavedEditorText else { return }
 
         activeContext = context
-        editorAttributedText = attributedText(for: context)
-        editorText = editorAttributedText.string
-        editorTitle = note(for: context)?.title ?? ""
-        editorErrorMessage = nil
-        isActiveNotePinned = note(for: context)?.isPinned ?? false
+        loadEditorState(for: context)
     }
 
     private func resolveInitialQuickNoteContextAsync(from fallbackContext: NoteContext, sourceBundleIdentifier: String?) async {
@@ -838,11 +810,7 @@ final class AppState {
         guard !hasUnsavedEditorText else { return }
 
         activeContext = context
-        editorAttributedText = attributedText(for: context)
-        editorText = editorAttributedText.string
-        editorTitle = note(for: context)?.title ?? ""
-        editorErrorMessage = nil
-        isActiveNotePinned = note(for: context)?.isPinned ?? false
+        loadEditorState(for: context)
     }
 
     private func refreshEditorContextIfNeeded() {
@@ -872,16 +840,11 @@ final class AppState {
 
         persistEditorStateForActiveContext()
         activeContext = context
-        let existingNote = note(for: context)
-        editorAttributedText = attributedText(for: context)
-        editorText = editorAttributedText.string
-        editorTitle = existingNote?.title ?? ""
-        editorErrorMessage = nil
-        isActiveNotePinned = existingNote?.isPinned ?? false
+        loadEditorState(for: context)
 
         if isAutoTitleEnabled && editorTitle.isEmpty {
-            if let existingNote, !existingNote.body.isEmpty {
-                generateTitleIfNeeded(noteID: existingNote.id, body: existingNote.body, context: context)
+            if let existing = note(for: context), !existing.body.isEmpty {
+                generateTitleIfNeeded(noteID: existing.id, body: existing.body, context: context)
             } else {
                 generateTitleFromContext(context: context)
             }
@@ -1055,16 +1018,22 @@ final class AppState {
     }
 
     private func persistEditorStateForActiveContext() {
-        guard let context = activeContext else { return }
+        persistCurrentEditorContent()
+    }
+
+    @discardableResult
+    private func persistCurrentEditorContent() -> Bool {
+        guard let context = activeContext else { return false }
 
         let currentAttributedText = currentEditorAttributedTextSnapshot()
         let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
+
         if trimmed.isEmpty {
             if let existing = note(for: context) {
                 notes.removeAll { $0.id == existing.id }
                 store.save(notes: notes)
             }
-            return
+            return false
         }
 
         let existingNote = note(for: context)
@@ -1087,6 +1056,8 @@ final class AppState {
         if currentTitle == nil && isAutoTitleEnabled {
             generateTitleIfNeeded(noteID: existingID, body: trimmed, context: context)
         }
+
+        return true
     }
 
     private func generateTitleIfNeeded(noteID: UUID, body: String, context: NoteContext) {
