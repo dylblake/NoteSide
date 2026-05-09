@@ -7,6 +7,7 @@ nonisolated struct ContextResolver: Sendable {
     private let supportedBrowserBundleIdentifiers = Set(
         BrowserURLProvider.supportedBrowsers.map(\.bundleIdentifier)
     )
+    private static let scriptCache = CompiledScriptCache()
     private let slackBundleIdentifiers: Set<String> = [
         "com.tinyspeck.slackmacgap",
         "com.tinyspeck.slackmacgap2"
@@ -148,15 +149,13 @@ nonisolated struct ContextResolver: Sendable {
         end tell
         """
 
-        guard let script = NSAppleScript(source: scriptSource) else { return nil }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
+        let (resultDescriptor, error) = Self.scriptCache.execute(key: "finder", source: scriptSource)
 
         if error != nil {
             return nil
         }
 
-        let path = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let path = resultDescriptor?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !path.isEmpty else { return nil }
         return URL(fileURLWithPath: path)
     }
@@ -350,7 +349,7 @@ nonisolated struct ContextResolver: Sendable {
         end tell
         """
 
-        return executeFilePathScript(scriptSource)
+        return executeFilePathScript(scriptSource, cacheKey: "xcode_active_doc")
     }
 
     private func xcodeWorkspaceDocumentURL() -> URL? {
@@ -365,7 +364,7 @@ nonisolated struct ContextResolver: Sendable {
         end tell
         """
 
-        guard let url = executeFilePathScript(scriptSource) else { return nil }
+        guard let url = executeFilePathScript(scriptSource, cacheKey: "xcode_workspace") else { return nil }
         if isDirectory(url) {
             return url
         }
@@ -1065,21 +1064,44 @@ nonisolated struct ContextResolver: Sendable {
         AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
     }
 
-    private func executeFilePathScript(_ scriptSource: String) -> URL? {
-        guard let script = NSAppleScript(source: scriptSource) else { return nil }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
+    private func executeFilePathScript(_ scriptSource: String, cacheKey: String) -> URL? {
+        let (resultDescriptor, error) = Self.scriptCache.execute(key: cacheKey, source: scriptSource)
 
         if error != nil {
             return nil
         }
 
-        let path = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let path = resultDescriptor?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !path.isEmpty else { return nil }
         return URL(fileURLWithPath: path)
     }
 
     private func isDirectory(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+    }
+}
+
+private final class CompiledScriptCache: @unchecked Sendable {
+    private var scripts: [String: NSAppleScript] = [:]
+    private let lock = NSLock()
+
+    func execute(key: String, source: String) -> (descriptor: NSAppleEventDescriptor?, error: NSDictionary?) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let script: NSAppleScript
+        if let cached = scripts[key] {
+            script = cached
+        } else {
+            guard let newScript = NSAppleScript(source: source) else {
+                return (nil, nil)
+            }
+            scripts[key] = newScript
+            script = newScript
+        }
+
+        var error: NSDictionary?
+        let result = script.executeAndReturnError(&error)
+        return (result, error)
     }
 }
