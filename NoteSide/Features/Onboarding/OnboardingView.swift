@@ -72,9 +72,7 @@ struct OnboardingView: View {
 
                     VStack(spacing: 10) {
                         primaryButton("Open a Context Note") {
-                            Task {
-                                await appState.toggleQuickNote()
-                            }
+                            appState.toggleQuickNote()
                         }
 
                         primaryButton("Open All Notes") {

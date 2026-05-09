@@ -52,48 +52,6 @@ struct MenuBarContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Note Hotkey")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(appState.hotKeyDisplayString)
-                    .font(.subheadline.weight(.medium))
-
-                ShortcutRecorderView(displayText: appState.hotKeyDisplayString) { shortcut in
-                    appState.setHotKeyShortcut(shortcut)
-                }
-                .fixedSize()
-
-                Text("All Notes Hotkey")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
-
-                Text(appState.allNotesHotKeyDisplayString)
-                    .font(.subheadline.weight(.medium))
-
-                ShortcutRecorderView(displayText: appState.allNotesHotKeyDisplayString) { shortcut in
-                    appState.setAllNotesHotKeyShortcut(shortcut)
-                }
-                .fixedSize()
-
-                Text("Dictation Hotkey (Hold)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
-
-                Text(appState.dictationHotKeyDisplayString)
-                    .font(.subheadline.weight(.medium))
-
-                ShortcutRecorderView(displayText: appState.dictationHotKeyDisplayString) { shortcut in
-                    appState.setDictationHotKeyShortcut(shortcut)
-                }
-                .fixedSize()
-
-                Text("Click a box, then press the shortcut you want.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 Toggle("Launch on startup", isOn: $launchAtLogin)
                     .toggleStyle(.checkbox)
                     .font(.subheadline)
@@ -118,6 +76,48 @@ struct MenuBarContentView: View {
                         .font(.caption)
                     }
                 }
+
+                Divider()
+
+                Text("Hotkeys")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Note")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ShortcutRecorderView(displayText: appState.hotKeyDisplayString) { shortcut in
+                            appState.setHotKeyShortcut(shortcut)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("All Notes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ShortcutRecorderView(displayText: appState.allNotesHotKeyDisplayString) { shortcut in
+                            appState.setAllNotesHotKeyShortcut(shortcut)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Dictation")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ShortcutRecorderView(displayText: appState.dictationHotKeyDisplayString) { shortcut in
+                            appState.setDictationHotKeyShortcut(shortcut)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                Text("Click a box, then press the shortcut you want.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if let errorMessage = appState.editorErrorMessage {

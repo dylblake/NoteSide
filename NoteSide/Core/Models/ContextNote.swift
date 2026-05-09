@@ -72,6 +72,26 @@ struct ContextNote: Codable, Identifiable, Hashable {
         tags = Self.extractTags(from: body)
     }
 
+    func copying(
+        context: NoteContext? = nil,
+        body: String? = nil,
+        richTextData: Data?? = nil,
+        updatedAt: Date? = nil,
+        isPinned: Bool? = nil,
+        title: String?? = nil
+    ) -> ContextNote {
+        ContextNote(
+            id: self.id,
+            context: context ?? self.context,
+            body: body ?? self.body,
+            richTextData: richTextData ?? self.richTextData,
+            createdAt: self.createdAt,
+            updatedAt: updatedAt ?? self.updatedAt,
+            isPinned: isPinned ?? self.isPinned,
+            title: title ?? self.title
+        )
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)

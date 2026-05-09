@@ -59,6 +59,8 @@ nonisolated struct BrowserURLProvider: Sendable {
         uniqueKeysWithValues: supportedBrowsers.map { ($0.bundleIdentifier, $0) }
     )
 
+    private static let scriptCache = CompiledScriptCache()
+
     func supports(bundleIdentifier: String) -> Bool {
         browserMap[bundleIdentifier] != nil
     }
@@ -94,15 +96,9 @@ nonisolated struct BrowserURLProvider: Sendable {
         }
 
         let browserName = browser.title
-        let scriptSource = scriptSource(for: browser, activatesBrowser: activatesBrowser)
-        guard let script = NSAppleScript(source: scriptSource) else {
-            return BrowserAutomationAttemptResult(
-                result: .unavailable(browserName: browserName),
-                debugDetails: "NSAppleScript could not compile the request script for \(browserName)."
-            )
-        }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
+        let source = scriptSource(for: browser, activatesBrowser: activatesBrowser)
+        let cacheKey = "\(bundleIdentifier):\(activatesBrowser)"
+        let (resultDescriptor, error) = Self.scriptCache.execute(key: cacheKey, source: source)
 
         if let error {
             let errorNumber = error[NSAppleScript.errorNumber] as? Int
@@ -119,7 +115,14 @@ nonisolated struct BrowserURLProvider: Sendable {
             )
         }
 
-        let value = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let resultDescriptor else {
+            return BrowserAutomationAttemptResult(
+                result: .unavailable(browserName: browserName),
+                debugDetails: "NSAppleScript could not compile the request script for \(browserName)."
+            )
+        }
+
+        let value = resultDescriptor.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !value.isEmpty else {
             return BrowserAutomationAttemptResult(
                 result: .noTab(browserName: browserName),

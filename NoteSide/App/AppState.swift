@@ -28,16 +28,25 @@ final class AppState {
     var browserAutomationMessage = "Put Safari, Chrome, or Arc in front, then test browser access."
     private(set) var browserPermissionStates: [String: BrowserPermissionState] = [:]
     private(set) var notes: [ContextNote] = [] {
-        didSet { _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt } }
+        didSet {
+            _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
+            _notesByContextID = Dictionary(uniqueKeysWithValues: notes.map { ($0.context.id, $0) })
+            recomputeFilteredNotes()
+        }
     }
     private var _sortedNotes: [ContextNote] = []
+    private var _notesByContextID: [String: ContextNote] = [:]
+    private(set) var filteredNotes: [ContextNote] = []
+    private(set) var recentNotes: [ContextNote] = []
     var activeContext: NoteContext?
     var editorText = ""
     var editorAttributedText = NSAttributedString(string: "")
     var editorErrorMessage: String?
     var isEditorPresented = false
     var isViewingOrphanedNote = false
-    var searchText = ""
+    var searchText = "" {
+        didSet { if searchText != oldValue { recomputeFilteredNotes() } }
+    }
     var hotKeyShortcut: HotKeyShortcut
     var allNotesHotKeyShortcut: HotKeyShortcut
     var isAllNotesPanelPresented = false
@@ -106,6 +115,9 @@ final class AppState {
         showsDockIcon = false
         notes = store.loadNotes()
         _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
+        _notesByContextID = Dictionary(uniqueKeysWithValues: notes.map { ($0.context.id, $0) })
+        filteredNotes = _sortedNotes
+        recentNotes = Array(_sortedNotes.prefix(5))
 
         richTextController.onSelectionAttributesChange = { [weak self] formattingState in
             self?.currentEditorTextStyle = formattingState.textStyle
@@ -114,9 +126,9 @@ final class AppState {
             self?.isEditorUnderlineActive = formattingState.isUnderlined
         }
 
-        registerHotKey()
-        registerAllNotesHotKey()
-        registerDictationHotKey()
+        registerHotKey(id: 1, shortcut: hotKeyShortcut) { [weak self] in self?.toggleQuickNote() }
+        registerHotKey(id: 2, shortcut: allNotesHotKeyShortcut) { [weak self] in self?.toggleAllNotesPanel() }
+        registerHotKey(id: 3, shortcut: dictationHotKeyShortcut) { [weak self] in self?.startDictation() }
 
         dictationHotKeyMonitor.onRelease = { [weak self] in
             self?.stopDictation()
@@ -180,6 +192,12 @@ final class AppState {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak self] _ in
+                self?.store.flush()
+            }
+            .store(in: &cancellables)
+
         refreshPermissionStatus()
         applyDockIconPreference()
         checkStoredLicense()
@@ -194,7 +212,7 @@ final class AppState {
         )
     }
 
-    func toggleQuickNote() async {
+    func toggleQuickNote() {
         // License gate: require a valid license before opening the editor.
         if !isLicensed {
             presentLicenseWindow()
@@ -223,33 +241,21 @@ final class AppState {
 
         activeContext = initialContext
         let existingNote = note(for: initialContext)
-        editorAttributedText = attributedText(for: initialContext)
-        editorText = editorAttributedText.string
-        editorTitle = existingNote?.title ?? ""
-        isActiveNotePinned = existingNote?.isPinned ?? false
-
-        // Generate title BEFORE presenting so it's visible during the open animation.
-        if isAutoTitleEnabled && editorTitle.isEmpty {
-            if let existingNote, !existingNote.body.isEmpty {
-                if let generated = await titleGenerator.generateTitle(body: existingNote.body, context: initialContext) {
-                    editorTitle = generated
-                    let updated = ContextNote(
-                        id: existingNote.id, context: existingNote.context, body: existingNote.body,
-                        richTextData: existingNote.richTextData, createdAt: existingNote.createdAt,
-                        updatedAt: existingNote.updatedAt, isPinned: existingNote.isPinned, title: generated
-                    )
-                    upsert(updated)
-                }
-            } else {
-                if let generated = await titleGenerator.generateTitle(body: "", context: initialContext) {
-                    editorTitle = generated
-                }
-            }
-        }
+        loadEditorState(for: initialContext)
 
         isEditorPresented = true
         startContextPolling()
         noteEditorPanelController.present()
+
+        // Generate title asynchronously after presenting so the editor
+        // appears instantly rather than waiting for AI/NLP inference.
+        if isAutoTitleEnabled && editorTitle.isEmpty {
+            if let existingNote, !existingNote.body.isEmpty {
+                generateTitleIfNeeded(noteID: existingNote.id, body: existingNote.body, context: initialContext)
+            } else {
+                generateTitleFromContext(context: initialContext)
+            }
+        }
 
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
@@ -260,41 +266,8 @@ final class AppState {
     }
 
     func saveAndDismissEditor() {
-        guard let context = activeContext else {
-            dismissEditor()
-            return
-        }
-
-        let currentAttributedText = currentEditorAttributedTextSnapshot()
-        let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            if let existing = note(for: context) {
-                notes.removeAll { $0.id == existing.id }
-                store.save(notes: notes)
-            }
-        } else {
-            let existingNote = note(for: context)
-            let existingID = existingNote?.id ?? UUID()
-            let createdAt = existingNote?.createdAt ?? .now
-            let userTitle = editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            let currentTitle: String? = userTitle.isEmpty ? existingNote?.title : userTitle
-            let note = ContextNote(
-                id: existingID,
-                context: context,
-                body: trimmed,
-                richTextData: archivedRichText(from: currentAttributedText),
-                createdAt: createdAt,
-                updatedAt: .now,
-                isPinned: existingNote?.isPinned ?? isActiveNotePinned,
-                title: currentTitle
-            )
-            upsert(note)
-
-            if currentTitle == nil && isAutoTitleEnabled {
-                generateTitleIfNeeded(noteID: existingID, body: trimmed, context: context)
-            }
-        }
-
+        persistCurrentEditorContent()
+        store.flush()
         dismissEditor()
     }
 
@@ -423,30 +396,19 @@ final class AppState {
         ])
     }
 
-    func edit(_ note: ContextNote) async {
+    func edit(_ note: ContextNote) {
         activeContext = note.context
-        editorAttributedText = attributedText(for: note)
-        editorText = editorAttributedText.string
-        editorTitle = note.title ?? ""
-        editorErrorMessage = nil
-        isActiveNotePinned = note.isPinned
-
-        // Generate title BEFORE presenting so it's visible during the open animation.
-        if isAutoTitleEnabled && editorTitle.isEmpty && !note.body.isEmpty {
-            if let generated = await titleGenerator.generateTitle(body: note.body, context: note.context) {
-                editorTitle = generated
-                let updated = ContextNote(
-                    id: note.id, context: note.context, body: note.body,
-                    richTextData: note.richTextData, createdAt: note.createdAt,
-                    updatedAt: note.updatedAt, isPinned: note.isPinned, title: generated
-                )
-                upsert(updated)
-            }
-        }
+        loadEditorState(for: note)
 
         isEditorPresented = true
         startContextPolling()
         noteEditorPanelController.present()
+
+        // Generate title asynchronously after presenting so the editor
+        // appears instantly.
+        if isAutoTitleEnabled && editorTitle.isEmpty && !note.body.isEmpty {
+            generateTitleIfNeeded(noteID: note.id, body: note.body, context: note.context)
+        }
     }
 
     func open(_ note: ContextNote) {
@@ -456,12 +418,12 @@ final class AppState {
             navigate(to: note.context)
             Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(350))
-                await self?.edit(note)
+                self?.edit(note)
             }
         } else {
             isViewingOrphanedNote = true
             Task { [weak self] in
-                await self?.edit(note)
+                self?.edit(note)
                 self?.editorErrorMessage = "Original context is no longer available"
             }
         }
@@ -503,16 +465,7 @@ final class AppState {
 
         notes = notes.map { note in
             guard selected.contains(note.id) else { return note }
-            return ContextNote(
-                id: note.id,
-                context: note.context,
-                body: note.body,
-                richTextData: note.richTextData,
-                createdAt: note.createdAt,
-                updatedAt: .now,
-                isPinned: nextPinned,
-                title: note.title
-            )
+            return note.copying(updatedAt: .now, isPinned: nextPinned)
         }
         store.save(notes: notes)
 
@@ -527,16 +480,7 @@ final class AppState {
     }
 
     func togglePin(_ note: ContextNote) {
-        let updatedNote = ContextNote(
-            id: note.id,
-            context: note.context,
-            body: note.body,
-            richTextData: note.richTextData,
-            createdAt: note.createdAt,
-            updatedAt: .now,
-            isPinned: !note.isPinned,
-            title: note.title
-        )
+        let updatedNote = note.copying(updatedAt: .now, isPinned: !note.isPinned)
         upsert(updatedNote)
 
         if activeContext?.id == note.context.id {
@@ -589,17 +533,7 @@ final class AppState {
 
         // If editor is empty but there's an existing note, just update the pin state
         if let existingNote = note(for: context) {
-            let updatedNote = ContextNote(
-                id: existingNote.id,
-                context: existingNote.context,
-                body: existingNote.body,
-                richTextData: existingNote.richTextData,
-                createdAt: existingNote.createdAt,
-                updatedAt: .now,
-                isPinned: nextPinnedState,
-                title: existingNote.title
-            )
-            upsert(updatedNote)
+            upsert(existingNote.copying(updatedAt: .now, isPinned: nextPinnedState))
         }
     }
 
@@ -637,27 +571,27 @@ final class AppState {
 
     func updateHotKeyKeyCode(_ keyCode: UInt32) {
         hotKeyShortcut = hotKeyShortcut.updating(keyCode: keyCode)
-        persistAndRegisterHotKey()
+        persistAndRegister(shortcut: hotKeyShortcut, defaultsKey: Self.hotKeyDefaultsKey, id: 1) { [weak self] in self?.toggleQuickNote() }
     }
 
     func setHotKeyShortcut(_ shortcut: HotKeyShortcut) {
         hotKeyShortcut = shortcut
-        persistAndRegisterHotKey()
+        persistAndRegister(shortcut: hotKeyShortcut, defaultsKey: Self.hotKeyDefaultsKey, id: 1) { [weak self] in self?.toggleQuickNote() }
     }
 
     func setHotKeyModifier(_ modifier: UInt32, enabled: Bool) {
         hotKeyShortcut = hotKeyShortcut.updating(set: modifier, enabled: enabled)
-        persistAndRegisterHotKey()
+        persistAndRegister(shortcut: hotKeyShortcut, defaultsKey: Self.hotKeyDefaultsKey, id: 1) { [weak self] in self?.toggleQuickNote() }
     }
 
     func setAllNotesHotKeyShortcut(_ shortcut: HotKeyShortcut) {
         allNotesHotKeyShortcut = shortcut
-        persistAndRegisterAllNotesHotKey()
+        persistAndRegister(shortcut: allNotesHotKeyShortcut, defaultsKey: Self.allNotesHotKeyDefaultsKey, id: 2) { [weak self] in self?.toggleAllNotesPanel() }
     }
 
     func setDictationHotKeyShortcut(_ shortcut: HotKeyShortcut) {
         dictationHotKeyShortcut = shortcut
-        persistAndRegisterDictationHotKey()
+        persistAndRegister(shortcut: dictationHotKeyShortcut, defaultsKey: Self.dictationHotKeyDefaultsKey, id: 3) { [weak self] in self?.startDictation() }
     }
 
     var allNotesHotKeyDisplayString: String {
@@ -669,7 +603,7 @@ final class AppState {
     }
 
     func setShowsDockIcon(_ showsDockIcon: Bool) {
-        self.showsDockIcon = false
+        self.showsDockIcon = showsDockIcon
         applyDockIconPreference()
     }
 
@@ -746,20 +680,27 @@ final class AppState {
         HotKeyShortcut.availableKeys
     }
 
-    var filteredNotes: [ContextNote] {
-        guard !searchText.isEmpty else { return sortedNotes }
+    private var sortedNotes: [ContextNote] { _sortedNotes }
 
-        // Tag-specific search: when the query is "#tag", match against extracted tags
+    private func recomputeFilteredNotes() {
+        recentNotes = Array(_sortedNotes.prefix(5))
+
+        guard !searchText.isEmpty else {
+            filteredNotes = _sortedNotes
+            return
+        }
+
         if searchText.hasPrefix("#") {
             let tagQuery = String(searchText.dropFirst()).trimmingCharacters(in: .whitespaces).lowercased()
             if !tagQuery.isEmpty {
-                return sortedNotes.filter { note in
+                filteredNotes = _sortedNotes.filter { note in
                     note.tags.contains { $0.localizedCaseInsensitiveContains(tagQuery) }
                 }
+                return
             }
         }
 
-        return sortedNotes.filter { note in
+        filteredNotes = _sortedNotes.filter { note in
             note.context.displayName.localizedCaseInsensitiveContains(searchText)
                 || note.context.identifier.localizedCaseInsensitiveContains(searchText)
                 || (note.context.secondaryLabel?.localizedCaseInsensitiveContains(searchText) ?? false)
@@ -767,18 +708,6 @@ final class AppState {
                 || (note.title?.localizedCaseInsensitiveContains(searchText) ?? false)
         }
     }
-
-    var groupedNotes: [(kind: NoteContext.Kind, notes: [ContextNote])] {
-        Dictionary(grouping: filteredNotes, by: \.context.kind)
-            .sorted { $0.key.sortOrder < $1.key.sortOrder }
-            .map { ($0.key, $0.value) }
-    }
-
-    var recentNotes: [ContextNote] {
-        Array(sortedNotes.prefix(5))
-    }
-
-    private var sortedNotes: [ContextNote] { _sortedNotes }
 
     private static func migrateBrowserPermissionStatesIfNeeded() {
         let defaults = UserDefaults.standard
@@ -828,7 +757,24 @@ final class AppState {
     }
 
     private func note(for context: NoteContext) -> ContextNote? {
-        notes.first { $0.context.id == context.id }
+        _notesByContextID[context.id]
+    }
+
+    private func loadEditorState(for context: NoteContext) {
+        let existingNote = note(for: context)
+        editorAttributedText = attributedText(for: context)
+        editorText = editorAttributedText.string
+        editorTitle = existingNote?.title ?? ""
+        editorErrorMessage = nil
+        isActiveNotePinned = existingNote?.isPinned ?? false
+    }
+
+    private func loadEditorState(for note: ContextNote) {
+        editorAttributedText = attributedText(for: note)
+        editorText = editorAttributedText.string
+        editorTitle = note.title ?? ""
+        editorErrorMessage = nil
+        isActiveNotePinned = note.isPinned
     }
 
     private func quickApplicationContext(for app: NSRunningApplication?) -> NoteContext {
@@ -851,11 +797,7 @@ final class AppState {
         guard !hasUnsavedEditorText else { return }
 
         activeContext = context
-        editorAttributedText = attributedText(for: context)
-        editorText = editorAttributedText.string
-        editorTitle = note(for: context)?.title ?? ""
-        editorErrorMessage = nil
-        isActiveNotePinned = note(for: context)?.isPinned ?? false
+        loadEditorState(for: context)
     }
 
     private func resolveInitialQuickNoteContextAsync(from fallbackContext: NoteContext, sourceBundleIdentifier: String?) async {
@@ -868,11 +810,7 @@ final class AppState {
         guard !hasUnsavedEditorText else { return }
 
         activeContext = context
-        editorAttributedText = attributedText(for: context)
-        editorText = editorAttributedText.string
-        editorTitle = note(for: context)?.title ?? ""
-        editorErrorMessage = nil
-        isActiveNotePinned = note(for: context)?.isPinned ?? false
+        loadEditorState(for: context)
     }
 
     private func refreshEditorContextIfNeeded() {
@@ -895,28 +833,22 @@ final class AppState {
             guard context != active else { return }
             activeContext = context
             if let existing = note(for: context) {
-                let updated = ContextNote(
-                    id: existing.id,
-                    context: context,
-                    body: existing.body,
-                    richTextData: existing.richTextData,
-                    createdAt: existing.createdAt,
-                    updatedAt: existing.updatedAt,
-                    isPinned: existing.isPinned,
-                    title: existing.title
-                )
-                upsert(updated)
+                upsert(existing.copying(context: context))
             }
             return
         }
 
         persistEditorStateForActiveContext()
         activeContext = context
-        editorAttributedText = attributedText(for: context)
-        editorText = editorAttributedText.string
-        editorTitle = note(for: context)?.title ?? ""
-        editorErrorMessage = nil
-        isActiveNotePinned = note(for: context)?.isPinned ?? false
+        loadEditorState(for: context)
+
+        if isAutoTitleEnabled && editorTitle.isEmpty {
+            if let existing = note(for: context), !existing.body.isEmpty {
+                generateTitleIfNeeded(noteID: existing.id, body: existing.body, context: context)
+            } else {
+                generateTitleFromContext(context: context)
+            }
+        }
     }
 
     private func resolveCurrentContext(preferredBundleIdentifier: String? = nil) -> NoteContext {
@@ -1079,22 +1011,29 @@ final class AppState {
     }
 
     private func upsert(_ note: ContextNote) {
-        notes.removeAll { $0.context.id == note.context.id }
-        notes.append(note)
+        var updated = notes.filter { $0.context.id != note.context.id }
+        updated.append(note)
+        notes = updated
         store.save(notes: notes)
     }
 
     private func persistEditorStateForActiveContext() {
-        guard let context = activeContext else { return }
+        persistCurrentEditorContent()
+    }
+
+    @discardableResult
+    private func persistCurrentEditorContent() -> Bool {
+        guard let context = activeContext else { return false }
 
         let currentAttributedText = currentEditorAttributedTextSnapshot()
         let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
+
         if trimmed.isEmpty {
             if let existing = note(for: context) {
                 notes.removeAll { $0.id == existing.id }
                 store.save(notes: notes)
             }
-            return
+            return false
         }
 
         let existingNote = note(for: context)
@@ -1117,6 +1056,8 @@ final class AppState {
         if currentTitle == nil && isAutoTitleEnabled {
             generateTitleIfNeeded(noteID: existingID, body: trimmed, context: context)
         }
+
+        return true
     }
 
     private func generateTitleIfNeeded(noteID: UUID, body: String, context: NoteContext) {
@@ -1127,17 +1068,7 @@ final class AppState {
                 let existing = self.notes[idx]
                 // Don't overwrite if a title was set in the meantime
                 guard existing.title == nil || existing.title?.isEmpty == true else { return }
-                let updated = ContextNote(
-                    id: existing.id,
-                    context: existing.context,
-                    body: existing.body,
-                    richTextData: existing.richTextData,
-                    createdAt: existing.createdAt,
-                    updatedAt: existing.updatedAt,
-                    isPinned: existing.isPinned,
-                    title: generated
-                )
-                self.upsert(updated)
+                self.upsert(existing.copying(title: .some(generated)))
 
                 // Update the editor title if the note is currently open
                 if self.isEditorPresented,
@@ -1171,28 +1102,11 @@ final class AppState {
         )
     }
 
-    private func persistAndRegisterHotKey() {
-        if let data = try? JSONEncoder().encode(hotKeyShortcut) {
-            UserDefaults.standard.set(data, forKey: Self.hotKeyDefaultsKey)
+    private func persistAndRegister(shortcut: HotKeyShortcut, defaultsKey: String, id: UInt32, action: @escaping @MainActor () -> Void) {
+        if let data = try? JSONEncoder().encode(shortcut) {
+            UserDefaults.standard.set(data, forKey: defaultsKey)
         }
-
-        registerHotKey()
-    }
-
-    private func persistAndRegisterAllNotesHotKey() {
-        if let data = try? JSONEncoder().encode(allNotesHotKeyShortcut) {
-            UserDefaults.standard.set(data, forKey: Self.allNotesHotKeyDefaultsKey)
-        }
-
-        registerAllNotesHotKey()
-    }
-
-    private func persistAndRegisterDictationHotKey() {
-        if let data = try? JSONEncoder().encode(dictationHotKeyShortcut) {
-            UserDefaults.standard.set(data, forKey: Self.dictationHotKeyDefaultsKey)
-        }
-
-        registerDictationHotKey()
+        registerHotKey(id: id, shortcut: shortcut, action: action)
     }
 
     private func applyDockIconPreference() {
@@ -1201,53 +1115,19 @@ final class AppState {
         NSApp?.setActivationPolicy(shouldShowDockIcon ? .regular : .accessory)
     }
 
-    private func registerHotKey() {
+    private func registerHotKey(id: UInt32, shortcut: HotKeyShortcut, action: @escaping @MainActor () -> Void) {
         do {
-            try hotKeyMonitor.register(id: 1, shortcut: hotKeyShortcut) { [weak self] in
+            try hotKeyMonitor.register(id: id, shortcut: shortcut) { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     if !AXIsProcessTrusted() {
                         self.requestAccessibilityAccessIfNeeded()
                         return
                     }
-                    await self.toggleQuickNote()
+                    action()
                 }
             }
             editorErrorMessage = nil
-        } catch {
-            editorErrorMessage = error.localizedDescription
-        }
-    }
-
-    private func registerAllNotesHotKey() {
-        do {
-            try hotKeyMonitor.register(id: 2, shortcut: allNotesHotKeyShortcut) { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    if !AXIsProcessTrusted() {
-                        self.requestAccessibilityAccessIfNeeded()
-                        return
-                    }
-                    self.toggleAllNotesPanel()
-                }
-            }
-        } catch {
-            editorErrorMessage = error.localizedDescription
-        }
-    }
-
-    private func registerDictationHotKey() {
-        do {
-            try hotKeyMonitor.register(id: 3, shortcut: dictationHotKeyShortcut) { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    if !AXIsProcessTrusted() {
-                        self.requestAccessibilityAccessIfNeeded()
-                        return
-                    }
-                    self.startDictation()
-                }
-            }
         } catch {
             editorErrorMessage = error.localizedDescription
         }
@@ -1273,12 +1153,15 @@ final class AppState {
 
     private func stopDictation() {
         guard isDictating else { return }
-        let transcript = dictationService.stopListening()
         isDictating = false
         dictationPartialText = ""
 
-        if !transcript.isEmpty {
-            richTextController.insertDictatedText(transcript)
+        Task { [weak self] in
+            guard let self else { return }
+            let transcript = await self.dictationService.stopListening()
+            if !transcript.isEmpty {
+                self.richTextController.insertDictatedText(transcript)
+            }
         }
     }
 

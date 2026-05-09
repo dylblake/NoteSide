@@ -16,6 +16,7 @@ private enum AllNotesViewMode: String {
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var showingBulkDeleteConfirmation = false
+    @State private var isContentReady = false
     @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
 
     var isFloatingPanel = false
@@ -56,26 +57,40 @@ struct ContentView: View {
                         .frame(height: 0)
                         .id("top")
 
-                    VStack(alignment: .leading, spacing: 28) {
-                        ForEach(noteSections) { section in
-                            if !section.groups.isEmpty {
-                                switch viewMode {
-                                case .grid:
-                                    NoteTileSection(section: section)
+                    if isContentReady || !isFloatingPanel {
+                        VStack(alignment: .leading, spacing: 28) {
+                            ForEach(noteSections) { section in
+                                if !section.groups.isEmpty {
+                                    switch viewMode {
+                                    case .grid:
+                                        NoteTileSection(section: section)
+                                                .environment(appState)
+                                    case .list:
+                                        NoteListSection(section: section)
                                             .environment(appState)
-                                case .list:
-                                    NoteListSection(section: section)
-                                        .environment(appState)
+                                    }
                                 }
                             }
                         }
+                        .padding(.horizontal, isFloatingPanel ? 18 : 24)
+                        .padding(.bottom, isFloatingPanel ? 18 : 24)
                     }
-                    .padding(.horizontal, isFloatingPanel ? 18 : 24)
-                    .padding(.bottom, isFloatingPanel ? 18 : 24)
                 }
             }
             .onChange(of: appState.allNotesScrollResetID) { _, _ in
+                isContentReady = false
                 proxy.scrollTo("top", anchor: .top)
+                DispatchQueue.main.async {
+                    isContentReady = true
+                }
+            }
+            .onAppear {
+                if isFloatingPanel {
+                    isContentReady = false
+                    DispatchQueue.main.async {
+                        isContentReady = true
+                    }
+                }
             }
         }
 
@@ -221,6 +236,7 @@ struct ContentView: View {
             helperText: nil,
             groups: sortedNotes.isEmpty ? [] : [
                 NoteTileGroup(
+                    id: "pinned",
                     title: "",
                     subtitle: nil,
                     notes: sortedNotes
@@ -238,8 +254,9 @@ struct ContentView: View {
         subtitle: ([ContextNote]) -> String?
     ) -> NoteTileSectionModel {
         let grouped = Dictionary(grouping: notes, by: key)
-            .map { _, notes in
+            .map { groupKey, notes in
                 NoteTileGroup(
+                    id: groupKey,
                     title: groupTitle(notes),
                     subtitle: subtitle(notes),
                     notes: notes.sorted { $0.updatedAt > $1.updatedAt }
@@ -281,21 +298,6 @@ struct ContentView: View {
         return "\(editor)::\(root)"
     }
 
-    private func fileGroupTitle(for context: NoteContext) -> String {
-        let rootPath = context.sourceRootPath ?? context.secondaryLabel ?? context.identifier
-        let displayRoot = shortenedPath(rootPath)
-
-        if let editorName = editorName(for: context.sourceBundleIdentifier) {
-            return "\(displayRoot) (\(editorName))"
-        }
-
-        return displayRoot
-    }
-
-    private func fileGroupSubtitle(for context: NoteContext) -> String? {
-        context.sourceRootPath ?? context.secondaryLabel
-    }
-
     private func codebaseSections(for notes: [ContextNote]) -> [NoteTileSectionModel] {
         let grouped = Dictionary(grouping: notes) { note in
             note.context.sourceRootPath ?? note.context.identifier
@@ -335,6 +337,7 @@ struct ContentView: View {
                     helperText: nil,
                     groups: [
                         NoteTileGroup(
+                            id: site,
                             title: "",
                             subtitle: nil,
                             notes: siteNotes.sorted { $0.updatedAt > $1.updatedAt }
@@ -365,13 +368,6 @@ struct ContentView: View {
         return "\(editor)::\(context.identifier)"
     }
 
-    private func codeEditorGroupTitle(for context: NoteContext) -> String {
-        if let editorName = editorName(for: context.sourceBundleIdentifier) {
-            return "\(context.displayName) (\(editorName))"
-        }
-        return context.displayName
-    }
-
     private func shortenedPath(_ path: String) -> String {
         let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !trimmed.isEmpty else { return path }
@@ -384,36 +380,6 @@ struct ContentView: View {
         return components[0]
     }
 
-    private static var editorNameCache: [String: String] = [:]
-
-    private func editorName(for bundleIdentifier: String?) -> String? {
-        guard let bundleIdentifier else { return nil }
-
-        switch bundleIdentifier {
-        case "com.apple.dt.Xcode":
-            return "Xcode"
-        case "com.microsoft.VSCode":
-            return "VSCode"
-        case "com.microsoft.VSCodeInsiders":
-            return "VSCode Insiders"
-        case "com.visualstudio.code.oss":
-            return "Code OSS"
-        default:
-            if let cached = Self.editorNameCache[bundleIdentifier] {
-                return cached
-            }
-            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
-                  let bundle = Bundle(url: appURL) else {
-                return nil
-            }
-            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
-            if let name {
-                Self.editorNameCache[bundleIdentifier] = name
-            }
-            return name
-        }
-    }
 }
 
 private struct NoteTileSectionModel: Identifiable {
@@ -424,7 +390,7 @@ private struct NoteTileSectionModel: Identifiable {
 }
 
 private struct NoteTileGroup: Identifiable {
-    let id = UUID()
+    let id: String
     let title: String
     let subtitle: String?
     let notes: [ContextNote]
@@ -496,26 +462,13 @@ private struct NoteGroupTile: View {
 
 private struct NoteTile: View {
     @Environment(AppState.self) private var appState
-    @State private var showingDeleteConfirmation = false
 
     let note: ContextNote
 
-    private var isSelected: Bool {
-        appState.selectedNoteIDs.contains(note.id)
-    }
-
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Button {
-                appState.toggleSelection(note.id)
-            } label: {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isSelected ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
+            NoteSelectionCheckbox(noteID: note.id)
+                .environment(appState)
 
             cardContent
         }
@@ -572,40 +525,11 @@ private struct NoteTile: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                appState.togglePin(note)
-            } label: {
-                Image(systemName: note.isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help(note.isPinned ? "Unpin" : "Pin")
+            NotePinButton(note: note)
+                .environment(appState)
 
-            Button(role: .destructive) {
-                showingDeleteConfirmation = true
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(NoteSideTheme.secondaryText)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help("Delete")
-            .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
-                DeleteConfirmationPopover(
-                    onConfirm: {
-                        showingDeleteConfirmation = false
-                        appState.delete(note)
-                    },
-                    onCancel: {
-                        showingDeleteConfirmation = false
-                    }
-                )
-            }
+            NoteDeleteButton(note: note)
+                .environment(appState)
         }
     }
 
@@ -692,7 +616,9 @@ private enum NoteCardStyle {
         }
     }
 
-    private static func editorName(for bundleIdentifier: String?) -> String? {
+    private static var editorNameCache: [String: String] = [:]
+
+    static func editorName(for bundleIdentifier: String?) -> String? {
         guard let bundleIdentifier else { return nil }
         switch bundleIdentifier {
         case "com.apple.dt.Xcode":
@@ -706,12 +632,19 @@ private enum NoteCardStyle {
         case "com.apple.finder":
             return nil
         default:
+            if let cached = editorNameCache[bundleIdentifier] {
+                return cached
+            }
             guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
                   let bundle = Bundle(url: appURL) else {
                 return nil
             }
-            return bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                 ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+            if let name {
+                editorNameCache[bundleIdentifier] = name
+            }
+            return name
         }
     }
 }
@@ -777,28 +710,15 @@ private struct NoteListGroup: View {
 
 private struct NoteListRow: View {
     @Environment(AppState.self) private var appState
-    @State private var showingDeleteConfirmation = false
 
     let note: ContextNote
-
-    private var isSelected: Bool {
-        appState.selectedNoteIDs.contains(note.id)
-    }
 
     private var tint: Color { NoteCardStyle.tint(for: note) }
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Button {
-                appState.toggleSelection(note.id)
-            } label: {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isSelected ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
+            NoteSelectionCheckbox(noteID: note.id)
+                .environment(appState)
 
             rowContent
         }
@@ -837,40 +757,11 @@ private struct NoteListRow: View {
                 .lineLimit(1)
                 .fixedSize()
 
-            Button {
-                appState.togglePin(note)
-            } label: {
-                Image(systemName: note.isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(note.isPinned ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help(note.isPinned ? "Unpin" : "Pin")
+            NotePinButton(note: note)
+                .environment(appState)
 
-            Button(role: .destructive) {
-                showingDeleteConfirmation = true
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(NoteSideTheme.secondaryText)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help("Delete")
-            .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
-                DeleteConfirmationPopover(
-                    onConfirm: {
-                        showingDeleteConfirmation = false
-                        appState.delete(note)
-                    },
-                    onCancel: {
-                        showingDeleteConfirmation = false
-                    }
-                )
-            }
+            NoteDeleteButton(note: note)
+                .environment(appState)
             }
 
             if !note.body.isEmpty {

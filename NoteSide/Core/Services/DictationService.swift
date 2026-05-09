@@ -143,13 +143,17 @@ final class DictationService: ObservableObject {
         state = .listening
     }
 
-    func stopListening() -> String {
-        let transcript = partialTranscript
-
+    func stopListening() async -> String {
         audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
-        recognitionTask?.cancel()
+        recognitionTask?.finish()
+
+        // Give the recognizer time to process the final audio buffer
+        // and deliver the last transcription via the existing callback.
+        try? await Task.sleep(for: .milliseconds(500))
+
+        let transcript = partialTranscript
 
         audioEngine = nil
         recognitionRequest = nil
