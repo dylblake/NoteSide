@@ -24,7 +24,7 @@ final class RecorderNSView: NSView {
     var onShortcutRecorded: ((HotKeyShortcut) -> Void)?
 
     private let label = NSTextField(labelWithString: "")
-    private let idleText = "Click here to record hotkey"
+    private let idleText = "Click to set"
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -32,8 +32,8 @@ final class RecorderNSView: NSView {
         layer?.cornerRadius = 10
         layer?.borderWidth = 1
 
-        label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.alignment = .center
+        label.font = .systemFont(ofSize: 10, weight: .medium)
+        label.alignment = .left
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
@@ -55,9 +55,7 @@ final class RecorderNSView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override var intrinsicContentSize: NSSize {
-        let widestText = [idleText, displayText].max(by: { $0.count < $1.count }) ?? idleText
-        let textWidth = (widestText as NSString).size(withAttributes: [.font: label.font as Any]).width
-        return NSSize(width: ceil(textWidth) + 24, height: 34)
+        NSSize(width: NSView.noIntrinsicMetric, height: 34)
     }
 
     override func viewDidChangeEffectiveAppearance() {
