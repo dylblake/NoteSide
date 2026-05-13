@@ -79,7 +79,7 @@ struct LicenseView: View {
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(NoteSideTheme.primaryText)
 
-            Text("Thank you for purchasing NoteSide. Use \(appState.hotKeyDisplayString) to start taking notes.")
+            Text("Thank you for purchasing NoteSide. Use \(appState.hotkeys.hotKeyDisplayString) to start taking notes.")
                 .font(.subheadline)
                 .foregroundStyle(NoteSideTheme.secondaryText)
                 .multilineTextAlignment(.center)

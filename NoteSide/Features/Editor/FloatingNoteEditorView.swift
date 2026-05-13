@@ -6,7 +6,8 @@ struct FloatingNoteEditorView: View {
     private let noteCardCornerRadius: CGFloat = 28
 
     var body: some View {
-        @Bindable var appState = appState
+        @Bindable var editor = appState.editor
+        @Bindable var formatting = appState.formatting
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 14) {
@@ -17,7 +18,7 @@ struct FloatingNoteEditorView: View {
                             .tracking(0.7)
                             .foregroundStyle(NoteSideTheme.secondaryText)
 
-                        TextField("Note title", text: $appState.editorTitle)
+                        TextField("Note title", text: $editor.editorTitle)
                             .font(.title2.weight(.semibold))
                             .foregroundStyle(NoteSideTheme.primaryText)
                             .textFieldStyle(.plain)
@@ -35,13 +36,13 @@ struct FloatingNoteEditorView: View {
                             .tracking(0.7)
                             .foregroundStyle(NoteSideTheme.secondaryText)
 
-                        Text(appState.activeContext?.displayName ?? "Current Context")
+                        Text(appState.editor.activeContext?.displayName ?? "Current Context")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(NoteSideTheme.primaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)
 
-                        if let secondaryLabel = appState.activeContext?.secondaryLabel, !secondaryLabel.isEmpty {
+                        if let secondaryLabel = appState.editor.activeContext?.secondaryLabel, !secondaryLabel.isEmpty {
                             Text(secondaryLabel)
                                 .font(.subheadline)
                                 .foregroundStyle(NoteSideTheme.secondaryText)
@@ -50,7 +51,7 @@ struct FloatingNoteEditorView: View {
                                 .truncationMode(.tail)
                         }
 
-                        if let errorMessage = appState.editorErrorMessage, !errorMessage.isEmpty {
+                        if let errorMessage = appState.editor.editorErrorMessage, !errorMessage.isEmpty {
                             Text(errorMessage)
                                 .font(.footnote)
                                 .foregroundStyle(NoteSideTheme.warning)
@@ -64,52 +65,52 @@ struct FloatingNoteEditorView: View {
 
                         Menu {
                             Button {
-                                appState.applyHeadingStyle()
+                                appState.formatting.applyHeadingStyle()
                             } label: {
                                 Text(RichTextEditorController.TextStyle.heading.title)
                                     .font(.system(size: RichTextEditorController.TextStyle.heading.fontSize, weight: .bold))
                             }
 
                             Button {
-                                appState.applySubheadingStyle()
+                                appState.formatting.applySubheadingStyle()
                             } label: {
                                 Text(RichTextEditorController.TextStyle.subheading.title)
                                     .font(.system(size: RichTextEditorController.TextStyle.subheading.fontSize, weight: .semibold))
                             }
 
                             Button {
-                                appState.applyBodyStyle()
+                                appState.formatting.applyBodyStyle()
                             } label: {
                                 Text(RichTextEditorController.TextStyle.body.title)
                                     .font(.system(size: RichTextEditorController.TextStyle.body.fontSize, weight: .regular))
                             }
                         } label: {
-                            formattingButtonLabel(appState.currentEditorTextStyle.title)
+                            formattingButtonLabel(appState.formatting.currentEditorTextStyle.title)
                         }
 
-                        formattingButton("B", isActive: appState.isEditorBoldActive) {
-                            appState.toggleBold()
+                        formattingButton("B", isActive: appState.formatting.isEditorBoldActive) {
+                            appState.formatting.toggleBold()
                         }
 
-                        formattingButton("I", isActive: appState.isEditorItalicActive) {
-                            appState.toggleItalic()
+                        formattingButton("I", isActive: appState.formatting.isEditorItalicActive) {
+                            appState.formatting.toggleItalic()
                         }
 
-                        formattingButton("U", isActive: appState.isEditorUnderlineActive) {
-                            appState.toggleUnderline()
+                        formattingButton("U", isActive: appState.formatting.isEditorUnderlineActive) {
+                            appState.formatting.toggleUnderline()
                         }
 
                         formattingButton("•") {
-                            appState.insertBulletedList()
+                            appState.formatting.insertBulletedList()
                         }
 
                         formattingButton("1.") {
-                            appState.insertNumberedList()
+                            appState.formatting.insertNumberedList()
                         }
                     }
 
                     RichTextEditor(
-                        attributedText: $appState.editorAttributedText,
+                        attributedText: $editor.editorAttributedText,
                         controller: appState.richTextController
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -117,7 +118,7 @@ struct FloatingNoteEditorView: View {
                     DictationIndicatorView(
                         isDictating: appState.isDictating,
                         partialText: appState.dictationPartialText,
-                        hotkeyLabel: appState.dictationHotKeyDisplayString
+                        hotkeyLabel: appState.hotkeys.dictationHotKeyDisplayString
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .animation(.easeInOut(duration: 0.2), value: appState.isDictating)
@@ -159,8 +160,8 @@ struct FloatingNoteEditorView: View {
 
                         HStack(spacing: 4) {
                             ClickableIconView(
-                                iconName: appState.isActiveNotePinned ? "pin.fill" : "pin",
-                                iconColor: appState.isActiveNotePinned ? .controlAccentColor : .labelColor,
+                                iconName: appState.editor.isActiveNotePinned ? "pin.fill" : "pin",
+                                iconColor: appState.editor.isActiveNotePinned ? .controlAccentColor : .labelColor,
                                 size: 16
                             ) {
                                 appState.togglePinForActiveNote()

@@ -5,12 +5,12 @@ struct NoteSelectionCheckbox: View {
     let noteID: UUID
 
     private var isSelected: Bool {
-        appState.selectedNoteIDs.contains(noteID)
+        appState.notesState.selectedNoteIDs.contains(noteID)
     }
 
     var body: some View {
         Button {
-            appState.toggleSelection(noteID)
+            appState.notesState.toggleSelection(noteID)
         } label: {
             Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                 .font(.system(size: 16, weight: .semibold))
@@ -62,7 +62,7 @@ struct NoteDeleteButton: View {
             DeleteConfirmationPopover(
                 onConfirm: {
                     showingConfirmation = false
-                    appState.delete(note)
+                    appState.notesState.delete(note)
                 },
                 onCancel: {
                     showingConfirmation = false
