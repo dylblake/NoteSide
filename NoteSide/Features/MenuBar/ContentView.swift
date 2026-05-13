@@ -31,7 +31,7 @@ struct ContentView: View {
     ]
 
     var body: some View {
-        @Bindable var appState = appState
+        @Bindable var notes = appState.notesState
         let content = ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -39,16 +39,16 @@ struct ContentView: View {
                         .font(isFloatingPanel ? .title2.weight(.bold) : .largeTitle.weight(.bold))
                     viewModeToggle
                     Spacer()
-                    if !appState.selectedNoteIDs.isEmpty {
+                    if !appState.notesState.selectedNoteIDs.isEmpty {
                         bulkActionBar
                     }
                 }
                 .padding(.horizontal, isFloatingPanel ? 18 : 24)
                 .padding(.top, isFloatingPanel ? 18 : 24)
                 .padding(.bottom, isFloatingPanel ? 14 : 18)
-                .animation(.easeInOut(duration: 0.15), value: appState.selectedNoteIDs.isEmpty)
+                .animation(.easeInOut(duration: 0.15), value: appState.notesState.selectedNoteIDs.isEmpty)
 
-                TagSearchField(text: $appState.searchText)
+                TagSearchField(text: $notes.searchText)
                     .padding(.horizontal, isFloatingPanel ? 18 : 24)
                     .padding(.bottom, 10)
 
@@ -77,7 +77,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .onChange(of: appState.allNotesScrollResetID) { _, _ in
+            .onChange(of: appState.notesState.allNotesScrollResetID) { _, _ in
                 isContentReady = false
                 proxy.scrollTo("top", anchor: .top)
                 DispatchQueue.main.async {
@@ -146,12 +146,12 @@ struct ContentView: View {
 
     private var bulkActionBar: some View {
         HStack(spacing: 14) {
-            Text("\(appState.selectedNoteIDs.count) selected")
+            Text("\(appState.notesState.selectedNoteIDs.count) selected")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
             Button {
-                appState.clearSelection()
+                appState.notesState.clearSelection()
             } label: {
                 Text("Clear")
                     .font(.subheadline)
@@ -183,7 +183,7 @@ struct ContentView: View {
                 DeleteConfirmationPopover(
                     onConfirm: {
                         showingBulkDeleteConfirmation = false
-                        appState.deleteSelectedNotes()
+                        appState.notesState.deleteSelectedNotes()
                     },
                     onCancel: {
                         showingBulkDeleteConfirmation = false
@@ -194,7 +194,7 @@ struct ContentView: View {
     }
 
     private var noteSections: [NoteTileSectionModel] {
-        let notes = appState.filteredNotes
+        let notes = appState.notesState.filteredNotes
         let pinnedNotes = notes.filter(\.isPinned)
         let unpinnedNotes = notes.filter { !$0.isPinned }
         let siteNotes = unpinnedNotes.filter { $0.context.kind == .url }

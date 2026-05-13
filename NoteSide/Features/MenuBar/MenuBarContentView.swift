@@ -88,8 +88,8 @@ struct MenuBarContentView: View {
                         Text("Note")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        ShortcutRecorderView(displayText: appState.hotKeyDisplayString) { shortcut in
-                            appState.setHotKeyShortcut(shortcut)
+                        ShortcutRecorderView(displayText: appState.hotkeys.hotKeyDisplayString) { shortcut in
+                            appState.hotkeys.setHotKeyShortcut(shortcut)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -98,8 +98,8 @@ struct MenuBarContentView: View {
                         Text("All Notes")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        ShortcutRecorderView(displayText: appState.allNotesHotKeyDisplayString) { shortcut in
-                            appState.setAllNotesHotKeyShortcut(shortcut)
+                        ShortcutRecorderView(displayText: appState.hotkeys.allNotesHotKeyDisplayString) { shortcut in
+                            appState.hotkeys.setAllNotesHotKeyShortcut(shortcut)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -108,8 +108,8 @@ struct MenuBarContentView: View {
                         Text("Dictation")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        ShortcutRecorderView(displayText: appState.dictationHotKeyDisplayString) { shortcut in
-                            appState.setDictationHotKeyShortcut(shortcut)
+                        ShortcutRecorderView(displayText: appState.hotkeys.dictationHotKeyDisplayString) { shortcut in
+                            appState.hotkeys.setDictationHotKeyShortcut(shortcut)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -120,7 +120,7 @@ struct MenuBarContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if let errorMessage = appState.editorErrorMessage {
+            if let errorMessage = appState.editor.editorErrorMessage {
                 Text(errorMessage)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -128,7 +128,7 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            if appState.recentNotes.isEmpty {
+            if appState.notesState.recentNotes.isEmpty {
                 Text("No notes yet.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -138,7 +138,7 @@ struct MenuBarContentView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
-                    ForEach(appState.recentNotes) { note in
+                    ForEach(appState.notesState.recentNotes) { note in
                         Button {
                             dismiss()
                             appState.open(note)

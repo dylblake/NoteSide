@@ -48,7 +48,7 @@ struct OnboardingView: View {
                 .font(.title3)
                 .foregroundStyle(NoteSideTheme.secondaryText)
 
-            Text("Use `\(appState.hotKeyDisplayString)` to open the right-side note pane from anywhere.")
+            Text("Use `\(appState.hotkeys.hotKeyDisplayString)` to open the right-side note pane from anywhere.")
                 .font(.subheadline)
                 .foregroundStyle(NoteSideTheme.tertiaryText)
         }
@@ -60,10 +60,10 @@ struct OnboardingView: View {
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("1. Switch to any app, browser tab, or file.")
-                        Text("2. Press `\(appState.hotKeyDisplayString)` to open a note for that context.")
+                        Text("2. Press `\(appState.hotkeys.hotKeyDisplayString)` to open a note for that context.")
                         Text("3. Type your note and press the hotkey again to save.")
-                        Text("4. Press `\(appState.allNotesHotKeyDisplayString)` to view all your notes in a panel.")
-                        Text("5. Hold `\(appState.dictationHotKeyDisplayString)` to dictate — release to insert text.")
+                        Text("4. Press `\(appState.hotkeys.allNotesHotKeyDisplayString)` to view all your notes in a panel.")
+                        Text("5. Hold `\(appState.hotkeys.dictationHotKeyDisplayString)` to dictate — release to insert text.")
                         Text("6. Add #tags to organize notes across contexts.")
                         Text("7. Notes are automatically titled using on-device AI.")
                     }
@@ -108,13 +108,13 @@ struct OnboardingView: View {
                     title: "Browser Automation",
                     detail: "Request access per browser below. macOS will ask the first time NoteSide tries to read that browser's active tab.",
                     isGranted: !installedBrowsers.isEmpty && installedBrowsers.allSatisfy { browser in
-                        appState.browserPermissionStates[browser.bundleIdentifier] == .granted
+                        appState.browserPermissions.browserPermissionStates[browser.bundleIdentifier] == .granted
                     },
                     buttonTitle: "Open Settings",
-                    action: appState.openAutomationSettings
+                    action: appState.browserPermissions.openAutomationSettings
                 )
 
-                Text(appState.browserAutomationMessage)
+                Text(appState.browserPermissions.browserAutomationMessage)
                     .font(.footnote)
                     .foregroundStyle(NoteSideTheme.secondaryText)
 
@@ -244,7 +244,7 @@ struct OnboardingView: View {
     private var installedBrowsers: [BrowserDescriptor] {
         AppState.supportedBrowsers.filter { browser in
             // Only show browsers that have been attempted (have a state) and are not marked as notInstalled
-            if let state = appState.browserPermissionStates[browser.bundleIdentifier] {
+            if let state = appState.browserPermissions.browserPermissionStates[browser.bundleIdentifier] {
                 return state != .notInstalled
             }
             return false
@@ -252,7 +252,7 @@ struct OnboardingView: View {
     }
 
     private func browserRequestRow(title: String, bundleIdentifier: String) -> some View {
-        let status = appState.browserPermissionStates[bundleIdentifier] ?? .notInstalled
+        let status = appState.browserPermissions.browserPermissionStates[bundleIdentifier] ?? .notInstalled
 
         return HStack(alignment: .top, spacing: 12) {
             browserStatusIcon(for: status)
@@ -271,7 +271,7 @@ struct OnboardingView: View {
 
             if status == .notGranted {
                 secondaryButton("Request Access") {
-                    appState.requestAutomationAccess(for: bundleIdentifier)
+                    appState.browserPermissions.requestAutomationAccess(for: bundleIdentifier)
                 }
             }
         }
@@ -287,14 +287,14 @@ struct OnboardingView: View {
         )
     }
 
-    private func browserStatusIcon(for status: AppState.BrowserPermissionState) -> some View {
+    private func browserStatusIcon(for status: BrowserPermissionState) -> some View {
         Image(systemName: browserStatusSymbol(for: status))
             .font(.title3.weight(.semibold))
             .foregroundStyle(browserStatusColor(for: status))
             .padding(.top, 2)
     }
 
-    private func browserStatusSymbol(for status: AppState.BrowserPermissionState) -> String {
+    private func browserStatusSymbol(for status: BrowserPermissionState) -> String {
         switch status {
         case .granted:
             return "checkmark.circle.fill"
@@ -305,7 +305,7 @@ struct OnboardingView: View {
         }
     }
 
-    private func browserStatusColor(for status: AppState.BrowserPermissionState) -> Color {
+    private func browserStatusColor(for status: BrowserPermissionState) -> Color {
         switch status {
         case .granted:
             return NoteSideTheme.success
@@ -316,7 +316,7 @@ struct OnboardingView: View {
         }
     }
 
-    private func browserStatusText(for status: AppState.BrowserPermissionState) -> String {
+    private func browserStatusText(for status: BrowserPermissionState) -> String {
         switch status {
         case .granted:
             return "Installed and automation access is enabled."
