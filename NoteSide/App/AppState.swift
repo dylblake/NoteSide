@@ -131,6 +131,11 @@ final class AppState {
                     guard let self else { return }
 
                     if self.editor.isEditorPresented {
+                        // Follow the newly activated app with the AX
+                        // observer so intra-app changes keep arriving
+                        // as events.
+                        self.editor.retargetContextObserver()
+
                         // Resolve context on a background thread so
                         // AppleScript / Accessibility API calls don't
                         // block the UI.
@@ -249,7 +254,7 @@ final class AppState {
         editor.loadEditorState(for: initialContext)
 
         editor.isEditorPresented = true
-        editor.startContextPolling()
+        editor.startContextTracking()
         noteEditorPanelController.present()
 
         Task { [weak self] in
@@ -281,7 +286,7 @@ final class AppState {
     func dismissEditor() {
         editor.isEditorPresented = false
         editor.isViewingOrphanedNote = false
-        editor.stopContextPolling()
+        editor.stopContextTracking()
         editor.cancelAutosave()
         panelController?.dismiss()
     }
@@ -386,7 +391,7 @@ final class AppState {
         editor.loadEditorState(for: note)
 
         editor.isEditorPresented = true
-        editor.startContextPolling()
+        editor.startContextTracking()
         noteEditorPanelController.present()
 
         // Generate title asynchronously after presenting so the editor

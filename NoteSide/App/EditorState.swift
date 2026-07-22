@@ -23,6 +23,7 @@ final class EditorState {
     private var contextPollingTask: Task<Void, Never>?
     private var autosaveTask: Task<Void, Never>?
     private var isResolvingContext = false
+    @ObservationIgnored private let contextObserver = AXContextObserver()
 
     @ObservationIgnored let notesState: NotesState
     @ObservationIgnored let richTextController: RichTextEditorController
@@ -56,6 +57,10 @@ final class EditorState {
         self.browserPermissions = browserPermissions
         self.titleGenerator = titleGenerator
         self.isAutoTitleEnabled = isAutoTitleEnabled
+
+        contextObserver.onContextMayHaveChanged = { [weak self] in
+            self?.handleObservedContextChange()
+        }
     }
 
     // MARK: - Editor State Loading
@@ -382,40 +387,45 @@ final class EditorState {
         applyRefreshedContext(context)
     }
 
-    // MARK: - Context Polling
+    // MARK: - Context Tracking (AX events + fallback polling)
+
+    /// True when the in-app context of this bundle can change without an
+    /// app switch: browser tabs (granted browsers) and apps whose file /
+    /// channel focus moves within the same process, so
+    /// didActivateApplication never fires.
+    private func isTrackableForIntraAppChanges(_ bundleIdentifier: String) -> Bool {
+        browserPermissions.browserPermissionStates[bundleIdentifier] == .granted
+            || Self.intraAppPollingBundleIdentifiers.contains(bundleIdentifier)
+    }
 
     private var shouldRefreshDetailedContext: Bool {
         guard let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else {
             return false
         }
-
-        // Poll whenever the in-app context can change without an app switch:
-        // browser tabs (granted browsers) and code editors (file focus moves
-        // within the same process, so didActivateApplication never fires).
-        if browserPermissions.browserPermissionStates[bundleIdentifier] == .granted {
-            return true
-        }
-        return Self.intraAppPollingBundleIdentifiers.contains(bundleIdentifier)
+        return isTrackableForIntraAppChanges(bundleIdentifier)
     }
 
-    /// Starts a background polling loop that periodically re-resolves the
-    /// current context for apps that support intra-app context changes
-    /// (browser tabs, editor files, Slack channels, etc.). The heavy
-    /// AppleScript / Accessibility work runs off the main thread.
-    func startContextPolling() {
-        stopContextPolling()
+    /// Starts event-driven context tracking: an AXObserver on the frontmost
+    /// app catches focus/title changes the moment they happen, and a
+    /// polling loop remains as a safety net — slow when observation is
+    /// live, at the old 1.5s cadence when it isn't (e.g. no Accessibility
+    /// permission).
+    func startContextTracking() {
+        stopContextTracking()
+        retargetContextObserver()
         contextPollingTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1.5))
+                let interval = self?.fallbackPollingInterval() ?? .seconds(1.5)
+                try? await Task.sleep(for: interval)
                 guard !Task.isCancelled else { break }
                 guard let self, self.isEditorPresented, self.shouldRefreshDetailedContext else {
                     if self == nil { break }
                     continue
                 }
                 // Skip this tick if another resolution (app switch, initial
-                // quick-note refine) is already in flight — queueing a
-                // second one behind it on the script executor would only
-                // apply a staler context afterwards.
+                // quick-note refine, AX event) is already in flight —
+                // queueing a second one behind it on the script executor
+                // would only apply a staler context afterwards.
                 guard !self.isResolvingContext else { continue }
                 let context = await self.resolveCurrentContextAsync()
                 guard !Task.isCancelled, self.isEditorPresented else { break }
@@ -424,9 +434,50 @@ final class EditorState {
         }
     }
 
-    func stopContextPolling() {
+    func stopContextTracking() {
         contextPollingTask?.cancel()
         contextPollingTask = nil
+        contextObserver.stop()
+    }
+
+    /// Points the AXObserver at the current frontmost app. Called when
+    /// tracking starts and after every app switch while the editor is
+    /// open. Observing is skipped for our own process and for apps whose
+    /// context can't change intra-app.
+    func retargetContextObserver() {
+        guard isEditorPresented,
+              let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              let bundleIdentifier = app.bundleIdentifier,
+              isTrackableForIntraAppChanges(bundleIdentifier)
+        else {
+            contextObserver.stop()
+            return
+        }
+        contextObserver.observe(app: app)
+    }
+
+    private func handleObservedContextChange() {
+        guard isEditorPresented, shouldRefreshDetailedContext, !isResolvingContext else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let context = await self.resolveCurrentContextAsync()
+            guard self.isEditorPresented else { return }
+            self.applyRefreshedContext(context)
+        }
+    }
+
+    private func fallbackPollingInterval() -> Duration {
+        guard contextObserver.isObserving else { return .seconds(1.5) }
+
+        // Observation is live, so polling is only a safety net. Browsers
+        // keep a moderate cadence because a same-title URL change (SPA
+        // navigation) doesn't fire any AX notification.
+        if let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+           browserPermissions.browserPermissionStates[bundleIdentifier] == .granted {
+            return .seconds(3)
+        }
+        return .seconds(10)
     }
 
     // MARK: - Title Generation
