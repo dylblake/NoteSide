@@ -208,6 +208,12 @@ struct FloatingNoteEditorView: View {
                 appState.richTextController.focus()
             }
         }
+        .onChange(of: editor.editorAttributedText) { _, _ in
+            appState.editor.scheduleAutosave()
+        }
+        .onChange(of: editor.editorTitle) { _, _ in
+            appState.editor.scheduleAutosave()
+        }
         .onExitCommand {
             appState.saveAndDismissEditor()
         }

@@ -243,6 +243,7 @@ final class AppState {
         editor.isEditorPresented = false
         editor.isViewingOrphanedNote = false
         editor.stopContextPolling()
+        editor.cancelAutosave()
         panelController?.dismiss()
     }
 

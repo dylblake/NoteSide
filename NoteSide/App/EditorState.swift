@@ -21,6 +21,7 @@ final class EditorState {
     var isViewingOrphanedNote = false
     var isActiveNotePinned = false
     private var contextPollingTask: Task<Void, Never>?
+    private var autosaveTask: Task<Void, Never>?
 
     @ObservationIgnored let notesState: NotesState
     @ObservationIgnored let richTextController: RichTextEditorController
@@ -59,6 +60,7 @@ final class EditorState {
     // MARK: - Editor State Loading
 
     func loadEditorState(for context: NoteContext) {
+        cancelAutosave()
         let existingNote = notesState.note(for: context)
         editorAttributedText = attributedText(for: context)
         editorText = editorAttributedText.string
@@ -68,6 +70,7 @@ final class EditorState {
     }
 
     func loadEditorState(for note: ContextNote) {
+        cancelAutosave()
         editorAttributedText = attributedText(for: note)
         editorText = editorAttributedText.string
         editorTitle = note.title ?? ""
@@ -82,14 +85,14 @@ final class EditorState {
     }
 
     @discardableResult
-    func persistCurrentEditorContent() -> Bool {
+    func persistCurrentEditorContent(deleteIfEmpty: Bool = true) -> Bool {
         guard let context = activeContext else { return false }
 
         let currentAttributedText = currentEditorAttributedTextSnapshot()
         let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmed.isEmpty {
-            if let existing = notesState.note(for: context) {
+            if deleteIfEmpty, let existing = notesState.note(for: context) {
                 notesState.delete(existing)
             }
             return false
@@ -117,6 +120,61 @@ final class EditorState {
         }
 
         return true
+    }
+
+    // MARK: - Autosave
+
+    /// Called on every edit; persists the note a couple of seconds after
+    /// the user stops typing so a crash or force-quit while the editor is
+    /// open can't lose the whole session.
+    func scheduleAutosave() {
+        guard isEditorPresented else { return }
+        autosaveTask?.cancel()
+        autosaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled, self.isEditorPresented else { return }
+            self.autosaveNow()
+        }
+    }
+
+    func cancelAutosave() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+    }
+
+    private func autosaveNow() {
+        guard let context = activeContext else { return }
+
+        let currentAttributedText = currentEditorAttributedTextSnapshot()
+        let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Autosave never deletes: clearing the text and pausing shouldn't
+        // destroy the note. Deletion stays an explicit dismiss-time action.
+        guard !trimmed.isEmpty else { return }
+        guard hasUnpersistedChanges(context: context, attributedText: currentAttributedText, trimmedBody: trimmed) else {
+            return
+        }
+
+        persistCurrentEditorContent(deleteIfEmpty: false)
+    }
+
+    /// True when the editor buffer differs from what's stored for this
+    /// context. Prevents autosave from bumping updatedAt (and re-sorting
+    /// every list) when nothing actually changed, e.g. right after a note
+    /// is loaded into the editor.
+    private func hasUnpersistedChanges(
+        context: NoteContext,
+        attributedText: NSAttributedString,
+        trimmedBody: String
+    ) -> Bool {
+        guard let existing = notesState.note(for: context) else { return true }
+
+        let userTitle = editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveTitle = userTitle.isEmpty ? existing.title : userTitle
+
+        if existing.body != trimmedBody { return true }
+        if existing.title != effectiveTitle { return true }
+        return existing.richTextData != archivedRichText(from: attributedText)
     }
 
     // MARK: - Rich Text Helpers
