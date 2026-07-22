@@ -225,20 +225,14 @@ nonisolated struct ContextResolver: Sendable {
             focusedWindow: focusedWindow
         )
 
-        let conversation = slackConversationName(
-            windowTitle: windowTitle,
-            candidateStrings: strings
-        )
-        let workspace = slackWorkspaceName(
-            windowTitle: windowTitle,
-            candidateStrings: strings,
-            conversation: conversation
-        )
+        let parsed = SlackTitleParser.parse(windowTitle: windowTitle, candidateStrings: strings)
+        let workspace = parsed.workspace
+        let conversation = parsed.conversation
 
         guard conversation != nil || workspace != nil else { return nil }
 
-        let identifier = slackIdentifier(workspace: workspace, conversation: conversation)
-        let displayName = slackDisplayName(workspace: workspace, conversation: conversation)
+        let identifier = SlackTitleParser.identifier(workspace: workspace, conversation: conversation)
+        let displayName = SlackTitleParser.displayName(workspace: workspace, conversation: conversation)
         let secondaryLabel = [workspace, conversation]
             .compactMap { $0 }
             .joined(separator: " • ")
@@ -290,13 +284,14 @@ nonisolated struct ContextResolver: Sendable {
             candidateStrings: strings
         )
 
-        let fileName = figmaFileName(windowTitle: windowTitle, candidateStrings: strings)
-        let pageName = figmaPageName(windowTitle: windowTitle, candidateStrings: strings, fileName: fileName)
+        let parsed = FigmaTitleParser.parse(windowTitle: windowTitle, candidateStrings: strings)
+        let fileName = parsed.fileName
+        let pageName = parsed.pageName
 
         guard fileName != nil || pageName != nil else { return nil }
 
-        let identifier = figmaIdentifier(fileName: fileName, pageName: pageName)
-        let displayName = figmaDisplayName(fileName: fileName, pageName: pageName)
+        let identifier = FigmaTitleParser.identifier(fileName: fileName, pageName: pageName)
+        let displayName = FigmaTitleParser.displayName(fileName: fileName, pageName: pageName)
         let secondaryLabel = [fileName, pageName]
             .compactMap { $0 }
             .joined(separator: " • ")
@@ -662,24 +657,19 @@ nonisolated struct ContextResolver: Sendable {
             }
         }
 
-        return deduplicatedStrings(results.map(slackNormalizedString))
+        return SlackTitleParser.deduplicate(results.map(SlackTitleParser.normalize))
     }
 
     private func figmaCandidateStrings(
         focusedElement: AXUIElement?,
         focusedWindow: AXUIElement?
     ) -> [String] {
-        deduplicatedStrings(
+        FigmaTitleParser.filterCandidates(
             slackCandidateStrings(
                 focusedElement: focusedElement,
                 focusedWindow: focusedWindow,
                 includeHelp: false
             )
-            .filter {
-                let lowercased = $0.lowercased()
-                return !figmaIgnoredTokens.contains(lowercased)
-                    && !looksLikeAccessibilityHint($0)
-            }
         )
     }
 
@@ -688,7 +678,7 @@ nonisolated struct ContextResolver: Sendable {
         focusedWindow: AXUIElement?,
         candidateStrings: [String]
     ) -> String? {
-        if let target = candidateStrings.compactMap(figmaURLString(from:)).first {
+        if let target = candidateStrings.compactMap(FigmaTitleParser.urlString(from:)).first {
             return target
         }
 
@@ -703,294 +693,11 @@ nonisolated struct ContextResolver: Sendable {
         return nil
     }
 
-    private func slackConversationName(windowTitle: String?, candidateStrings: [String]) -> String? {
-        if let windowTitle,
-           let parsedConversation = slackConversationFromWindowTitle(windowTitle) {
-            return parsedConversation
-        }
-
-        return candidateStrings.first(where: isLikelySlackConversation)
-    }
-
-    private func slackWorkspaceName(
-        windowTitle: String?,
-        candidateStrings: [String],
-        conversation: String?
-    ) -> String? {
-        if let windowTitle,
-           let parsedWorkspace = slackWorkspaceFromWindowTitle(windowTitle) {
-            return parsedWorkspace
-        }
-
-        return candidateStrings.first { candidate in
-            isLikelySlackWorkspace(candidate) && candidate != conversation
-        }
-    }
-
-    private func slackConversationFromWindowTitle(_ title: String) -> String? {
-        let tokens = slackTitleTokens(from: title)
-        return tokens.first(where: isLikelySlackConversation)
-    }
-
-    private func slackWorkspaceFromWindowTitle(_ title: String) -> String? {
-        let tokens = slackTitleTokens(from: title)
-        return tokens.last(where: isLikelySlackWorkspace)
-    }
-
-    private func slackTitleTokens(from title: String) -> [String] {
-        let separators = [" — ", " - ", " | ", " • ", " · ", ":"]
-        var tokens = [title]
-
-        for separator in separators {
-            tokens = tokens.flatMap { $0.components(separatedBy: separator) }
-        }
-
-        return deduplicatedStrings(tokens.map(slackNormalizedString).filter { !slackIgnoredTokens.contains($0.lowercased()) })
-    }
-
-    private func slackIdentifier(workspace: String?, conversation: String?) -> String {
-        let normalizedWorkspace = slackIdentifierComponent(from: workspace)
-        let normalizedConversation = slackIdentifierComponent(from: conversation)
-
-        if let normalizedWorkspace, let normalizedConversation {
-            return "slack:\(normalizedWorkspace):\(normalizedConversation)"
-        }
-        if let normalizedConversation {
-            return "slack:\(normalizedConversation)"
-        }
-        if let normalizedWorkspace {
-            return "slack:\(normalizedWorkspace)"
-        }
-        return "com.tinyspeck.slackmacgap"
-    }
-
-    private func slackDisplayName(workspace: String?, conversation: String?) -> String {
-        switch (workspace, conversation) {
-        case let (.some(workspace), .some(conversation)):
-            return "Slack / \(workspace) / \(conversation)"
-        case let (.none, .some(conversation)):
-            return "Slack / \(conversation)"
-        case let (.some(workspace), .none):
-            return "Slack / \(workspace)"
-        case (.none, .none):
-            return "Slack"
-        }
-    }
-
-    private func slackIdentifierComponent(from string: String?) -> String? {
-        guard let string = string?.lowercased(), !string.isEmpty else { return nil }
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_#@."))
-        let scalars = string.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
-        let collapsed = String(scalars).replacingOccurrences(of: "--+", with: "-", options: .regularExpression)
-        return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-    }
-
-    private func isLikelySlackConversation(_ string: String) -> Bool {
-        let lowercased = string.lowercased()
-        guard
-            !string.isEmpty,
-            string.count <= 80,
-            !slackIgnoredTokens.contains(lowercased)
-        else {
-            return false
-        }
-
-        if string.hasPrefix("#") || string.hasPrefix("@") {
-            return true
-        }
-
-        if lowercased.hasPrefix("dm with ") || lowercased.hasPrefix("messages with ") {
-            return true
-        }
-
-        return !lowercased.contains("slack")
-            && !lowercased.contains("workspace")
-            && !lowercased.contains("huddle")
-            && !lowercased.contains("activity")
-            && !lowercased.contains("later")
-            && !lowercased.contains("canvas")
-    }
-
-    private func figmaURLString(from string: String) -> String? {
-        if let url = firstURL(in: string),
-           (url.host?.contains("figma.com") == true || url.scheme == "figma") {
-            return url.absoluteString
-        }
-
-        if let match = firstMatch(
-            in: string,
-            pattern: #"https://www\.figma\.com/(file|design|proto|board)/[A-Za-z0-9]+[^ ]*"#
-        ) {
-            return match
-        }
-
-        return nil
-    }
-
-    private func isLikelySlackWorkspace(_ string: String) -> Bool {
-        let lowercased = string.lowercased()
-        guard
-            !string.isEmpty,
-            string.count <= 80,
-            !slackIgnoredTokens.contains(lowercased)
-        else {
-            return false
-        }
-
-        return !string.hasPrefix("#")
-            && !string.hasPrefix("@")
-            && !lowercased.hasPrefix("dm with ")
-            && !lowercased.hasPrefix("messages with ")
-            && !lowercased.contains("thread")
-            && !lowercased.contains("unreads")
-            && !lowercased.contains("activity")
-    }
-
-    private func slackNormalizedString(_ string: String) -> String {
-        string
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-    }
-
-    private func figmaFileName(windowTitle: String?, candidateStrings: [String]) -> String? {
-        if let windowTitle,
-           let titleToken = figmaTitleTokens(from: windowTitle).first {
-            return titleToken
-        }
-
-        return candidateStrings.first(where: isLikelyFigmaDocumentName)
-    }
-
-    private func figmaPageName(windowTitle: String?, candidateStrings: [String], fileName: String?) -> String? {
-        // Only trust the window title for the page name. AX-walked candidate
-        // strings include hovered tooltips ("Close tab") and section labels
-        // ("Application toolbar"), which leak into the path and make the
-        // context unstable. If the title doesn't carry a distinct page token,
-        // surface no page rather than guess.
-        guard let windowTitle else { return nil }
-        let titleTokens = figmaTitleTokens(from: windowTitle)
-        guard titleTokens.count > 1 else { return nil }
-        return titleTokens.first(where: { $0 != fileName })
-    }
-
-    private func figmaTitleTokens(from title: String) -> [String] {
-        let separators = [" — ", " - ", " | ", " • ", " · ", ":"]
-        var tokens = [title]
-
-        for separator in separators {
-            tokens = tokens.flatMap { $0.components(separatedBy: separator) }
-        }
-
-        return deduplicatedStrings(
-            tokens
-                .map(slackNormalizedString)
-                .filter { !$0.isEmpty && !figmaIgnoredTokens.contains($0.lowercased()) }
-        )
-    }
-
-    private func figmaIdentifier(fileName: String?, pageName: String?) -> String {
-        let normalizedFile = slackIdentifierComponent(from: fileName)
-        let normalizedPage = slackIdentifierComponent(from: pageName)
-
-        if let normalizedFile, let normalizedPage {
-            return "figma:\(normalizedFile):\(normalizedPage)"
-        }
-        if let normalizedFile {
-            return "figma:\(normalizedFile)"
-        }
-        if let normalizedPage {
-            return "figma:\(normalizedPage)"
-        }
-        return "com.figma.Desktop"
-    }
-
-    private func figmaDisplayName(fileName: String?, pageName: String?) -> String {
-        switch (fileName, pageName) {
-        case let (.some(fileName), .some(pageName)):
-            return "Figma / \(fileName) / \(pageName)"
-        case let (.some(fileName), .none):
-            return "Figma / \(fileName)"
-        case let (.none, .some(pageName)):
-            return "Figma / \(pageName)"
-        case (.none, .none):
-            return "Figma"
-        }
-    }
-
-    private func isLikelyFigmaDocumentName(_ string: String) -> Bool {
-        let lowercased = string.lowercased()
-        return !string.isEmpty
-            && string.count <= 120
-            && !figmaIgnoredTokens.contains(lowercased)
-            && !looksLikeAccessibilityHint(string)
-            && !lowercased.hasPrefix("page ")
-            && !lowercased.contains("figma")
-    }
-
-    private func isLikelyFigmaPageName(_ string: String) -> Bool {
-        let lowercased = string.lowercased()
-        return !string.isEmpty
-            && string.count <= 60
-            && !figmaIgnoredTokens.contains(lowercased)
-            && !looksLikeAccessibilityHint(string)
-            && wordCount(in: string) <= 4
-            && !lowercased.contains("figma")
-    }
-
-    private func looksLikeAccessibilityHint(_ string: String) -> Bool {
-        let lowercased = string.lowercased()
-        return lowercased.contains("button")
-            || lowercased.contains("action")
-            || lowercased.contains("zoom")
-            || lowercased.contains("window")
-            || lowercased.contains("click")
-            || lowercased.contains("press")
-            || lowercased.contains("toggle")
-            || lowercased.contains("tooltip")
-            || string.contains(".")
-    }
-
-    private func wordCount(in string: String) -> Int {
-        string.split(whereSeparator: \.isWhitespace).count
-    }
-
-    private func deduplicatedStrings(_ strings: [String]) -> [String] {
-        var seen = Set<String>()
-        return strings.filter { string in
-            guard !string.isEmpty else { return false }
-            return seen.insert(string).inserted
-        }
-    }
-
     private func webDocumentString(startingAt element: AXUIElement) -> String? {
         let documentStrings = descendantDocumentStrings(startingAt: element) + ancestorDocumentStrings(startingAt: element)
         return documentStrings.first { documentString in
             documentString.hasPrefix("https://") || documentString.hasPrefix("http://")
         }
-    }
-
-    private func firstURL(in string: String) -> URL? {
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-            return nil
-        }
-
-        let range = NSRange(string.startIndex..<string.endIndex, in: string)
-        return detector.firstMatch(in: string, options: [], range: range)?.url
-    }
-
-    private func firstMatch(in string: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            return nil
-        }
-
-        let range = NSRange(string.startIndex..<string.endIndex, in: string)
-        guard let match = regex.firstMatch(in: string, options: [], range: range),
-              let matchRange = Range(match.range, in: string) else {
-            return nil
-        }
-
-        return String(string[matchRange])
     }
 
     private func ancestorDocumentStrings(startingAt element: AXUIElement) -> [String] {
@@ -999,48 +706,6 @@ nonisolated struct ContextResolver: Sendable {
 
     private func descendantDocumentStrings(startingAt element: AXUIElement) -> [String] {
         descendantValues(startingAt: element, extract: documentString(from:))
-    }
-
-    private var slackIgnoredTokens: Set<String> {
-        [
-            "slack",
-            "home",
-            "later",
-            "activity",
-            "threads",
-            "dms",
-            "more",
-            "search",
-            "drafts",
-            "canvases",
-            "huddles",
-            "messages",
-            "send message",
-            "new message",
-            "untitled",
-            "window"
-        ]
-    }
-
-    private var figmaIgnoredTokens: Set<String> {
-        [
-            "figma",
-            "drafts",
-            "workspace",
-            "recents",
-            "search",
-            "community",
-            "design",
-            "prototype",
-            "dev mode",
-            "present",
-            "share",
-            "comments",
-            "assets",
-            "layers",
-            "untitled",
-            "window"
-        ]
     }
 
     private func stringAttribute(_ attribute: CFString, from element: AXUIElement) -> String? {

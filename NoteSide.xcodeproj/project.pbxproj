@@ -35,6 +35,11 @@
 			path = NoteSide;
 			sourceTree = "<group>";
 		};
+		AA1000012F7F007C00991A77 /* NoteSideTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NoteSideTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,6 +71,7 @@
 			isa = PBXGroup;
 			children = (
 				FEAE36E42F7F007C00991A77 /* NoteSide */,
+				AA1000012F7F007C00991A77 /* NoteSideTests */,
 				FEAE36E32F7F007C00991A77 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -118,6 +124,9 @@
 			);
 			dependencies = (
 				FEAE36F12F7F007C00991A77 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA1000012F7F007C00991A77 /* NoteSideTests */,
 			);
 			name = NoteSideTests;
 			packageProductDependencies = (
