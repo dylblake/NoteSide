@@ -167,6 +167,9 @@ final class AppState {
         applyDockIconPreference()
         checkStoredLicense()
 
+        if let recoveryMessage = store.loadRecoveryMessage {
+            presentStorageRecoveryAlert(recoveryMessage)
+        }
     }
 
     convenience init() {
@@ -723,6 +726,21 @@ final class AppState {
         _ = AXIsProcessTrustedWithOptions(options)
 
         isAccessibilityTrusted = AXIsProcessTrusted()
+    }
+
+    private func presentStorageRecoveryAlert(_ message: String) {
+        // Defer past init so the alert doesn't run inside AppState's
+        // construction, and activate first — as an accessory app we have
+        // no window for the alert to attach to otherwise.
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "NoteSide had trouble reading your notes"
+            alert.informativeText = message
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
     }
 
     private var noteEditorPanelController: NoteEditorPanelController {
