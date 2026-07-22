@@ -6,7 +6,9 @@ import SwiftUI
 struct MenuBarContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
+    #if !MAS_BUILD
     @StateObject private var updateChecker = UpdateChecker()
+    #endif
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @State private var launchAtLoginNeedsApproval: Bool = false
 
@@ -181,7 +183,9 @@ struct MenuBarContentView: View {
                 }
             }
 
+            #if !MAS_BUILD
             updateRow
+            #endif
 
             Divider()
 
@@ -258,6 +262,7 @@ struct MenuBarContentView: View {
         launchAtLoginNeedsApproval = (enabled && status == .requiresApproval)
     }
 
+    #if !MAS_BUILD
     @ViewBuilder
     private var updateRow: some View {
         switch updateChecker.state {
@@ -378,4 +383,5 @@ struct MenuBarContentView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+    #endif
 }

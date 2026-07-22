@@ -3,6 +3,10 @@ import Combine
 import Foundation
 import Security
 
+// The self-updater downloads and swaps the app bundle — sandbox-
+// incompatible and disallowed on the App Store (updates ship through
+// the store itself), so the entire type is compiled out of MAS builds.
+#if !MAS_BUILD
 @MainActor
 final class UpdateChecker: ObservableObject {
     enum State: Equatable {
@@ -411,3 +415,4 @@ final class UpdateChecker: ObservableObject {
         }
     }
 }
+#endif
