@@ -151,11 +151,16 @@ nonisolated struct ContextResolver: Sendable {
             }
         }
 
+        #if MAS_BUILD
+        let grantHint = "Turn on Accessibility for NoteSide to attach notes per site."
+        #else
+        let grantHint = "Allow Automation access to attach notes per site."
+        #endif
         return NoteContext(
             kind: .application,
             identifier: bundleIdentifier,
             displayName: "\(appName) (Browser URL Unavailable)",
-            secondaryLabel: "Allow Automation access to attach notes per site.",
+            secondaryLabel: grantHint,
             navigationTarget: nil
         )
     }

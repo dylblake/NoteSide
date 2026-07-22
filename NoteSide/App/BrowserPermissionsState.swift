@@ -95,6 +95,11 @@ final class BrowserPermissionsState {
     }
 
     func refreshBrowserPermissionStates() {
+        #if MAS_BUILD
+        // Browser rows aren't shown in the App Store build (Accessibility
+        // covers browsers), and the sandbox would fail every probe anyway.
+        return
+        #else
         var browsersToProbe: [String] = []
 
         for browser in Self.supportedBrowsers {
@@ -151,6 +156,7 @@ final class BrowserPermissionsState {
                 }
             }
         }
+        #endif
     }
 
     // MARK: - App Automation (Finder, Xcode)
@@ -289,6 +295,11 @@ final class BrowserPermissionsState {
     }
 
     func queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: String?) {
+        #if MAS_BUILD
+        // Accessibility covers browsers in the App Store build; there is
+        // no Automation to nudge the user toward.
+        return
+        #else
         guard let sourceBundleIdentifier, browserURLProvider.supports(bundleIdentifier: sourceBundleIdentifier) else {
             return
         }
@@ -297,6 +308,7 @@ final class BrowserPermissionsState {
             let name = browserName(for: sourceBundleIdentifier)
             browserAutomationMessage = "Browser access is not enabled for \(name) yet. Use Permissions & Setup to request it."
         }
+        #endif
     }
 
     // MARK: - Internal Methods

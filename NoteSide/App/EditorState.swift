@@ -237,10 +237,16 @@ final class EditorState {
         let resolver = contextResolver
 
         let shouldAttemptBrowserAutomation: Bool = {
+            #if MAS_BUILD
+            // Sandboxed builds have no browser Apple Events entitlement —
+            // the Accessibility reader is the only browser path.
+            return false
+            #else
             guard let bundleId = bundleIdentifier else { return false }
             guard browserProvider.supports(bundleIdentifier: bundleId) else { return false }
             let state = permissionStates[bundleId]
             return state == .granted || state == nil || state == .undetermined
+            #endif
         }()
         let isFirstAttempt = shouldAttemptBrowserAutomation
             && (bundleIdentifier.map { permissionStates[$0] == nil || permissionStates[$0] == .undetermined } ?? false)

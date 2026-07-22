@@ -154,6 +154,14 @@ struct FirstRunView: View {
 
     private var browserStep: some View {
         VStack(alignment: .leading, spacing: 18) {
+            #if MAS_BUILD
+            stepHeader(
+                title: "Connect your browser",
+                subtitle: "This is where NoteSide shines: notes attach to the exact page you're on and reappear when you come back. One Accessibility permission covers Safari, Chrome, and every supported browser."
+            )
+
+            accessibilityBrowserCard
+            #else
             stepHeader(
                 title: "Connect your browser",
                 subtitle: "This is where NoteSide shines: notes attach to the exact page you're on and reappear when you come back. macOS asks for permission once per browser."
@@ -181,11 +189,54 @@ struct FirstRunView: View {
                 }
             }
 
+            #endif
+
             Text("You can skip this — notes still attach to the browser app itself, just not to individual pages.")
                 .font(.caption)
                 .foregroundStyle(NoteSideTheme.tertiaryText)
         }
     }
+
+    #if MAS_BUILD
+    private var accessibilityBrowserCard: some View {
+        let granted = appState.isAccessibilityTrusted
+
+        return HStack(alignment: .center, spacing: 14) {
+            Image(systemName: granted ? "checkmark.circle.fill" : "globe")
+                .font(.system(size: 28))
+                .foregroundStyle(granted ? NoteSideTheme.success : NoteSideTheme.accent)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("All Browsers")
+                    .font(.headline)
+                Text(granted
+                    ? "Connected. Open any page and press \(appState.hotkeys.hotKeyDisplayString)."
+                    : "Uses macOS Accessibility to read the current page. Click Connect, enable NoteSide in System Settings, then come back — this updates on its own.")
+                    .font(.subheadline)
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            if !granted {
+                wizardButton("Connect", prominent: true) {
+                    appState.openAccessibilitySettings()
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(NoteSideTheme.contentBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(granted ? NoteSideTheme.success.opacity(0.5) : NoteSideTheme.border.opacity(0.8), lineWidth: 1)
+                )
+        )
+    }
+    #endif
 
     private func featuredBrowserCard(_ browser: BrowserDescriptor) -> some View {
         let state = appState.browserPermissions.browserPermissionStates[browser.bundleIdentifier] ?? .undetermined

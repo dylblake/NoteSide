@@ -121,14 +121,13 @@ struct OnboardingView: View {
 
                 permissionStatusRow(
                     title: "Accessibility",
-                    detail: appState.isAccessibilityTrusted
-                        ? "Enabled. NoteSide can detect in-app context (Slack channels, Figma files, editor documents) and dictation release."
-                        : "Not enabled. Needed for Slack/Figma/editor context detection and dictation. Click Request Access, then enable NoteSide in macOS Accessibility settings.",
+                    detail: accessibilityRowDetail,
                     status: appState.isAccessibilityTrusted ? .granted : .missing,
                     buttonTitle: appState.isAccessibilityTrusted ? nil : "Request Access",
                     action: appState.isAccessibilityTrusted ? nil : { [appState] in appState.openAccessibilitySettings() }
                 )
 
+                #if !MAS_BUILD
                 permissionStatusRow(
                     title: "Browser Automation",
                     detail: "Request access per browser below. macOS will ask the first time NoteSide tries to read that browser's active tab.",
@@ -150,12 +149,25 @@ struct OnboardingView: View {
                         browserRequestRow(title: browser.title, bundleIdentifier: browser.bundleIdentifier)
                     }
                 }
+                #endif
 
                 appAutomationSection
 
                 dictationPermissionsSection
             }
         }
+    }
+
+    private var accessibilityRowDetail: String {
+        #if MAS_BUILD
+        appState.isAccessibilityTrusted
+            ? "Enabled. NoteSide can read the current browser page and detect in-app context (Slack channels, Figma files, editor documents)."
+            : "Not enabled. Needed for browser page notes, Slack/Figma/editor context detection, and dictation. Click Request Access, then enable NoteSide in macOS Accessibility settings."
+        #else
+        appState.isAccessibilityTrusted
+            ? "Enabled. NoteSide can detect in-app context (Slack channels, Figma files, editor documents) and dictation release."
+            : "Not enabled. Needed for Slack/Figma/editor context detection and dictation. Click Request Access, then enable NoteSide in macOS Accessibility settings."
+        #endif
     }
 
     private var appAutomationSection: some View {
