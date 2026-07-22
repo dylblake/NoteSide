@@ -7,11 +7,16 @@ final class AllNotesPanelController {
     private var panel: NoteEditorPanel?
     private var animationSequence = 0
 
-    private static let presentDuration: TimeInterval = 0.6
-    private static let dismissDuration: TimeInterval = 0.45
+    private static let presentDuration: TimeInterval = 0.28
+    private static let dismissDuration: TimeInterval = 0.22
+    private static let reducedMotionFadeDuration: TimeInterval = 0.15
 
     private static let smoothEaseOut = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
     private static let smoothEaseIn = CAMediaTimingFunction(controlPoints: 0.7, 0.0, 0.84, 0.0)
+
+    private var prefersReducedMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     func install(appState: AppState) {
         let rootView = FloatingAllNotesView()
@@ -50,13 +55,15 @@ final class AllNotesPanelController {
 
         // Start as a collapsed sliver at the right edge of the active
         // screen, then expand leftward — no bleed onto adjacent monitors.
-        panel.setFrame(collapsedFrame(for: screen), display: false)
+        // Under Reduce Motion, fade in at the final position instead.
+        let reduceMotion = prefersReducedMotion
+        panel.setFrame(reduceMotion ? finalFrame : collapsedFrame(for: screen), display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         panel.makeKey()
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = Self.presentDuration
+            context.duration = reduceMotion ? Self.reducedMotionFadeDuration : Self.presentDuration
             context.timingFunction = Self.smoothEaseOut
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(finalFrame, display: true)
@@ -78,10 +85,12 @@ final class AllNotesPanelController {
         animationSequence += 1
         let sequence = animationSequence
 
-        let endFrame = collapsedFrame(for: screen)
+        // Under Reduce Motion, fade out in place instead of sliding.
+        let reduceMotion = prefersReducedMotion
+        let endFrame = reduceMotion ? panel.frame : collapsedFrame(for: screen)
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = Self.dismissDuration
+            context.duration = reduceMotion ? Self.reducedMotionFadeDuration : Self.dismissDuration
             context.timingFunction = Self.smoothEaseIn
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(endFrame, display: true)

@@ -9,13 +9,18 @@ final class NoteEditorPanelController {
     private var lastPresentedScreen: NSScreen?
     private var activeGhostWindows: [NSWindow] = []
 
-    // Animation tuning. Longer durations + softer curves than the defaults
-    // to make the slide-in feel deliberate and the slide-out less jumpy.
-    // Present is slightly longer than dismiss because the eye reads "appear"
-    // as the more meaningful event; dismiss can be slightly faster without
-    // feeling rushed.
-    private static let presentDuration: TimeInterval = 0.6
-    private static let dismissDuration: TimeInterval = 0.45
+    // Animation tuning. Fast enough that the drawer reads as instant —
+    // this is the app's signature interaction — while the soft ease-out
+    // keeps the settle from feeling abrupt. Present is slightly longer
+    // than dismiss because the eye reads "appear" as the more meaningful
+    // event.
+    private static let presentDuration: TimeInterval = 0.28
+    private static let dismissDuration: TimeInterval = 0.22
+    private static let reducedMotionFadeDuration: TimeInterval = 0.15
+
+    private var prefersReducedMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     // Cubic-bezier curves chosen for smoothness:
     //  - smoothEaseOut: gentle decel — used for present (and the expand
@@ -69,14 +74,16 @@ final class NoteEditorPanelController {
         // Start the panel as a collapsed sliver at the right edge of the
         // active screen, then expand leftward. This keeps the entire
         // animation within the active display — no bleed onto an
-        // adjacent monitor.
-        panel.setFrame(collapsedFrame(for: screen), display: false)
+        // adjacent monitor. Under Reduce Motion, skip the slide and fade
+        // in at the final position instead.
+        let reduceMotion = prefersReducedMotion
+        panel.setFrame(reduceMotion ? finalFrame : collapsedFrame(for: screen), display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         panel.makeKey()
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = Self.presentDuration
+            context.duration = reduceMotion ? Self.reducedMotionFadeDuration : Self.presentDuration
             context.timingFunction = Self.smoothEaseOut
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(finalFrame, display: true)
@@ -131,6 +138,17 @@ final class NoteEditorPanelController {
         // NSScreen instances aren't necessarily reference-stable across calls;
         // compare frames instead.
         guard currentScreen.frame != target.frame else { return }
+
+        // Under Reduce Motion, snap to the new screen without the
+        // ghost-window cross-fade choreography.
+        if prefersReducedMotion {
+            animationSequence += 1
+            lastPresentedScreen = target
+            panel.setFrame(paneFrame(for: target), display: true, animate: false)
+            panel.alphaValue = 1
+            panel.orderFrontRegardless()
+            return
+        }
 
         animationSequence += 1
         let sequence = animationSequence
@@ -395,10 +413,12 @@ final class NoteEditorPanelController {
         animationSequence += 1
         let sequence = animationSequence
 
-        let endFrame = collapsedFrame(for: screen)
+        // Under Reduce Motion, fade out in place instead of sliding.
+        let reduceMotion = prefersReducedMotion
+        let endFrame = reduceMotion ? panel.frame : collapsedFrame(for: screen)
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = Self.dismissDuration
+            context.duration = reduceMotion ? Self.reducedMotionFadeDuration : Self.dismissDuration
             context.timingFunction = Self.smoothEaseIn
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(endFrame, display: true)
