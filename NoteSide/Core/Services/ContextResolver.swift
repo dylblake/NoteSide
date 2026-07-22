@@ -52,15 +52,11 @@ nonisolated struct ContextResolver: Sendable {
             )
         }
 
-        if allowBrowserAutomation,
-           let url = browserURLProvider.activeURL(bundleIdentifier: bundleIdentifier) {
-            let host = normalizedHost(for: url)
-            return NoteContext(
-                kind: .url,
-                identifier: pageIdentifier(for: url),
-                displayName: host ?? displayName(for: url),
-                secondaryLabel: url.absoluteString,
-                navigationTarget: url.absoluteString
+        if supportedBrowserBundleIdentifiers.contains(bundleIdentifier) {
+            return browserContext(
+                bundleIdentifier: bundleIdentifier,
+                appName: appName,
+                allowBrowserAutomation: allowBrowserAutomation
             )
         }
 
@@ -92,21 +88,58 @@ nonisolated struct ContextResolver: Sendable {
             )
         }
 
-        if supportedBrowserBundleIdentifiers.contains(bundleIdentifier) {
-            return NoteContext(
-                kind: .application,
-                identifier: bundleIdentifier,
-                displayName: "\(appName) (Browser URL Unavailable)",
-                secondaryLabel: "Allow Automation access to attach notes per site.",
-                navigationTarget: nil
-            )
-        }
-
         return NoteContext(
             kind: .application,
             identifier: bundleIdentifier,
             displayName: appName,
             secondaryLabel: bundleIdentifier,
+            navigationTarget: nil
+        )
+    }
+
+    /// Resolves the context for a supported browser, distinguishing "no
+    /// active tab" (permission is fine, there's just nothing to attach to)
+    /// from "Automation not granted" so users with access aren't told to
+    /// grant it again.
+    private func browserContext(
+        bundleIdentifier: String,
+        appName: String,
+        allowBrowserAutomation: Bool
+    ) -> NoteContext {
+        if allowBrowserAutomation {
+            let attempt = browserURLProvider.accessAttempt(
+                bundleIdentifier: bundleIdentifier,
+                activatesBrowser: false
+            )
+
+            switch attempt.result {
+            case .success(_, let url):
+                let host = normalizedHost(for: url)
+                return NoteContext(
+                    kind: .url,
+                    identifier: pageIdentifier(for: url),
+                    displayName: host ?? displayName(for: url),
+                    secondaryLabel: url.absoluteString,
+                    navigationTarget: url.absoluteString
+                )
+            case .noTab:
+                return NoteContext(
+                    kind: .application,
+                    identifier: bundleIdentifier,
+                    displayName: appName,
+                    secondaryLabel: "No active tab — this note attaches to \(appName) itself.",
+                    navigationTarget: nil
+                )
+            case .automationDenied, .unavailable, .notBrowser:
+                break
+            }
+        }
+
+        return NoteContext(
+            kind: .application,
+            identifier: bundleIdentifier,
+            displayName: "\(appName) (Browser URL Unavailable)",
+            secondaryLabel: "Allow Automation access to attach notes per site.",
             navigationTarget: nil
         )
     }
