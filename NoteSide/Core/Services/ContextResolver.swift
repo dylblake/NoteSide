@@ -8,6 +8,7 @@ nonisolated struct ContextResolver: Sendable {
         BrowserURLProvider.supportedBrowsers.map(\.bundleIdentifier)
     )
     private static let scriptExecutor = AppleScriptExecutor.shared
+    private let axBrowserURLReader = AXBrowserURLReader()
     private let slackBundleIdentifiers: Set<String> = [
         "com.tinyspeck.slackmacgap",
         "com.tinyspeck.slackmacgap2"
@@ -54,6 +55,7 @@ nonisolated struct ContextResolver: Sendable {
 
         if supportedBrowserBundleIdentifiers.contains(bundleIdentifier) {
             return browserContext(
+                for: app,
                 bundleIdentifier: bundleIdentifier,
                 appName: appName,
                 allowBrowserAutomation: allowBrowserAutomation
@@ -111,15 +113,22 @@ nonisolated struct ContextResolver: Sendable {
         )
     }
 
-    /// Resolves the context for a supported browser, distinguishing "no
-    /// active tab" (permission is fine, there's just nothing to attach to)
-    /// from "Automation not granted" so users with access aren't told to
-    /// grant it again.
+    /// Resolves the context for a supported browser. Prefers the
+    /// Accessibility path (no Apple Events, no per-browser Automation
+    /// prompt), falling back to AppleScript, and distinguishes "no
+    /// active tab" (permission is fine, there's just nothing to attach
+    /// to) from "Automation not granted" so users with access aren't
+    /// told to grant it again.
     private func browserContext(
+        for app: NSRunningApplication,
         bundleIdentifier: String,
         appName: String,
         allowBrowserAutomation: Bool
     ) -> NoteContext {
+        if let url = axBrowserURLReader.activeURL(for: app) {
+            return webPageContext(for: url)
+        }
+
         if allowBrowserAutomation {
             let attempt = browserURLProvider.accessAttempt(
                 bundleIdentifier: bundleIdentifier,
@@ -128,14 +137,7 @@ nonisolated struct ContextResolver: Sendable {
 
             switch attempt.result {
             case .success(_, let url):
-                let host = normalizedHost(for: url)
-                return NoteContext(
-                    kind: .url,
-                    identifier: pageIdentifier(for: url),
-                    displayName: host ?? displayName(for: url),
-                    secondaryLabel: url.absoluteString,
-                    navigationTarget: url.absoluteString
-                )
+                return webPageContext(for: url)
             case .noTab:
                 return NoteContext(
                     kind: .application,
@@ -155,6 +157,17 @@ nonisolated struct ContextResolver: Sendable {
             displayName: "\(appName) (Browser URL Unavailable)",
             secondaryLabel: "Allow Automation access to attach notes per site.",
             navigationTarget: nil
+        )
+    }
+
+    private func webPageContext(for url: URL) -> NoteContext {
+        let host = normalizedHost(for: url)
+        return NoteContext(
+            kind: .url,
+            identifier: pageIdentifier(for: url),
+            displayName: host ?? displayName(for: url),
+            secondaryLabel: url.absoluteString,
+            navigationTarget: url.absoluteString
         )
     }
 

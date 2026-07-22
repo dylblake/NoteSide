@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import ApplicationServices
 import Foundation
 import Observation
 
@@ -326,12 +327,21 @@ final class EditorState {
     // MARK: - Context Tracking (AX events + fallback polling)
 
     /// True when the in-app context of this bundle can change without an
-    /// app switch: browser tabs (granted browsers) and apps whose file /
-    /// channel focus moves within the same process, so
-    /// didActivateApplication never fires.
+    /// app switch: browser tabs and apps whose file / channel focus moves
+    /// within the same process, so didActivateApplication never fires.
     private func isTrackableForIntraAppChanges(_ bundleIdentifier: String) -> Bool {
-        browserPermissions.browserPermissionStates[bundleIdentifier] == .granted
+        isTrackableBrowser(bundleIdentifier)
             || Self.intraAppPollingBundleIdentifiers.contains(bundleIdentifier)
+    }
+
+    /// A browser is trackable through either URL-reading path: Automation
+    /// (AppleScript) or Accessibility (AXWebArea), whichever is granted.
+    private func isTrackableBrowser(_ bundleIdentifier: String) -> Bool {
+        guard browserPermissions.browserURLProvider.supports(bundleIdentifier: bundleIdentifier) else {
+            return false
+        }
+        return browserPermissions.browserPermissionStates[bundleIdentifier] == .granted
+            || AXIsProcessTrusted()
     }
 
     private var shouldRefreshDetailedContext: Bool {
@@ -410,7 +420,7 @@ final class EditorState {
         // keep a moderate cadence because a same-title URL change (SPA
         // navigation) doesn't fire any AX notification.
         if let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-           browserPermissions.browserPermissionStates[bundleIdentifier] == .granted {
+           isTrackableBrowser(bundleIdentifier) {
             return .seconds(3)
         }
         return .seconds(10)
