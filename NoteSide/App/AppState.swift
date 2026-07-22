@@ -113,6 +113,18 @@ final class AppState {
             .sink { [weak self] value in self?.isSpeechRecognitionAuthorized = value }
             .store(in: &cancellables)
 
+        // Dictation failures (recognizer unavailable, audio engine errors)
+        // previously died silently inside the service; show them where the
+        // user is looking.
+        dictationService.$state
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in
+                if case .failed(let message) = state {
+                    self?.editor.editorErrorMessage = message
+                }
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -414,8 +426,34 @@ final class AppState {
             editor.isViewingOrphanedNote = true
             Task { [weak self] in
                 self?.edit(note)
-                self?.editor.editorErrorMessage = "Original context is no longer available"
+                self?.editor.editorErrorMessage = "The original file or page for this note is no longer available. Navigate to its new home, then re-attach it below."
             }
+        }
+    }
+
+    /// Rewrites an orphaned note's context to whatever the user is
+    /// currently viewing. The panel is non-activating, so the frontmost
+    /// app is still the one under the drawer.
+    func relinkOrphanedNoteToCurrentContext() {
+        guard editor.isViewingOrphanedNote,
+              let oldContext = editor.activeContext,
+              let note = notesState.note(for: oldContext) else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let newContext = await self.editor.resolveCurrentContextAsync()
+            guard self.editor.isEditorPresented, self.editor.isViewingOrphanedNote else { return }
+            guard newContext.id != oldContext.id else { return }
+
+            guard self.notesState.note(for: newContext) == nil else {
+                self.editor.editorErrorMessage = "Couldn't re-attach: \(newContext.displayName) already has its own note."
+                return
+            }
+
+            self.notesState.upsert(note.copying(context: newContext, updatedAt: .now))
+            self.editor.activeContext = newContext
+            self.editor.isViewingOrphanedNote = false
+            self.editor.editorErrorMessage = nil
         }
     }
 
@@ -589,6 +627,7 @@ final class AppState {
 
         guard dictationService.isFullyAuthorized else {
             requestDictationPermissionsIfNeeded()
+            editor.editorErrorMessage = "Dictation needs Microphone and Speech Recognition access — grant both in Permissions & Setup."
             return
         }
 

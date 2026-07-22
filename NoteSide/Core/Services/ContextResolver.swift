@@ -88,6 +88,20 @@ nonisolated struct ContextResolver: Sendable {
             )
         }
 
+        // Code editor with no resolvable document (unsaved buffer, welcome
+        // tab, or no file focused): be explicit that the note attaches to
+        // the app, not a file — otherwise the note silently fails to
+        // follow the file the user thinks they're annotating.
+        if bundleIdentifier == xcodeBundleIdentifier || codeBundleIdentifiers.contains(bundleIdentifier) {
+            return NoteContext(
+                kind: .application,
+                identifier: bundleIdentifier,
+                displayName: appName,
+                secondaryLabel: "No saved file in focus — this note attaches to \(appName) itself.",
+                navigationTarget: nil
+            )
+        }
+
         return NoteContext(
             kind: .application,
             identifier: bundleIdentifier,

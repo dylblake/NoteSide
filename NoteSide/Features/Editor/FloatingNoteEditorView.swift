@@ -55,7 +55,19 @@ struct FloatingNoteEditorView: View {
                             Text(errorMessage)
                                 .font(.footnote)
                                 .foregroundStyle(NoteSideTheme.warning)
-                                .lineLimit(2)
+                                .lineLimit(3)
+                        }
+
+                        if appState.editor.isViewingOrphanedNote {
+                            Button {
+                                appState.relinkOrphanedNoteToCurrentContext()
+                            } label: {
+                                Text("Attach to Current Context")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(NoteSideTheme.accent)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Re-attach this note to the app, page, or file currently in front")
                         }
                     }
                     .padding(.horizontal, 18)
