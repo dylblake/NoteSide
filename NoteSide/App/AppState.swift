@@ -170,6 +170,15 @@ final class AppState {
         if let recoveryMessage = store.loadRecoveryMessage {
             presentStorageRecoveryAlert(recoveryMessage)
         }
+
+        // First launch: the app is a menu bar accessory with no window, so
+        // without this a new user sees nothing happen at all. Defer a tick
+        // so we're not presenting from inside init.
+        if !hasCompletedOnboarding {
+            DispatchQueue.main.async { [weak self] in
+                self?.presentOnboardingWindow()
+            }
+        }
     }
 
     convenience init() {
@@ -309,7 +318,6 @@ final class AppState {
     private func presentOnboardingWindow() {
         refreshPermissionStatus()
         browserPermissions.refreshBrowserPermissionStates()
-        hasCompletedOnboarding = false
         onboardingWindow.present()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -321,6 +329,7 @@ final class AppState {
     func completeOnboarding() {
         hasCompletedOnboarding = true
         UserDefaults.standard.set(true, forKey: Self.onboardingDefaultsKey)
+        onboardingWindowController?.dismiss()
     }
 
     func openAccessibilitySettings() {

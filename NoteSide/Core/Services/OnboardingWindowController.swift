@@ -52,6 +52,10 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    func dismiss() {
+        window?.close()
+    }
+
     func windowWillClose(_ notification: Notification) {
         appState?.setOnboardingWindowVisible(false)
     }

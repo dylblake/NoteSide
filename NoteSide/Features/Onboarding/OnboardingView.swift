@@ -10,6 +10,7 @@ struct OnboardingView: View {
                 header
                 hotkeyCard
                 permissionsCard
+                completionFooter
             }
             .padding(28)
         }
@@ -169,6 +170,20 @@ struct OnboardingView: View {
                 buttonTitle: speechButton,
                 action: speechAction
             )
+        }
+    }
+
+    private var completionFooter: some View {
+        HStack {
+            Text("You can reopen this window anytime from the menu bar icon → Permissions & Setup.")
+                .font(.footnote)
+                .foregroundStyle(NoteSideTheme.tertiaryText)
+
+            Spacer(minLength: 16)
+
+            primaryButton(appState.hasCompletedOnboarding ? "Done" : "Get Started") {
+                appState.completeOnboarding()
+            }
         }
     }
 
