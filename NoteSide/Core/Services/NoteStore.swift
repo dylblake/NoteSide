@@ -1,6 +1,15 @@
 import Foundation
 
 final class NoteStore {
+    /// On-disk envelope. The version field exists so future format changes
+    /// can migrate explicitly instead of guessing from shape.
+    private struct NotesFile: Codable {
+        var version: Int
+        var notes: [ContextNote]
+    }
+
+    private static let currentSchemaVersion = 1
+
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -44,7 +53,7 @@ final class NoteStore {
         guard fileManager.fileExists(atPath: fileURL.path) else { return [] }
 
         if let data = try? Data(contentsOf: fileURL),
-           let notes = try? decoder.decode([ContextNote].self, from: data) {
+           let notes = decodeNotes(from: data) {
             return notes
         }
 
@@ -54,7 +63,7 @@ final class NoteStore {
         let quarantineURL = quarantineCorruptFile()
 
         if let backupData = try? Data(contentsOf: backupURL),
-           let backupNotes = try? decoder.decode([ContextNote].self, from: backupData) {
+           let backupNotes = decodeNotes(from: backupData) {
             loadRecoveryMessage = recoveryMessageForRestoredBackup(quarantineURL: quarantineURL)
             // Re-establish notes.json from the backup so the next launch
             // doesn't go through recovery again.
@@ -88,11 +97,20 @@ final class NoteStore {
         }
     }
 
+    private func decodeNotes(from data: Data) -> [ContextNote]? {
+        if let file = try? decoder.decode(NotesFile.self, from: data) {
+            return file.notes
+        }
+        // Legacy format: a bare top-level array of notes.
+        return try? decoder.decode([ContextNote].self, from: data)
+    }
+
     /// Must only run on writeQueue.
     private func writePendingToDisk() {
         guard let notes = pendingNotes else { return }
         pendingNotes = nil
-        guard let data = try? encoder.encode(notes) else { return }
+        let file = NotesFile(version: Self.currentSchemaVersion, notes: notes)
+        guard let data = try? encoder.encode(file) else { return }
 
         // Keep the previous good copy as a backup before overwriting, so a
         // corrupted or interrupted write never destroys the only copy.
