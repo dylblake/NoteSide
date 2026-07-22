@@ -16,7 +16,6 @@ private enum AllNotesViewMode: String {
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var showingBulkDeleteConfirmation = false
-    @State private var isContentReady = false
     @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
 
     var isFloatingPanel = false
@@ -57,40 +56,26 @@ struct ContentView: View {
                         .frame(height: 0)
                         .id("top")
 
-                    if isContentReady || !isFloatingPanel {
-                        VStack(alignment: .leading, spacing: 28) {
-                            ForEach(noteSections) { section in
-                                if !section.groups.isEmpty {
-                                    switch viewMode {
-                                    case .grid:
-                                        NoteTileSection(section: section)
-                                                .environment(appState)
-                                    case .list:
-                                        NoteListSection(section: section)
+                    LazyVStack(alignment: .leading, spacing: 28) {
+                        ForEach(appState.notesState.noteSections) { section in
+                            if !section.groups.isEmpty {
+                                switch viewMode {
+                                case .grid:
+                                    NoteTileSection(section: section)
                                             .environment(appState)
-                                    }
+                                case .list:
+                                    NoteListSection(section: section)
+                                        .environment(appState)
                                 }
                             }
                         }
-                        .padding(.horizontal, isFloatingPanel ? 18 : 24)
-                        .padding(.bottom, isFloatingPanel ? 18 : 24)
                     }
+                    .padding(.horizontal, isFloatingPanel ? 18 : 24)
+                    .padding(.bottom, isFloatingPanel ? 18 : 24)
                 }
             }
             .onChange(of: appState.notesState.allNotesScrollResetID) { _, _ in
-                isContentReady = false
                 proxy.scrollTo("top", anchor: .top)
-                DispatchQueue.main.async {
-                    isContentReady = true
-                }
-            }
-            .onAppear {
-                if isFloatingPanel {
-                    isContentReady = false
-                    DispatchQueue.main.async {
-                        isContentReady = true
-                    }
-                }
             }
         }
 
@@ -193,213 +178,12 @@ struct ContentView: View {
         }
     }
 
-    private var noteSections: [NoteTileSectionModel] {
-        let notes = appState.notesState.filteredNotes
-        let pinnedNotes = notes.filter(\.isPinned)
-        let unpinnedNotes = notes.filter { !$0.isPinned }
-        let siteNotes = unpinnedNotes.filter { $0.context.kind == .url }
-        let codeEditorFileNotes = unpinnedNotes.filter { isCodeEditorFileContext($0.context) }
-        let regularFileNotes = unpinnedNotes.filter { $0.context.kind == .file && !isCodeEditorFileContext($0.context) }
-
-        return [
-            makePinnedSection(notes: pinnedNotes),
-            makeSection(
-                id: "applications",
-                title: "Apps",
-                notes: unpinnedNotes.filter { $0.context.kind == .application },
-                key: { appGroupName(for: $0.context) },
-                groupTitle: { notes in
-                    appGroupName(for: notes[0].context)
-                },
-                subtitle: { _ in nil }
-            ),
-        ] + websiteSections(for: siteNotes) + codebaseSections(for: codeEditorFileNotes) + [
-            makeSection(
-                id: "files",
-                title: "Files",
-                notes: regularFileNotes,
-                key: { fileGroupKey(for: $0.context) },
-                // The file name + parent directory now live inside each card
-                // (see NoteTile.headerLabel / subheaderLabel) so the group
-                // wrapper doesn't repeat them.
-                groupTitle: { _ in "" },
-                subtitle: { _ in nil }
-            )
-        ]
-    }
-
-    private func makePinnedSection(notes: [ContextNote]) -> NoteTileSectionModel {
-        let sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
-        return NoteTileSectionModel(
-            id: "pinned",
-            title: "Pinned",
-            helperText: nil,
-            groups: sortedNotes.isEmpty ? [] : [
-                NoteTileGroup(
-                    id: "pinned",
-                    title: "",
-                    subtitle: nil,
-                    notes: sortedNotes
-                )
-            ]
-        )
-    }
-
-    private func makeSection(
-        id: String,
-        title: String,
-        notes: [ContextNote],
-        key: (ContextNote) -> String,
-        groupTitle: ([ContextNote]) -> String,
-        subtitle: ([ContextNote]) -> String?
-    ) -> NoteTileSectionModel {
-        let grouped = Dictionary(grouping: notes, by: key)
-            .map { groupKey, notes in
-                NoteTileGroup(
-                    id: groupKey,
-                    title: groupTitle(notes),
-                    subtitle: subtitle(notes),
-                    notes: notes.sorted { $0.updatedAt > $1.updatedAt }
-                )
-            }
-            .sorted { lhs, rhs in
-                let lhsDate = lhs.notes.first?.updatedAt ?? .distantPast
-                let rhsDate = rhs.notes.first?.updatedAt ?? .distantPast
-                return lhsDate > rhsDate
-            }
-
-        return NoteTileSectionModel(
-            id: id,
-            title: title,
-            helperText: id == "applications" ? "Some apps don’t support returning to the original context (Slack, Figma, ...)" : nil,
-            groups: grouped
-        )
-    }
-
-    private func siteName(for context: NoteContext) -> String {
-        if let secondaryLabel = context.secondaryLabel,
-           let url = URL(string: secondaryLabel),
-           let host = url.host(),
-           !host.isEmpty {
-            return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-        }
-
-        return context.displayName
-    }
-
-    private func appGroupName(for context: NoteContext) -> String {
-        let components = context.displayName.components(separatedBy: " / ")
-        return components.first ?? context.displayName
-    }
-
-    private func fileGroupKey(for context: NoteContext) -> String {
-        let root = context.sourceRootPath ?? context.identifier
-        let editor = context.sourceBundleIdentifier ?? "unknown"
-        return "\(editor)::\(root)"
-    }
-
-    private func codebaseSections(for notes: [ContextNote]) -> [NoteTileSectionModel] {
-        let grouped = Dictionary(grouping: notes) { note in
-            note.context.sourceRootPath ?? note.context.identifier
-        }
-
-        return grouped
-            .map { rootPath, rootNotes in
-                makeSection(
-                    id: "codebase::\(rootPath)",
-                    title: shortenedPath(rootPath),
-                    notes: rootNotes,
-                    key: { codeEditorGroupKey(for: $0.context) },
-                    // File name + project root are now rendered inside the
-                    // card body (NoteTile.headerLabel / subheaderLabel), so
-                    // the group wrapper above the card stays empty.
-                    groupTitle: { _ in "" },
-                    subtitle: { _ in nil }
-                )
-            }
-            .sorted { lhs, rhs in
-                let lhsDate = lhs.groups.flatMap(\.notes).map(\.updatedAt).max() ?? .distantPast
-                let rhsDate = rhs.groups.flatMap(\.notes).map(\.updatedAt).max() ?? .distantPast
-                return lhsDate > rhsDate
-            }
-    }
-
-    private func websiteSections(for notes: [ContextNote]) -> [NoteTileSectionModel] {
-        let grouped = Dictionary(grouping: notes) { note in
-            siteName(for: note.context)
-        }
-
-        return grouped
-            .map { site, siteNotes in
-                NoteTileSectionModel(
-                    id: "site::\(site)",
-                    title: site,
-                    helperText: nil,
-                    groups: [
-                        NoteTileGroup(
-                            id: site,
-                            title: "",
-                            subtitle: nil,
-                            notes: siteNotes.sorted { $0.updatedAt > $1.updatedAt }
-                        )
-                    ]
-                )
-            }
-            .sorted { lhs, rhs in
-                let lhsDate = lhs.groups.flatMap(\.notes).map(\.updatedAt).max() ?? .distantPast
-                let rhsDate = rhs.groups.flatMap(\.notes).map(\.updatedAt).max() ?? .distantPast
-                return lhsDate > rhsDate
-            }
-    }
-
-    private func isCodeEditorFileContext(_ context: NoteContext) -> Bool {
-        guard context.kind == .file else { return false }
-        guard let bundleIdentifier = context.sourceBundleIdentifier else { return false }
-        return [
-            "com.apple.dt.Xcode",
-            "com.microsoft.VSCode",
-            "com.microsoft.VSCodeInsiders",
-            "com.visualstudio.code.oss"
-        ].contains(bundleIdentifier)
-    }
-
-    private func codeEditorGroupKey(for context: NoteContext) -> String {
-        let editor = context.sourceBundleIdentifier ?? "unknown"
-        return "\(editor)::\(context.identifier)"
-    }
-
-    private func shortenedPath(_ path: String) -> String {
-        let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard !trimmed.isEmpty else { return path }
-
-        let components = trimmed.split(separator: "/").map(String.init)
-        if components.count >= 2 {
-            return components.suffix(2).joined(separator: "/")
-        }
-
-        return components[0]
-    }
-
-}
-
-private struct NoteTileSectionModel: Identifiable {
-    let id: String
-    let title: String
-    let helperText: String?
-    let groups: [NoteTileGroup]
-}
-
-private struct NoteTileGroup: Identifiable {
-    let id: String
-    let title: String
-    let subtitle: String?
-    let notes: [ContextNote]
 }
 
 private struct NoteTileSection: View {
     @Environment(AppState.self) private var appState
 
-    let section: NoteTileSectionModel
+    let section: NoteSection
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -425,7 +209,7 @@ private struct NoteTileSection: View {
 private struct NoteGroupTile: View {
     @Environment(AppState.self) private var appState
 
-    let group: NoteTileGroup
+    let group: NoteSectionGroup
 
     private let columns = [
         GridItem(.flexible(), spacing: 18, alignment: .top),
@@ -652,7 +436,7 @@ private enum NoteCardStyle {
 private struct NoteListSection: View {
     @Environment(AppState.self) private var appState
 
-    let section: NoteTileSectionModel
+    let section: NoteSection
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -678,7 +462,7 @@ private struct NoteListSection: View {
 private struct NoteListGroup: View {
     @Environment(AppState.self) private var appState
 
-    let group: NoteTileGroup
+    let group: NoteSectionGroup
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

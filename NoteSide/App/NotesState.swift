@@ -19,6 +19,7 @@ final class NotesState {
     private var _sortedNotes: [ContextNote] = []
     private var _notesByContextID: [String: ContextNote] = [:]
     private(set) var filteredNotes: [ContextNote] = []
+    private(set) var noteSections: [NoteSection] = []
     private(set) var recentNotes: [ContextNote] = []
     var searchText = "" {
         didSet { if searchText != oldValue { recomputeFilteredNotes() } }
@@ -50,6 +51,7 @@ final class NotesState {
         _sortedNotes = loaded.sorted { $0.updatedAt > $1.updatedAt }
         _notesByContextID = Dictionary(uniqueKeysWithValues: loaded.map { ($0.context.id, $0) })
         filteredNotes = _sortedNotes
+        noteSections = NoteSectionBuilder.build(from: _sortedNotes)
         recentNotes = Array(_sortedNotes.prefix(5))
 
         if seededCount != storedCount {
@@ -134,28 +136,28 @@ final class NotesState {
 
     private func recomputeFilteredNotes() {
         recentNotes = Array(_sortedNotes.prefix(5))
+        filteredNotes = Self.filter(notes: _sortedNotes, query: searchText)
+        noteSections = NoteSectionBuilder.build(from: filteredNotes)
+    }
 
-        guard !searchText.isEmpty else {
-            filteredNotes = _sortedNotes
-            return
-        }
+    static func filter(notes: [ContextNote], query: String) -> [ContextNote] {
+        guard !query.isEmpty else { return notes }
 
-        if searchText.hasPrefix("#") {
-            let tagQuery = String(searchText.dropFirst()).trimmingCharacters(in: .whitespaces).lowercased()
+        if query.hasPrefix("#") {
+            let tagQuery = String(query.dropFirst()).trimmingCharacters(in: .whitespaces).lowercased()
             if !tagQuery.isEmpty {
-                filteredNotes = _sortedNotes.filter { note in
+                return notes.filter { note in
                     note.tags.contains { $0.localizedCaseInsensitiveContains(tagQuery) }
                 }
-                return
             }
         }
 
-        filteredNotes = _sortedNotes.filter { note in
-            note.context.displayName.localizedCaseInsensitiveContains(searchText)
-                || note.context.identifier.localizedCaseInsensitiveContains(searchText)
-                || (note.context.secondaryLabel?.localizedCaseInsensitiveContains(searchText) ?? false)
-                || note.body.localizedCaseInsensitiveContains(searchText)
-                || (note.title?.localizedCaseInsensitiveContains(searchText) ?? false)
+        return notes.filter { note in
+            note.context.displayName.localizedCaseInsensitiveContains(query)
+                || note.context.identifier.localizedCaseInsensitiveContains(query)
+                || (note.context.secondaryLabel?.localizedCaseInsensitiveContains(query) ?? false)
+                || note.body.localizedCaseInsensitiveContains(query)
+                || (note.title?.localizedCaseInsensitiveContains(query) ?? false)
         }
     }
 }
