@@ -22,8 +22,9 @@ final class NotesState {
     private(set) var noteSections: [NoteSection] = []
     private(set) var recentNotes: [ContextNote] = []
     var searchText = "" {
-        didSet { if searchText != oldValue { recomputeFilteredNotes() } }
+        didSet { if searchText != oldValue { scheduleSearchRecompute() } }
     }
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
     var selectedNoteIDs: Set<UUID> = []
     var allNotesScrollResetID = UUID()
 
@@ -135,12 +136,44 @@ final class NotesState {
     }
 
     private func recomputeFilteredNotes() {
+        // Note mutations recompute synchronously so deletes/pins reflect
+        // immediately; a pending search recompute would apply stale data.
+        searchTask?.cancel()
         recentNotes = Array(_sortedNotes.prefix(5))
         filteredNotes = Self.filter(notes: _sortedNotes, query: searchText)
         noteSections = NoteSectionBuilder.build(from: filteredNotes)
     }
 
-    static func filter(notes: [ContextNote], query: String) -> [ContextNote] {
+    /// Typing path: debounced, with matching and section building off the
+    /// main thread — full-body substring search over every note is too
+    /// heavy to run per keystroke at large note counts.
+    private func scheduleSearchRecompute() {
+        searchTask?.cancel()
+        let query = searchText
+        let source = _sortedNotes
+
+        guard !query.isEmpty else {
+            filteredNotes = source
+            noteSections = NoteSectionBuilder.build(from: source)
+            return
+        }
+
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+
+            let result: ([ContextNote], [NoteSection]) = await Task.detached(priority: .userInitiated) {
+                let filtered = NotesState.filter(notes: source, query: query)
+                return (filtered, NoteSectionBuilder.build(from: filtered))
+            }.value
+
+            guard let self, !Task.isCancelled, self.searchText == query else { return }
+            self.filteredNotes = result.0
+            self.noteSections = result.1
+        }
+    }
+
+    nonisolated static func filter(notes: [ContextNote], query: String) -> [ContextNote] {
         guard !query.isEmpty else { return notes }
 
         if query.hasPrefix("#") {

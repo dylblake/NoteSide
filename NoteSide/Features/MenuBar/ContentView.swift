@@ -56,22 +56,28 @@ struct ContentView: View {
                         .frame(height: 0)
                         .id("top")
 
-                    LazyVStack(alignment: .leading, spacing: 28) {
-                        ForEach(appState.notesState.noteSections) { section in
-                            if !section.groups.isEmpty {
-                                switch viewMode {
-                                case .grid:
-                                    NoteTileSection(section: section)
+                    if appState.notesState.notes.isEmpty {
+                        emptyStateView
+                    } else if appState.notesState.filteredNotes.isEmpty && !appState.notesState.searchText.isEmpty {
+                        noResultsView
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 28) {
+                            ForEach(appState.notesState.noteSections) { section in
+                                if !section.groups.isEmpty {
+                                    switch viewMode {
+                                    case .grid:
+                                        NoteTileSection(section: section)
+                                                .environment(appState)
+                                    case .list:
+                                        NoteListSection(section: section)
                                             .environment(appState)
-                                case .list:
-                                    NoteListSection(section: section)
-                                        .environment(appState)
+                                    }
                                 }
                             }
                         }
+                        .padding(.horizontal, isFloatingPanel ? 18 : 24)
+                        .padding(.bottom, isFloatingPanel ? 18 : 24)
                     }
-                    .padding(.horizontal, isFloatingPanel ? 18 : 24)
-                    .padding(.bottom, isFloatingPanel ? 18 : 24)
                 }
             }
             .onChange(of: appState.notesState.allNotesScrollResetID) { _, _ in
@@ -88,6 +94,40 @@ struct ContentView: View {
             .frame(minWidth: 820, minHeight: 560)
             .background(Color(nsColor: .windowBackgroundColor))
         }
+    }
+
+    private var emptyStateView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "note.text")
+                .font(.system(size: 36))
+                .foregroundStyle(.tertiary)
+
+            Text("No notes yet")
+                .font(.title3.weight(.semibold))
+
+            Text("Press \(appState.hotkeys.hotKeyDisplayString) in any app, browser tab, or file to write your first note — it stays attached to that context.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 80)
+        .padding(.horizontal, 40)
+    }
+
+    private var noResultsView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 28))
+                .foregroundStyle(.tertiary)
+
+            Text("No notes match “\(appState.notesState.searchText)”")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
     }
 
     private var viewModeToggle: some View {
