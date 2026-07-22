@@ -13,12 +13,12 @@ struct MenuBarContentView: View {
     var body: some View {
         @Bindable var appState = appState
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("NoteSide")
                         .font(.title3.weight(.semibold))
                     Text("Leave notes for the app, page, or file you are in.")
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -29,30 +29,36 @@ struct MenuBarContentView: View {
                     appState.showInfoWindow()
                 } label: {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(NoteSideTheme.primaryText)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(NoteSideTheme.secondaryText)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("About NoteSide")
             }
 
-            Button {
-                dismiss()
-                appState.openAllNotes()
-            } label: {
-                Label("View All Notes", systemImage: "square.grid.2x2")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    dismiss()
+                    appState.openAllNotes()
+                } label: {
+                    Label("View All Notes", systemImage: "square.grid.2x2")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Button {
+                    dismiss()
+                    appState.showOnboarding()
+                } label: {
+                    Label("Permissions & Setup", systemImage: "checklist")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
 
-            Button {
-                dismiss()
-                appState.showOnboarding()
-            } label: {
-                Label("Permissions & Setup", systemImage: "checklist")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            Divider()
 
-            VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Settings")
+
+            VStack(alignment: .leading, spacing: 8) {
                 Toggle("Launch on startup", isOn: $launchAtLogin)
                     .toggleStyle(.checkbox)
                     .font(.subheadline)
@@ -77,57 +83,38 @@ struct MenuBarContentView: View {
                         .font(.caption)
                     }
                 }
+            }
 
-                Divider()
+            Divider()
 
-                Text("Hotkeys")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            sectionHeader("Hotkeys")
 
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Note")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        ShortcutRecorderView(displayText: appState.hotkeys.hotKeyDisplayString) { shortcut in
-                            appState.hotkeys.setHotKeyShortcut(shortcut)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("All Notes")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        ShortcutRecorderView(displayText: appState.hotkeys.allNotesHotKeyDisplayString) { shortcut in
-                            appState.hotkeys.setAllNotesHotKeyShortcut(shortcut)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Dictation")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        ShortcutRecorderView(displayText: appState.hotkeys.dictationHotKeyDisplayString) { shortcut in
-                            appState.hotkeys.setDictationHotKeyShortcut(shortcut)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: 8) {
+                hotkeyRow("Quick Note", displayText: appState.hotkeys.hotKeyDisplayString) { shortcut in
+                    appState.hotkeys.setHotKeyShortcut(shortcut)
+                }
+                hotkeyRow("All Notes", displayText: appState.hotkeys.allNotesHotKeyDisplayString) { shortcut in
+                    appState.hotkeys.setAllNotesHotKeyShortcut(shortcut)
+                }
+                hotkeyRow("Dictation (hold)", displayText: appState.hotkeys.dictationHotKeyDisplayString) { shortcut in
+                    appState.hotkeys.setDictationHotKeyShortcut(shortcut)
                 }
 
-                Text("Click a box, then press the shortcut you want.")
+                Text("Click a shortcut, then press the keys you want.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(NoteSideTheme.tertiaryText)
             }
 
             if let errorMessage = appState.editor.editorErrorMessage {
                 Text(errorMessage)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(NoteSideTheme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Divider()
+
+            sectionHeader("Recent")
 
             if appState.notesState.recentNotes.isEmpty {
                 Text("No notes yet.")
@@ -135,10 +122,6 @@ struct MenuBarContentView: View {
                     .foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Recent")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
                     ForEach(appState.notesState.recentNotes) { note in
                         Button {
                             dismiss()
@@ -147,8 +130,9 @@ struct MenuBarContentView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(note.context.displayName)
                                     .font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
                                 Text(note.body)
-                                    .lineLimit(2)
+                                    .lineLimit(1)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -197,6 +181,8 @@ struct MenuBarContentView: View {
                 }
             }
 
+            updateRow
+
             Divider()
 
             Button {
@@ -205,12 +191,34 @@ struct MenuBarContentView: View {
                 Label("Quit NoteSide", systemImage: "power")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            updateRow
         }
         .padding(16)
-        .frame(width: 340)
+        .frame(width: 360)
         .onAppear { refreshLaunchAtLoginState() }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .textCase(.uppercase)
+            .tracking(0.7)
+            .foregroundStyle(NoteSideTheme.secondaryText)
+    }
+
+    private func hotkeyRow(
+        _ title: String,
+        displayText: String,
+        onRecorded: @escaping (HotKeyShortcut) -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.subheadline)
+
+            Spacer(minLength: 8)
+
+            ShortcutRecorderView(displayText: displayText, onShortcutRecorded: onRecorded)
+                .frame(width: 150)
+        }
     }
 
     private var trialStatusText: String {

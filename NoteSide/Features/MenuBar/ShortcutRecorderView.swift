@@ -32,8 +32,8 @@ final class RecorderNSView: NSView {
         layer?.cornerRadius = 10
         layer?.borderWidth = 1
 
-        label.font = .systemFont(ofSize: 10, weight: .medium)
-        label.alignment = .left
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
