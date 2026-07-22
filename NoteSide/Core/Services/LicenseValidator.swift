@@ -1,6 +1,11 @@
 import CryptoKit
 import Foundation
 
+// License keys are the direct-download channel's unlock. Selling or
+// referencing external purchases in-app violates App Review Guideline
+// 3.1.1, so none of this ships in MAS builds (StoreService instead).
+#if !MAS_BUILD
+
 struct LicenseValidator {
 
     // MARK: - Replace this with your actual public key
@@ -152,3 +157,4 @@ struct LicenseValidator {
         SecItemDelete(legacyQuery as CFDictionary)
     }
 }
+#endif

@@ -1,5 +1,7 @@
 import SwiftUI
 
+#if !MAS_BUILD
+
 struct LicenseView: View {
     @Environment(AppState.self) private var appState
     @State private var licenseKey = ""
@@ -204,3 +206,4 @@ struct LicenseView: View {
         }
     }
 }
+#endif

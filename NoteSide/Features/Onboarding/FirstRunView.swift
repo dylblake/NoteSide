@@ -304,7 +304,7 @@ struct FirstRunView: View {
                 Divider()
 
                 Label {
-                    Text("You're on the free trial — your first \(AppState.trialNoteLimit) notes are on us. Everything you write stays yours either way; a license just unlocks unlimited new notes.")
+                    Text(trialFooterText)
                         .font(.subheadline)
                         .foregroundStyle(NoteSideTheme.secondaryText)
                 } icon: {
@@ -313,6 +313,14 @@ struct FirstRunView: View {
                 }
             }
         }
+    }
+
+    private var trialFooterText: String {
+        #if MAS_BUILD
+        "You're on the free trial — your first \(AppState.trialNoteLimit) notes are on us. Unlocking unlimited notes is a one-time purchase, and everything you write stays yours either way."
+        #else
+        "You're on the free trial — your first \(AppState.trialNoteLimit) notes are on us. Everything you write stays yours either way; a license just unlocks unlimited new notes."
+        #endif
     }
 
     private func extraRow(

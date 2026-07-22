@@ -156,12 +156,14 @@ struct MenuBarContentView: View {
                         .font(.subheadline)
                         .foregroundStyle(NoteSideTheme.secondaryText)
                     Spacer()
+                    #if !MAS_BUILD
                     Button("Deactivate") {
                         appState.deactivateLicense()
                     }
                     .font(.caption)
                     .buttonStyle(.borderless)
                     .foregroundStyle(NoteSideTheme.tertiaryText)
+                    #endif
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
@@ -177,9 +179,21 @@ struct MenuBarContentView: View {
                         dismiss()
                         appState.presentLicenseWindow()
                     } label: {
+                        #if MAS_BUILD
+                        Label("Unlock Unlimited Notes", systemImage: "infinity")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        #else
                         Label("Activate License", systemImage: "key")
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        #endif
                     }
+                    #if MAS_BUILD
+                    Button("Restore Purchases") {
+                        appState.restorePurchases()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    #endif
                 }
             }
 

@@ -10,10 +10,11 @@ final class LicenseWindowController: NSObject, NSWindowDelegate {
     func install(appState: AppState) {
         self.appState = appState
 
-        let rootView = LicenseView()
-            .environment(appState)
-
-        let hostingController = NSHostingController(rootView: rootView)
+        #if MAS_BUILD
+        let hostingController = NSHostingController(rootView: PurchaseView().environment(appState))
+        #else
+        let hostingController = NSHostingController(rootView: LicenseView().environment(appState))
+        #endif
         let window = NSWindow(
             contentRect: defaultFrame,
             styleMask: [.titled, .closable, .miniaturizable],
@@ -21,7 +22,11 @@ final class LicenseWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         window.contentViewController = hostingController
+        #if MAS_BUILD
+        window.title = "Unlock NoteSide"
+        #else
         window.title = "Activate NoteSide"
+        #endif
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: defaultFrame.width, height: defaultFrame.height)
         window.setContentSize(defaultFrame.size)

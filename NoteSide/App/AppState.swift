@@ -34,6 +34,9 @@ final class AppState {
     var isSpeechRecognitionAuthorized = false
 
     let richTextController = RichTextEditorController()
+    #if MAS_BUILD
+    let storeService = StoreService()
+    #endif
     let dictationService = DictationService()
     private let dictationHotKeyMonitor = DictationHotKeyMonitor()
     private var panelController: NoteEditorPanelController?
@@ -180,7 +183,18 @@ final class AppState {
 
         refreshPermissionStatus()
         applyDockIconPreference()
+
+        #if MAS_BUILD
+        // The App Store purchase is the unlock; license keys don't exist
+        // in this channel.
+        storeService.$isUnlocked
+            .receive(on: RunLoop.main)
+            .sink { [weak self] unlocked in self?.isLicensed = unlocked }
+            .store(in: &cancellables)
+        storeService.start()
+        #else
         checkStoredLicense()
+        #endif
 
         if let recoveryMessage = store.loadRecoveryMessage {
             presentStorageRecoveryAlert(recoveryMessage)
@@ -550,6 +564,7 @@ final class AppState {
         notesState.trialNotesCreated >= Self.trialNoteLimit
     }
 
+    #if !MAS_BUILD
     private func checkStoredLicense() {
         guard let key = LicenseValidator.storedLicenseKey() else {
             isLicensed = false
@@ -562,6 +577,7 @@ final class AppState {
             isLicensed = false
         }
     }
+    #endif
 
     func presentLicenseWindow() {
         guard !isLicensed else { return }
@@ -583,10 +599,18 @@ final class AppState {
         }
     }
 
+    #if MAS_BUILD
+    func restorePurchases() {
+        Task { [weak self] in
+            await self?.storeService.restorePurchases()
+        }
+    }
+    #else
     func deactivateLicense() {
         LicenseValidator.removeLicenseKey()
         isLicensed = false
     }
+    #endif
 
     private func applyDockIconPreference() {
         let shouldShowDockIcon = isAllNotesPanelVisible || isOnboardingWindowVisible || isInfoWindowVisible
