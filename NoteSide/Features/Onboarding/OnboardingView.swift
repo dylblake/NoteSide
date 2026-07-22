@@ -126,7 +126,7 @@ struct OnboardingView: View {
                         : "Not enabled. Needed for Slack/Figma/editor context detection and dictation. Click Request Access, then enable NoteSide in macOS Accessibility settings.",
                     status: appState.isAccessibilityTrusted ? .granted : .missing,
                     buttonTitle: appState.isAccessibilityTrusted ? nil : "Request Access",
-                    action: appState.isAccessibilityTrusted ? nil : appState.openAccessibilitySettings
+                    action: appState.isAccessibilityTrusted ? nil : { [appState] in appState.openAccessibilitySettings() }
                 )
 
                 permissionStatusRow(
@@ -134,7 +134,7 @@ struct OnboardingView: View {
                     detail: "Request access per browser below. macOS will ask the first time NoteSide tries to read that browser's active tab.",
                     status: browserAutomationSummaryStatus,
                     buttonTitle: browserAutomationSummaryStatus == .missing ? "Open Settings" : nil,
-                    action: browserAutomationSummaryStatus == .missing ? appState.browserPermissions.openAutomationSettings : nil
+                    action: browserAutomationSummaryStatus == .missing ? { [appState] in appState.browserPermissions.openAutomationSettings() } : nil
                 )
 
                 Text(appState.browserPermissions.browserAutomationMessage)
