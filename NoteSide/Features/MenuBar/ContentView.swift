@@ -20,8 +20,6 @@ struct ContentView: View {
     @FocusState private var isListFocused: Bool
     @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
 
-    var isFloatingPanel = false
-
     private var viewMode: AllNotesViewMode {
         AllNotesViewMode(rawValue: viewModeRaw) ?? .grid
     }
@@ -37,16 +35,16 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Text("All Notes")
-                        .font(isFloatingPanel ? .title2.weight(.bold) : .largeTitle.weight(.bold))
+                        .font(.title2.weight(.bold))
                     viewModeToggle
                     Spacer()
                     if !appState.notesState.selectedNoteIDs.isEmpty {
                         bulkActionBar
                     }
                 }
-                .padding(.horizontal, isFloatingPanel ? 18 : 24)
-                .padding(.top, isFloatingPanel ? 18 : 24)
-                .padding(.bottom, isFloatingPanel ? 14 : 18)
+                .padding(.horizontal, 18)
+                .padding(.top, 18)
+                .padding(.bottom, 14)
                 .animation(.easeInOut(duration: 0.15), value: appState.notesState.selectedNoteIDs.isEmpty)
 
                 TagSearchField(
@@ -60,7 +58,7 @@ struct ContentView: View {
                         }
                     }
                 )
-                .padding(.horizontal, isFloatingPanel ? 18 : 24)
+                .padding(.horizontal, 18)
                 .padding(.bottom, 10)
 
                 ScrollView {
@@ -87,8 +85,8 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, isFloatingPanel ? 18 : 24)
-                        .padding(.bottom, isFloatingPanel ? 18 : 24)
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, 18)
                     }
                 }
             }
@@ -113,21 +111,11 @@ struct ContentView: View {
             )
             .onChange(of: appState.notesState.allNotesScrollResetID) { _, _ in
                 proxy.scrollTo("top", anchor: .top)
-                if isFloatingPanel {
-                    isListFocused = true
-                }
+                isListFocused = true
             }
         }
 
-        if isFloatingPanel {
-            content
-        } else {
-            NavigationStack {
-                content
-            }
-            .frame(minWidth: 820, minHeight: 560)
-            .background(Color(nsColor: .windowBackgroundColor))
-        }
+        content
     }
 
     // MARK: - Keyboard navigation

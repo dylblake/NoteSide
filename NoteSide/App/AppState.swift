@@ -17,7 +17,6 @@ import SwiftUI
 final class AppState {
     var hasCompletedOnboarding: Bool
     var isAccessibilityTrusted = AXIsProcessTrusted()
-    var onboardingContextPreview: NoteContext?
     let browserPermissions: BrowserPermissionsState
     let notesState: NotesState
     let editor: EditorState
@@ -28,7 +27,6 @@ final class AppState {
     var isAutoTitleEnabled: Bool {
         didSet { UserDefaults.standard.set(isAutoTitleEnabled, forKey: "autoTitleEnabled") }
     }
-    var infoStatusMessage: String?
     var isLicensed: Bool = false
     var isDictating = false
     var dictationPartialText = ""
@@ -394,10 +392,6 @@ final class AppState {
         dictationService.refreshPermissionStatus()
     }
 
-    func previewCurrentContext() {
-        onboardingContextPreview = editor.resolveCurrentContext()
-    }
-
     func edit(_ note: ContextNote) {
         editor.activeContext = note.context
         editor.loadEditorState(for: note)
@@ -482,7 +476,6 @@ final class AppState {
         }
 
         editor.editorAttributedText = NSAttributedString(string: "")
-        editor.editorText = ""
         editor.editorTitle = ""
         editor.editorErrorMessage = nil
         editor.isActiveNotePinned = false
@@ -495,32 +488,11 @@ final class AppState {
         let nextPinnedState = !editor.isActiveNotePinned
         editor.isActiveNotePinned = nextPinnedState
 
-        let currentAttributedText = editor.currentEditorAttributedTextSnapshot()
-        let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // If editor has content, save it with the new pin state
-        if !trimmed.isEmpty {
-            let existing = notesState.note(for: context)
-            let existingID = existing?.id ?? UUID()
-            let createdAt = existing?.createdAt ?? .now
-            let userTitle = editor.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            let currentTitle: String? = userTitle.isEmpty ? existing?.title : userTitle
-            let updatedNote = ContextNote(
-                id: existingID,
-                context: context,
-                body: trimmed,
-                richTextData: editor.archivedRichText(from: currentAttributedText),
-                createdAt: createdAt,
-                updatedAt: .now,
-                isPinned: nextPinnedState,
-                title: currentTitle
-            )
-            notesState.upsert(updatedNote)
-            return
-        }
-
-        // If editor is empty but there's an existing note, just update the pin state
-        if let existingNote = notesState.note(for: context) {
+        // Persist writes the editor's content with the new pin state; when
+        // the editor is empty it declines (returning false) — in that case
+        // just flip the pin on an existing note, if any.
+        if !editor.persistCurrentEditorContent(deleteIfEmpty: false),
+           let existingNote = notesState.note(for: context) {
             notesState.upsert(existingNote.copying(updatedAt: .now, isPinned: nextPinnedState))
         }
     }
@@ -549,10 +521,6 @@ final class AppState {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
         return "\(version) (\(build))"
-    }
-
-    func checkForUpdates() {
-        infoStatusMessage = "Automatic update checks are not configured in this build yet."
     }
 
     // MARK: - License & Trial

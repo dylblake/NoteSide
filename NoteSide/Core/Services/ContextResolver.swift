@@ -40,7 +40,7 @@ nonisolated struct ContextResolver: Sendable {
             // Route Finder selections through fileContext(...) so they pick
             // up a stable inode-based fileSystemIdentifier. Without it, a
             // rename in Finder changes the NoteContext.id and the rename
-            // detection in refreshEditorContextIfNeeded treats it as a brand
+            // detection in applyRefreshedContext treats it as a brand
             // new file instead of updating the existing note.
             let finderRootPath = isDirectory(finderURL)
                 ? finderURL.path(percentEncoded: false)
@@ -445,34 +445,6 @@ nonisolated struct ContextResolver: Sendable {
         return preferredDocumentURL(startingAt: focusedWindow as! AXUIElement)
     }
 
-    private func preferredWorkspaceRootURL(for app: NSRunningApplication) -> URL? {
-        let appElement = AXUIElementCreateApplication(app.processIdentifier)
-        enableElectronAccessibility(on: appElement)
-        var candidateURLs: [URL] = []
-
-        if let focusedElement = copyAttribute(
-            kAXFocusedUIElementAttribute as CFString,
-            from: appElement
-        ) as! AXUIElement? {
-            candidateURLs.append(contentsOf: descendantDocumentURLs(startingAt: focusedElement))
-            candidateURLs.append(contentsOf: ancestorDocumentURLs(startingAt: focusedElement))
-        }
-
-        if let focusedWindow = copyAttribute(
-            kAXFocusedWindowAttribute as CFString,
-            from: appElement
-        ) as! AXUIElement? {
-            candidateURLs.append(contentsOf: descendantDocumentURLs(startingAt: focusedWindow))
-            candidateURLs.append(contentsOf: ancestorDocumentURLs(startingAt: focusedWindow))
-        }
-
-        if let directRoot = candidateURLs.first(where: { isWorkspaceRootCandidate($0) }) {
-            return normalizedWorkspaceRoot(from: directRoot)
-        }
-
-        return nil
-    }
-
     private func preferredDocumentURL(startingAt element: AXUIElement) -> URL? {
         let documentURLs = descendantDocumentURLs(startingAt: element) + ancestorDocumentURLs(startingAt: element)
 
@@ -594,24 +566,6 @@ nonisolated struct ContextResolver: Sendable {
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
-    }
-
-    private func isWorkspaceRootCandidate(_ url: URL) -> Bool {
-        guard url.isFileURL else { return false }
-        if isDirectory(url) {
-            return true
-        }
-
-        let ext = url.pathExtension.lowercased()
-        return ["xcworkspace", "xcodeproj", "code-workspace"].contains(ext)
-    }
-
-    private func normalizedWorkspaceRoot(from url: URL) -> URL {
-        let ext = url.pathExtension.lowercased()
-        if ["xcworkspace", "xcodeproj", "code-workspace"].contains(ext) {
-            return url
-        }
-        return isDirectory(url) ? url : url.deletingLastPathComponent()
     }
 
     private func slackCandidateStrings(

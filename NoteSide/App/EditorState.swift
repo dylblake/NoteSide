@@ -13,7 +13,6 @@ import Observation
 @Observable
 final class EditorState {
     var activeContext: NoteContext?
-    var editorText = ""
     var editorAttributedText = NSAttributedString(string: "")
     var editorTitle = ""
     var editorErrorMessage: String?
@@ -69,7 +68,6 @@ final class EditorState {
         cancelAutosave()
         let existingNote = notesState.note(for: context)
         editorAttributedText = attributedText(for: context)
-        editorText = editorAttributedText.string
         editorTitle = existingNote?.title ?? ""
         editorErrorMessage = nil
         isActiveNotePinned = existingNote?.isPinned ?? false
@@ -78,17 +76,12 @@ final class EditorState {
     func loadEditorState(for note: ContextNote) {
         cancelAutosave()
         editorAttributedText = attributedText(for: note)
-        editorText = editorAttributedText.string
         editorTitle = note.title ?? ""
         editorErrorMessage = nil
         isActiveNotePinned = note.isPinned
     }
 
     // MARK: - Persistence
-
-    func persistEditorStateForActiveContext() {
-        persistCurrentEditorContent()
-    }
 
     @discardableResult
     func persistCurrentEditorContent(deleteIfEmpty: Bool = true) -> Bool {
@@ -116,7 +109,7 @@ final class EditorState {
             richTextData: archivedRichText(from: currentAttributedText),
             createdAt: createdAt,
             updatedAt: .now,
-            isPinned: existingNote?.isPinned ?? isActiveNotePinned,
+            isPinned: isActiveNotePinned,
             title: currentTitle
         )
         notesState.upsert(note)
@@ -230,44 +223,6 @@ final class EditorState {
         )
     }
 
-    func resolveCurrentContext(preferredBundleIdentifier: String? = nil) -> NoteContext {
-        let bundleIdentifier = preferredBundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        let browserURLProvider = browserPermissions.browserURLProvider
-
-        // Check if this is a supported browser and if we should attempt automation
-        let shouldAttemptBrowserAutomation: Bool = {
-            guard let bundleId = bundleIdentifier else { return false }
-            guard browserURLProvider.supports(bundleIdentifier: bundleId) else { return false }
-
-            let state = browserPermissions.browserPermissionStates[bundleId]
-            // Attempt if: granted, OR never attempted before (nil/undetermined)
-            return state == .granted || state == nil || state == .undetermined
-        }()
-
-        // If this is a first-time browser attempt, probe it and record the result
-        if shouldAttemptBrowserAutomation,
-           let bundleId = bundleIdentifier,
-           browserPermissions.browserPermissionStates[bundleId] == nil
-            || browserPermissions.browserPermissionStates[bundleId] == .undetermined {
-            let attempt = browserURLProvider.accessAttempt(bundleIdentifier: bundleId, activatesBrowser: false)
-
-            switch attempt.result {
-            case .success:
-                browserPermissions.setBrowserPermissionState(.granted, for: bundleId)
-            case .automationDenied:
-                browserPermissions.setBrowserPermissionState(.notGranted, for: bundleId)
-            case .noTab, .unavailable, .notBrowser:
-                // Inconclusive — Safari's `exists front document` can return
-                // empty without ever triggering the Apple Events permission
-                // check, so an empty result is not proof of access.
-                break
-            }
-        }
-
-        let allowBrowserAutomation = bundleIdentifier.map { browserPermissions.browserPermissionStates[$0] == .granted } ?? false
-        return contextResolver.resolveCurrentContext(allowBrowserAutomation: allowBrowserAutomation)
-    }
-
     /// Async version of resolveCurrentContext that runs AppleScript and
     /// Accessibility API calls on a background thread, keeping the main
     /// thread free for UI work.
@@ -321,19 +276,6 @@ final class EditorState {
         return context
     }
 
-    func resolveInitialQuickNoteContext(from fallbackContext: NoteContext, sourceBundleIdentifier: String?) {
-        guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
-
-        let context = resolveCurrentContext(preferredBundleIdentifier: sourceBundleIdentifier)
-        guard context.id != fallbackContext.id else { return }
-
-        let hasUnsavedEditorText = !editorAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard !hasUnsavedEditorText else { return }
-
-        activeContext = context
-        loadEditorState(for: context)
-    }
-
     func resolveInitialQuickNoteContextAsync(from fallbackContext: NoteContext, sourceBundleIdentifier: String?) async {
         guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
 
@@ -368,7 +310,7 @@ final class EditorState {
             return
         }
 
-        persistEditorStateForActiveContext()
+        persistCurrentEditorContent()
         activeContext = context
         loadEditorState(for: context)
 
@@ -379,12 +321,6 @@ final class EditorState {
                 generateTitleFromContext(context: context)
             }
         }
-    }
-
-    func refreshEditorContextIfNeeded() {
-        guard isEditorPresented else { return }
-        let context = resolveCurrentContext()
-        applyRefreshedContext(context)
     }
 
     // MARK: - Context Tracking (AX events + fallback polling)

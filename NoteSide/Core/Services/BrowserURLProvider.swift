@@ -141,19 +141,6 @@ nonisolated struct BrowserURLProvider: Sendable {
         )
     }
 
-    func probeFrontmostBrowserAttempt(frontmostBundleIdentifier: String?) -> BrowserAutomationAttemptResult {
-        guard
-            let frontmostBundleIdentifier,
-            supports(bundleIdentifier: frontmostBundleIdentifier)
-        else {
-            return BrowserAutomationAttemptResult(
-                result: .notBrowser,
-                debugDetails: "Frontmost app is not one of the supported browsers."
-            )
-        }
-        return accessAttempt(bundleIdentifier: frontmostBundleIdentifier)
-    }
-
     func descriptor(for bundleIdentifier: String) -> BrowserDescriptor? {
         browserMap[bundleIdentifier]
     }

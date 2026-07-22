@@ -35,7 +35,6 @@ final class BrowserPermissionsState {
     private(set) var browserPermissionStates: [String: BrowserPermissionState] = [:]
     private(set) var appAutomationStates: [String: BrowserPermissionState] = [:]
     var browserAutomationMessage = "Grant access per browser below — macOS asks once per browser."
-    var isBrowserAutomationGranted = false
     private var pendingAutomationRequests: Set<String> = []
 
     private static let browserPermissionDefaultsPrefix = "browserPermissionState."
@@ -79,12 +78,6 @@ final class BrowserPermissionsState {
     }
 
     // MARK: - Public Methods
-
-    func probeBrowserAutomation() {
-        let frontmostBundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        let attempt = browserURLProvider.probeFrontmostBrowserAttempt(frontmostBundleIdentifier: frontmostBundleIdentifier)
-        applyBrowserAutomationAttempt(attempt)
-    }
 
     func requestAutomationAccess(for bundleIdentifier: String) {
         let name = browserName(for: bundleIdentifier)
@@ -318,11 +311,9 @@ final class BrowserPermissionsState {
 
         switch result {
         case .success(let browserName, _):
-            isBrowserAutomationGranted = true
             onEditorError(nil)
             setBrowserPermissionState(.granted, for: bundleIdentifier(for: browserName))
         case .automationDenied(let browserName), .unavailable(let browserName):
-            isBrowserAutomationGranted = false
             onEditorError(result.message)
             setBrowserPermissionState(.notGranted, for: bundleIdentifier(for: browserName))
         case .noTab, .notBrowser:

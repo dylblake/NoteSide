@@ -7,7 +7,7 @@ struct FloatingAllNotesView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 16) {
-                ContentView(isFloatingPanel: true)
+                ContentView()
                     .environment(appState)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .clipped()
