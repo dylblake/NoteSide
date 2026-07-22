@@ -19,6 +19,7 @@ struct NoteSelectionCheckbox: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
+        .accessibilityLabel(isSelected ? "Deselect note" : "Select note")
     }
 }
 
@@ -38,6 +39,7 @@ struct NotePinButton: View {
         }
         .buttonStyle(.borderless)
         .help(note.isPinned ? "Unpin" : "Pin")
+        .accessibilityLabel(note.isPinned ? "Unpin note" : "Pin note")
     }
 }
 
@@ -58,6 +60,7 @@ struct NoteDeleteButton: View {
         }
         .buttonStyle(.borderless)
         .help("Delete")
+        .accessibilityLabel("Delete note")
         .popover(isPresented: $showingConfirmation, arrowEdge: .bottom) {
             DeleteConfirmationPopover(
                 onConfirm: {

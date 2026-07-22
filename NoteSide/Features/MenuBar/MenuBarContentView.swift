@@ -33,6 +33,7 @@ struct MenuBarContentView: View {
                         .foregroundStyle(NoteSideTheme.primaryText)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("About NoteSide")
             }
 
             Button {

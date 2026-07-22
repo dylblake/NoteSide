@@ -159,23 +159,20 @@ struct FloatingNoteEditorView: View {
                         Spacer()
 
                         HStack(spacing: 4) {
-                            ClickableIconView(
-                                iconName: appState.editor.isActiveNotePinned ? "pin.fill" : "pin",
-                                iconColor: appState.editor.isActiveNotePinned ? .controlAccentColor : .labelColor,
-                                size: 16
+                            IconButton(
+                                systemName: appState.editor.isActiveNotePinned ? "pin.fill" : "pin",
+                                accessibilityLabel: appState.editor.isActiveNotePinned ? "Unpin note" : "Pin note",
+                                tint: appState.editor.isActiveNotePinned ? NoteSideTheme.accent : NoteSideTheme.primaryText
                             ) {
                                 appState.togglePinForActiveNote()
                             }
-                            .frame(width: 50, height: 50)
 
-                            ClickableIconView(
-                                iconName: "trash",
-                                iconColor: .labelColor,
-                                size: 16
+                            IconButton(
+                                systemName: "trash",
+                                accessibilityLabel: "Delete note"
                             ) {
                                 showingDeleteConfirmation = true
                             }
-                            .frame(width: 50, height: 50)
                             .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
                                 DeleteConfirmationPopover(
                                     onConfirm: {

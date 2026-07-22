@@ -270,6 +270,7 @@ struct ContentView: View {
         }
         .buttonStyle(.borderless)
         .help(help)
+        .accessibilityLabel(help)
     }
 
     private var bulkActionBar: some View {
@@ -296,6 +297,7 @@ struct ContentView: View {
             }
             .buttonStyle(.borderless)
             .help("Pin or unpin selected")
+            .accessibilityLabel("Pin or unpin selected notes")
 
             Button(role: .destructive) {
                 showingBulkDeleteConfirmation = true
@@ -307,6 +309,7 @@ struct ContentView: View {
             }
             .buttonStyle(.borderless)
             .help("Delete selected")
+            .accessibilityLabel("Delete selected notes")
             .popover(isPresented: $showingBulkDeleteConfirmation, arrowEdge: .bottom) {
                 DeleteConfirmationPopover(
                     onConfirm: {
@@ -771,6 +774,7 @@ private struct TagSearchField: View {
                         .font(.system(size: 12))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
 
             Button {
@@ -790,6 +794,7 @@ private struct TagSearchField: View {
             }
             .buttonStyle(.plain)
             .help("Search by tag")
+            .accessibilityLabel("Search by tag")
         }
         .padding(8)
         .background(
