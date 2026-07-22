@@ -74,6 +74,8 @@ final class BrowserPermissionsState {
     }
 
     func refreshBrowserPermissionStates() {
+        var browsersToProbe: [String] = []
+
         for browser in Self.supportedBrowsers {
             let bundleIdentifier = browser.bundleIdentifier
 
@@ -98,22 +100,34 @@ final class BrowserPermissionsState {
                 continue
             }
 
+            browserPermissionStates[bundleIdentifier] = knownState
             if browserURLProvider.isRunning(bundleIdentifier: bundleIdentifier) {
-                let attempt = browserURLProvider.accessAttempt(
-                    bundleIdentifier: bundleIdentifier,
-                    activatesBrowser: false
-                )
+                browsersToProbe.append(bundleIdentifier)
+            }
+        }
 
+        guard !browsersToProbe.isEmpty else { return }
+
+        // Re-verify running browsers off the main thread — each probe is a
+        // full Apple Event round-trip, and a busy browser would otherwise
+        // stall the UI for its duration.
+        let provider = browserURLProvider
+        Task { [weak self] in
+            for bundleIdentifier in browsersToProbe {
+                let attempt = await Task.detached(priority: .userInitiated) {
+                    provider.accessAttempt(bundleIdentifier: bundleIdentifier, activatesBrowser: false)
+                }.value
+
+                guard let self else { return }
                 switch attempt.result {
                 case .success:
-                    setBrowserPermissionState(.granted, for: bundleIdentifier)
+                    self.setBrowserPermissionState(.granted, for: bundleIdentifier)
                 case .automationDenied, .unavailable, .notBrowser:
-                    setBrowserPermissionState(.notGranted, for: bundleIdentifier)
+                    self.setBrowserPermissionState(.notGranted, for: bundleIdentifier)
                 case .noTab:
-                    browserPermissionStates[bundleIdentifier] = knownState
+                    // Inconclusive — keep the stored state already applied.
+                    break
                 }
-            } else {
-                browserPermissionStates[bundleIdentifier] = knownState
             }
         }
     }
@@ -204,13 +218,21 @@ final class BrowserPermissionsState {
         retriesRemaining: Int,
         delay: TimeInterval
     ) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
+        // The attempt runs off the main thread: the activating script
+        // contains an AppleScript `delay` plus an Apple Event round-trip,
+        // which would otherwise freeze the UI for each retry.
+        let provider = browserURLProvider
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
 
-            let attempt = self.browserURLProvider.accessAttempt(
-                bundleIdentifier: bundleIdentifier,
-                activatesBrowser: activatesBrowser
-            )
+            let attempt = await Task.detached(priority: .userInitiated) {
+                provider.accessAttempt(
+                    bundleIdentifier: bundleIdentifier,
+                    activatesBrowser: activatesBrowser
+                )
+            }.value
+
+            guard let self else { return }
             self.applyBrowserAutomationAttempt(attempt)
 
             switch attempt.result {

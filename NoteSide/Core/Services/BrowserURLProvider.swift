@@ -59,7 +59,7 @@ nonisolated struct BrowserURLProvider: Sendable {
         uniqueKeysWithValues: supportedBrowsers.map { ($0.bundleIdentifier, $0) }
     )
 
-    private static let scriptCache = CompiledScriptCache()
+    private static let scriptExecutor = AppleScriptExecutor.shared
 
     func supports(bundleIdentifier: String) -> Bool {
         browserMap[bundleIdentifier] != nil
@@ -98,7 +98,7 @@ nonisolated struct BrowserURLProvider: Sendable {
         let browserName = browser.title
         let source = scriptSource(for: browser, activatesBrowser: activatesBrowser)
         let cacheKey = "\(bundleIdentifier):\(activatesBrowser)"
-        let (resultDescriptor, error) = Self.scriptCache.execute(key: cacheKey, source: source)
+        let (resultDescriptor, error) = Self.scriptExecutor.executeSync(key: cacheKey, source: source)
 
         if let error {
             let errorNumber = error[NSAppleScript.errorNumber] as? Int

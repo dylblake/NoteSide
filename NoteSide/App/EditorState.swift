@@ -22,6 +22,7 @@ final class EditorState {
     var isActiveNotePinned = false
     private var contextPollingTask: Task<Void, Never>?
     private var autosaveTask: Task<Void, Never>?
+    private var isResolvingContext = false
 
     @ObservationIgnored let notesState: NotesState
     @ObservationIgnored let richTextController: RichTextEditorController
@@ -266,6 +267,9 @@ final class EditorState {
     /// Accessibility API calls on a background thread, keeping the main
     /// thread free for UI work.
     func resolveCurrentContextAsync(preferredBundleIdentifier: String? = nil) async -> NoteContext {
+        isResolvingContext = true
+        defer { isResolvingContext = false }
+
         let bundleIdentifier = preferredBundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let permissionStates = browserPermissions.browserPermissionStates
         let browserProvider = browserPermissions.browserURLProvider
@@ -408,6 +412,11 @@ final class EditorState {
                     if self == nil { break }
                     continue
                 }
+                // Skip this tick if another resolution (app switch, initial
+                // quick-note refine) is already in flight — queueing a
+                // second one behind it on the script executor would only
+                // apply a staler context afterwards.
+                guard !self.isResolvingContext else { continue }
                 let context = await self.resolveCurrentContextAsync()
                 guard !Task.isCancelled, self.isEditorPresented else { break }
                 self.applyRefreshedContext(context)

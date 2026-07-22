@@ -7,7 +7,7 @@ nonisolated struct ContextResolver: Sendable {
     private let supportedBrowserBundleIdentifiers = Set(
         BrowserURLProvider.supportedBrowsers.map(\.bundleIdentifier)
     )
-    private static let scriptCache = CompiledScriptCache()
+    private static let scriptExecutor = AppleScriptExecutor.shared
     private let slackBundleIdentifiers: Set<String> = [
         "com.tinyspeck.slackmacgap",
         "com.tinyspeck.slackmacgap2"
@@ -182,7 +182,7 @@ nonisolated struct ContextResolver: Sendable {
         end tell
         """
 
-        let (resultDescriptor, error) = Self.scriptCache.execute(key: "finder", source: scriptSource)
+        let (resultDescriptor, error) = Self.scriptExecutor.executeSync(key: "finder", source: scriptSource)
 
         if error != nil {
             return nil
@@ -1056,7 +1056,7 @@ nonisolated struct ContextResolver: Sendable {
     }
 
     private func executeFilePathScript(_ scriptSource: String, cacheKey: String) -> URL? {
-        let (resultDescriptor, error) = Self.scriptCache.execute(key: cacheKey, source: scriptSource)
+        let (resultDescriptor, error) = Self.scriptExecutor.executeSync(key: cacheKey, source: scriptSource)
 
         if error != nil {
             return nil
