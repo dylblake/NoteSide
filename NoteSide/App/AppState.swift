@@ -199,37 +199,36 @@ final class AppState {
         editor.editorErrorMessage = nil
         let frontmostApp = NSWorkspace.shared.frontmostApplication
         let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
-        let fallbackContext = editor.quickApplicationContext(for: frontmostApp)
 
-        // Try to resolve the full context (URL, file, etc.) immediately
-        // so the panel opens with the correct context instead of briefly
-        // flashing the generic app name.
-        let resolvedContext = editor.resolveCurrentContext(preferredBundleIdentifier: sourceBundleIdentifier)
-        let initialContext = resolvedContext.id != fallbackContext.id ? resolvedContext : fallbackContext
+        // Open with the cheap frontmost-app context immediately — the full
+        // resolve below runs AppleScript/AX and must never gate the panel.
+        // An Apple Event to a busy target can block for seconds.
+        let initialContext = editor.quickApplicationContext(for: frontmostApp)
 
         editor.activeContext = initialContext
-        let existingNote = notesState.note(for: initialContext)
         editor.loadEditorState(for: initialContext)
 
         editor.isEditorPresented = true
         editor.startContextPolling()
         noteEditorPanelController.present()
 
-        // Generate title asynchronously after presenting so the editor
-        // appears instantly rather than waiting for AI/NLP inference.
-        if isAutoTitleEnabled && editor.editorTitle.isEmpty {
-            if let existingNote, !existingNote.body.isEmpty {
-                editor.generateTitleIfNeeded(noteID: existingNote.id, body: existingNote.body, context: initialContext)
-            } else {
-                editor.generateTitleFromContext(context: initialContext)
-            }
-        }
-
         Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(400))
+            // Small hop so the slide-in starts before any context swap
+            // re-renders the panel content.
+            try? await Task.sleep(for: .milliseconds(50))
             guard let self, self.editor.isEditorPresented else { return }
             await self.editor.resolveInitialQuickNoteContextAsync(from: initialContext, sourceBundleIdentifier: sourceBundleIdentifier)
             self.browserPermissions.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
+
+            // Generate the title only after the context has settled so we
+            // don't title the note against the transient app-level fallback.
+            guard self.editor.isEditorPresented, self.isAutoTitleEnabled, self.editor.editorTitle.isEmpty,
+                  let context = self.editor.activeContext else { return }
+            if let existingNote = self.notesState.note(for: context), !existingNote.body.isEmpty {
+                self.editor.generateTitleIfNeeded(noteID: existingNote.id, body: existingNote.body, context: context)
+            } else {
+                self.editor.generateTitleFromContext(context: context)
+            }
         }
     }
 
