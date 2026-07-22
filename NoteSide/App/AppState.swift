@@ -907,18 +907,16 @@ final class AppState {
     private func requestAccessibilityAccessIfNeeded() {
         guard !AXIsProcessTrusted() else { return }
 
-        // Force TCC to register NoteSide in the Accessibility list by issuing
-        // a real AX query on the system-wide element. Without an actual AX
-        // call, the AXIsProcessTrustedWithOptions prompt sometimes fails to
-        // add the app to System Settings -> Privacy & Security -> Accessibility.
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedApp: CFTypeRef?
-        _ = AXUIElementCopyAttributeValue(
-            systemWide,
-            kAXFocusedApplicationAttribute as CFString,
-            &focusedApp
-        )
-
+        // Register NoteSide in the Accessibility list and fire the native
+        // prompt. AXIsProcessTrustedWithOptions is a local trust check — it
+        // does no cross-process messaging, so it's safe on the main thread.
+        //
+        // We deliberately do NOT issue a cross-process AX query here (e.g.
+        // AXUIElementCopyAttributeValue on the system-wide element): while the
+        // app is untrusted, that call blocks on an AX IPC timeout — and under
+        // the App Sandbox it can hang the main thread indefinitely, beachballing
+        // the app. If the prompt doesn't auto-list the app, the onboarding copy
+        // points the user to the System Settings "＋" button as the fallback.
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
 
