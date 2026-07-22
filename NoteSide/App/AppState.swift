@@ -39,6 +39,7 @@ final class AppState {
     private var panelController: NoteEditorPanelController?
     private var allNotesPanelCtrl: AllNotesPanelController?
     private var onboardingWindowController: OnboardingWindowController?
+    private var firstRunWindowController: FirstRunWindowController?
     private var infoWindowController: InfoWindowController?
     private var licenseWindowController: LicenseWindowController?
     private var cancellables: Set<AnyCancellable> = []
@@ -190,7 +191,7 @@ final class AppState {
         // so we're not presenting from inside init.
         if !hasCompletedOnboarding {
             DispatchQueue.main.async { [weak self] in
-                self?.presentOnboardingWindow()
+                self?.presentFirstRunWindow()
             }
         }
     }
@@ -366,6 +367,19 @@ final class AppState {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private func presentFirstRunWindow() {
+        refreshPermissionStatus()
+        browserPermissions.refreshBrowserPermissionStates()
+
+        if firstRunWindowController == nil {
+            let controller = FirstRunWindowController()
+            controller.install(appState: self)
+            firstRunWindowController = controller
+        }
+        firstRunWindowController?.present()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     private func presentInfoWindow() {
         infoWindow.present()
     }
@@ -373,6 +387,7 @@ final class AppState {
     func completeOnboarding() {
         hasCompletedOnboarding = true
         UserDefaults.standard.set(true, forKey: Self.onboardingDefaultsKey)
+        firstRunWindowController?.dismiss()
         onboardingWindowController?.dismiss()
     }
 
@@ -563,7 +578,7 @@ final class AppState {
 
         if isLicensed && !hasCompletedOnboarding {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.presentOnboardingWindow()
+                self?.presentFirstRunWindow()
             }
         }
     }
