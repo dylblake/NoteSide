@@ -177,11 +177,17 @@ nonisolated struct BrowserURLProvider: Sendable {
             end tell
             """
         case .arc:
+            // Arc supports `active tab`; `tab 1` is the FIRST tab, not the
+            // focused one, so it's only a fallback for old Arc builds.
             return """
             tell application id "\(browser.bundleIdentifier)"
                 \(activationPrefix)if (count of windows) is 0 then return ""
-                if (count of tabs of window 1) is 0 then return ""
-                return URL of tab 1 of window 1
+                try
+                    return URL of active tab of front window
+                on error
+                    if (count of tabs of window 1) is 0 then return ""
+                    return URL of tab 1 of window 1
+                end try
             end tell
             """
         }
