@@ -14,18 +14,8 @@ struct SideNoteApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            Group {
-                if appState.isLicensed {
-                    MenuBarContentView()
-                        .environment(appState)
-                } else {
-                    Color.clear
-                        .frame(width: 0, height: 0)
-                        .onAppear {
-                            appState.presentLicenseWindow()
-                        }
-                }
-            }
+            MenuBarContentView()
+                .environment(appState)
         } label: {
             MenuBarIconView()
         }

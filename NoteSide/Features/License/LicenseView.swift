@@ -57,12 +57,20 @@ struct LicenseView: View {
                 Text("You're all set.")
                     .font(.title3)
                     .foregroundStyle(NoteSideTheme.secondaryText)
-            } else {
-                Text("Enter your license key to get started.")
+            } else if appState.isTrialExhausted {
+                Text("Your \(AppState.trialNoteLimit)-note free trial is complete.")
                     .font(.title3)
                     .foregroundStyle(NoteSideTheme.secondaryText)
 
-                Text("You received this key in your purchase confirmation email.")
+                Text("Your existing notes stay fully available. A license unlocks unlimited new notes — the key is in your purchase confirmation email.")
+                    .font(.subheadline)
+                    .foregroundStyle(NoteSideTheme.tertiaryText)
+            } else {
+                Text("Enter your license key to unlock unlimited notes.")
+                    .font(.title3)
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+
+                Text("You're on the free trial (\(appState.trialNotesUsed) of \(AppState.trialNoteLimit) notes used) — activate anytime. The key is in your purchase confirmation email.")
                     .font(.subheadline)
                     .foregroundStyle(NoteSideTheme.tertiaryText)
             }

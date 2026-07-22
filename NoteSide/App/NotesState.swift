@@ -26,11 +26,24 @@ final class NotesState {
     var selectedNoteIDs: Set<UUID> = []
     var allNotesScrollResetID = UUID()
 
+    /// Notes ever created, for the free-trial gate. Monotonic: deleting
+    /// notes doesn't refund trial slots.
+    private(set) var trialNotesCreated: Int
+
     @ObservationIgnored private let store: NoteStore
+
+    private static let trialNotesCreatedKey = "trialNotesCreated"
 
     init(store: NoteStore) {
         self.store = store
         let loaded = store.loadNotes()
+
+        // Seed with the on-disk note count so the counter survives fresh
+        // preference files when notes already exist.
+        let storedCount = UserDefaults.standard.integer(forKey: Self.trialNotesCreatedKey)
+        let seededCount = max(storedCount, loaded.count)
+        trialNotesCreated = seededCount
+
         // Assign without triggering didSet (properties aren't initialized yet
         // during init, so we set the backing stores directly).
         notes = loaded
@@ -38,6 +51,10 @@ final class NotesState {
         _notesByContextID = Dictionary(uniqueKeysWithValues: loaded.map { ($0.context.id, $0) })
         filteredNotes = _sortedNotes
         recentNotes = Array(_sortedNotes.prefix(5))
+
+        if seededCount != storedCount {
+            UserDefaults.standard.set(seededCount, forKey: Self.trialNotesCreatedKey)
+        }
     }
 
     func note(for context: NoteContext) -> ContextNote? {
@@ -45,10 +62,19 @@ final class NotesState {
     }
 
     func upsert(_ note: ContextNote) {
+        // A note ID we've never seen is a creation (context rewrites and
+        // edits reuse the existing ID) — count it toward the trial.
+        let isNewNote = !notes.contains { $0.id == note.id }
+
         var updated = notes.filter { $0.context.id != note.context.id }
         updated.append(note)
         notes = updated
         store.save(notes: notes)
+
+        if isNewNote {
+            trialNotesCreated += 1
+            UserDefaults.standard.set(trialNotesCreated, forKey: Self.trialNotesCreatedKey)
+        }
     }
 
     func delete(_ note: ContextNote) {

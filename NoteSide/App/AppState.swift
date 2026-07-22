@@ -189,12 +189,6 @@ final class AppState {
     }
 
     func toggleQuickNote() {
-        // License gate: require a valid license before opening the editor.
-        if !isLicensed {
-            presentLicenseWindow()
-            return
-        }
-
         if isAllNotesPanelPresented {
             dismissAllNotesPanel()
         }
@@ -204,6 +198,44 @@ final class AppState {
             return
         }
 
+        // Trial gate: once the free-note allowance is used up, creating a
+        // NEW note requires a license — but existing notes always stay
+        // editable, so only block when the current context has no note.
+        if !isLicensed && isTrialExhausted {
+            presentQuickNoteEditorOrLicenseWall()
+            return
+        }
+
+        presentQuickNoteEditor()
+    }
+
+    /// Trial-exhausted path: opens the editor when the current context
+    /// already has a note, otherwise shows the license window. The full
+    /// context isn't knowable synchronously (AppleScript/AX), so when the
+    /// cheap app-level lookup misses we resolve first, then decide.
+    private func presentQuickNoteEditorOrLicenseWall() {
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
+        let fallbackContext = editor.quickApplicationContext(for: frontmostApp)
+
+        if notesState.note(for: fallbackContext) != nil {
+            presentQuickNoteEditor()
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let context = await self.editor.resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier)
+            guard !self.editor.isEditorPresented else { return }
+            if self.notesState.note(for: context) != nil {
+                self.presentQuickNoteEditor()
+            } else {
+                self.presentLicenseWindow()
+            }
+        }
+    }
+
+    private func presentQuickNoteEditor() {
         editor.editorErrorMessage = nil
         let frontmostApp = NSWorkspace.shared.frontmostApplication
         let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
@@ -281,11 +313,6 @@ final class AppState {
     }
 
     func toggleAllNotesPanel() {
-        if !isLicensed {
-            presentLicenseWindow()
-            return
-        }
-
         if isAllNotesPanelPresented {
             dismissAllNotesPanel()
             return
@@ -483,7 +510,17 @@ final class AppState {
         infoStatusMessage = "Automatic update checks are not configured in this build yet."
     }
 
-    // MARK: - License
+    // MARK: - License & Trial
+
+    static let trialNoteLimit = 5
+
+    var trialNotesUsed: Int {
+        min(notesState.trialNotesCreated, Self.trialNoteLimit)
+    }
+
+    var isTrialExhausted: Bool {
+        notesState.trialNotesCreated >= Self.trialNoteLimit
+    }
 
     private func checkStoredLicense() {
         guard let key = LicenseValidator.storedLicenseKey() else {

@@ -177,12 +177,22 @@ struct MenuBarContentView: View {
                     .foregroundStyle(NoteSideTheme.tertiaryText)
                 }
             } else {
-                Button {
-                    dismiss()
-                    appState.presentLicenseWindow()
-                } label: {
-                    Label("Activate License", systemImage: "key")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: appState.isTrialExhausted ? "hourglass.bottomhalf.filled" : "hourglass")
+                            .foregroundStyle(appState.isTrialExhausted ? NoteSideTheme.warning : NoteSideTheme.secondaryText)
+                        Text(trialStatusText)
+                            .font(.subheadline)
+                            .foregroundStyle(NoteSideTheme.secondaryText)
+                    }
+
+                    Button {
+                        dismiss()
+                        appState.presentLicenseWindow()
+                    } label: {
+                        Label("Activate License", systemImage: "key")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
 
@@ -200,6 +210,13 @@ struct MenuBarContentView: View {
         .padding(16)
         .frame(width: 340)
         .onAppear { refreshLaunchAtLoginState() }
+    }
+
+    private var trialStatusText: String {
+        if appState.isTrialExhausted {
+            return "Trial complete — a license unlocks new notes."
+        }
+        return "Free trial: \(appState.trialNotesUsed) of \(AppState.trialNoteLimit) notes used."
     }
 
     private func refreshLaunchAtLoginState() {
