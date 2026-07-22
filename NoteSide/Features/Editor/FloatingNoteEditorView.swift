@@ -279,6 +279,7 @@ private struct DictationIndicatorView: View {
     let isDictating: Bool
     let partialText: String
     let hotkeyLabel: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scale: CGFloat = 1.0
 
     var body: some View {
@@ -286,9 +287,11 @@ private struct DictationIndicatorView: View {
             Image(systemName: "waveform")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isDictating ? NoteSideTheme.accent : NoteSideTheme.quaternaryText)
-                .scaleEffect(x: 1.0, y: isDictating ? scale : 1.0)
+                // Under Reduce Motion the tint change alone signals
+                // listening — no perpetual pulse.
+                .scaleEffect(x: 1.0, y: isDictating && !reduceMotion ? scale : 1.0)
                 .animation(
-                    isDictating
+                    isDictating && !reduceMotion
                         ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true)
                         : .default,
                     value: scale
@@ -310,7 +313,7 @@ private struct DictationIndicatorView: View {
         }
         .padding(.bottom, 4)
         .onChange(of: isDictating) { _, active in
-            scale = active ? 1.4 : 1.0
+            scale = active && !reduceMotion ? 1.4 : 1.0
         }
     }
 }
