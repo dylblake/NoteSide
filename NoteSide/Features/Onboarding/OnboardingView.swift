@@ -91,15 +91,15 @@ struct OnboardingView: View {
     private var permissionsCard: some View {
         onboardingCard(title: "Permissions", systemImage: "lock.shield") {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Accessibility is required for the global hotkey and context capture. Microphone and Speech Recognition enable voice-to-text dictation (optional).")
+                Text("The global hotkeys work out of the box. Accessibility unlocks in-app context detection (Slack, Figma, code editors) and dictation. Microphone and Speech Recognition enable voice-to-text dictation (optional).")
                     .font(.subheadline)
                     .foregroundStyle(NoteSideTheme.secondaryText)
 
                 permissionStatusRow(
                     title: "Accessibility",
                     detail: appState.isAccessibilityTrusted
-                        ? "Enabled. NoteSide can listen for the global shortcut."
-                        : "Not enabled. Click Request Access, then enable NoteSide in macOS Accessibility settings.",
+                        ? "Enabled. NoteSide can detect in-app context (Slack channels, Figma files, editor documents) and dictation release."
+                        : "Not enabled. Needed for Slack/Figma/editor context detection and dictation. Click Request Access, then enable NoteSide in macOS Accessibility settings.",
                     isGranted: appState.isAccessibilityTrusted,
                     buttonTitle: "Request Access",
                     action: appState.openAccessibilitySettings

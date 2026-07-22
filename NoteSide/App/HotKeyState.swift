@@ -20,7 +20,6 @@ final class HotKeyState {
     var availableHotKeyKeys: [HotKeyShortcut.KeyOption] { HotKeyShortcut.availableKeys }
 
     @ObservationIgnored private let hotKeyMonitor: GlobalHotKeyMonitor
-    @ObservationIgnored private var onAccessibilityNeeded: () -> Void
     @ObservationIgnored private var onError: (String?) -> Void
 
     // Stored so re-registrations (e.g. shortcut key change) reuse the same action.
@@ -37,7 +36,6 @@ final class HotKeyState {
         self.quickNoteAction = { }
         self.allNotesAction = { }
         self.dictationAction = { }
-        self.onAccessibilityNeeded = { }
         self.onError = { _ in }
 
         hotKeyShortcut = Self.loadHotKeyShortcut()
@@ -50,13 +48,11 @@ final class HotKeyState {
         quickNoteAction: @escaping @MainActor () -> Void,
         allNotesAction: @escaping @MainActor () -> Void,
         dictationAction: @escaping @MainActor () -> Void,
-        onAccessibilityNeeded: @escaping @MainActor () -> Void,
         onError: @escaping @MainActor (String?) -> Void
     ) {
         self.quickNoteAction = quickNoteAction
         self.allNotesAction = allNotesAction
         self.dictationAction = dictationAction
-        self.onAccessibilityNeeded = onAccessibilityNeeded
         self.onError = onError
 
         registerHotKey(id: 1, shortcut: hotKeyShortcut, action: quickNoteAction)
@@ -97,14 +93,12 @@ final class HotKeyState {
     }
 
     private func registerHotKey(id: UInt32, shortcut: HotKeyShortcut, action: @escaping @MainActor () -> Void) {
-        let accessibilityNeeded = onAccessibilityNeeded
+        // Carbon hotkeys work without any TCC permission — don't gate them
+        // on Accessibility. Features that genuinely need AX (in-app context
+        // detection, dictation release monitoring) prompt at point of use.
         do {
             try hotKeyMonitor.register(id: id, shortcut: shortcut) {
                 Task { @MainActor in
-                    if !AXIsProcessTrusted() {
-                        accessibilityNeeded()
-                        return
-                    }
                     action()
                 }
             }

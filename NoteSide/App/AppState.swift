@@ -86,7 +86,6 @@ final class AppState {
             quickNoteAction: { [weak self] in self?.toggleQuickNote() },
             allNotesAction: { [weak self] in self?.toggleAllNotesPanel() },
             dictationAction: { [weak self] in self?.startDictation() },
-            onAccessibilityNeeded: { [weak self] in self?.requestAccessibilityAccessIfNeeded() },
             onError: { [weak self] msg in self?.editor.editorErrorMessage = msg }
         )
 
@@ -533,6 +532,16 @@ final class AppState {
 
     private func startDictation() {
         guard editor.isEditorPresented, !isDictating else { return }
+
+        // Dictation is hold-to-talk: release detection uses a global
+        // flagsChanged monitor, which only receives events from other apps
+        // when Accessibility is granted. Without it, dictation would never
+        // stop — so this is a hard requirement at point of use.
+        guard AXIsProcessTrusted() else {
+            requestAccessibilityAccessIfNeeded()
+            editor.editorErrorMessage = "Dictation needs Accessibility access to detect when you release the hotkey."
+            return
+        }
 
         guard dictationService.isFullyAuthorized else {
             requestDictationPermissionsIfNeeded()
