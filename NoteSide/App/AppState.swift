@@ -318,6 +318,7 @@ final class AppState {
     private func presentOnboardingWindow() {
         refreshPermissionStatus()
         browserPermissions.refreshBrowserPermissionStates()
+        browserPermissions.refreshAppAutomationStates()
         onboardingWindow.present()
         NSApp.activate(ignoringOtherApps: true)
     }

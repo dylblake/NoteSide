@@ -29,7 +29,7 @@ enum BrowserAutomationProbeResult {
         case .noTab(let browserName):
             return "\(browserName) is open, but there is no active tab URL."
         case .automationDenied(let browserName):
-            return "Automation access is blocked for \(browserName). macOS should prompt the first time NoteSide tries to read the active tab."
+            return "Automation access for \(browserName) is turned off. macOS only asks once — enable NoteSide under System Settings → Privacy & Security → Automation."
         case .unavailable(let browserName):
             return "Could not read the active tab from \(browserName)."
         }

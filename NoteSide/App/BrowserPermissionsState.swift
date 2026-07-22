@@ -18,17 +18,45 @@ enum BrowserPermissionState: String {
     case granted
 }
 
+/// A non-browser app NoteSide sends Apple Events to for context detection.
+/// Each is its own macOS Automation (TCC) entry, granted separately.
+struct AppAutomationTarget: Hashable {
+    let title: String
+    let bundleIdentifier: String
+    let purpose: String
+    /// Benign script whose only job is to trigger/verify the Automation
+    /// permission for this target.
+    let probeScript: String
+}
+
 @MainActor
 @Observable
 final class BrowserPermissionsState {
     private(set) var browserPermissionStates: [String: BrowserPermissionState] = [:]
+    private(set) var appAutomationStates: [String: BrowserPermissionState] = [:]
     var browserAutomationMessage = "Put Safari, Chrome, or Arc in front, then test browser access."
     var isBrowserAutomationGranted = false
     private var pendingAutomationRequests: Set<String> = []
 
     private static let browserPermissionDefaultsPrefix = "browserPermissionState."
+    private static let appAutomationDefaultsPrefix = "appAutomationState."
     private static let browserPermissionMigrationKey = "browserPermissionStatesMigratedV2"
     static let supportedBrowsers = BrowserURLProvider.supportedBrowsers
+
+    static let appAutomationTargets: [AppAutomationTarget] = [
+        AppAutomationTarget(
+            title: "Finder",
+            bundleIdentifier: "com.apple.finder",
+            purpose: "Lets notes attach to the folder or file you're viewing in Finder.",
+            probeScript: #"tell application id "com.apple.finder" to return name"#
+        ),
+        AppAutomationTarget(
+            title: "Xcode",
+            bundleIdentifier: "com.apple.dt.Xcode",
+            purpose: "Lets notes attach to the file you have open in Xcode.",
+            probeScript: #"tell application id "com.apple.dt.Xcode" to return name"#
+        )
+    ]
 
     @ObservationIgnored let browserURLProvider: BrowserURLProvider
     @ObservationIgnored private var onEditorError: (String?) -> Void
@@ -129,6 +157,113 @@ final class BrowserPermissionsState {
                     break
                 }
             }
+        }
+    }
+
+    // MARK: - App Automation (Finder, Xcode)
+
+    func refreshAppAutomationStates() {
+        var targetsToProbe: [AppAutomationTarget] = []
+
+        for target in Self.appAutomationTargets {
+            let bundleIdentifier = target.bundleIdentifier
+
+            guard isBrowserInstalled(bundleIdentifier) else {
+                appAutomationStates[bundleIdentifier] = .notInstalled
+                continue
+            }
+
+            let storedState = storedState(prefix: Self.appAutomationDefaultsPrefix, bundleIdentifier: bundleIdentifier)
+            let knownState: BrowserPermissionState? = storedState == .notInstalled ? nil : storedState
+
+            guard let knownState else {
+                // Same rule as browsers: never probe an app macOS hasn't
+                // asked about yet, or opening this window would fire the
+                // consent prompt unprompted.
+                appAutomationStates[bundleIdentifier] = .undetermined
+                continue
+            }
+
+            appAutomationStates[bundleIdentifier] = knownState
+            if browserURLProvider.isRunning(bundleIdentifier: bundleIdentifier) {
+                targetsToProbe.append(target)
+            }
+        }
+
+        guard !targetsToProbe.isEmpty else { return }
+
+        Task { [weak self] in
+            for target in targetsToProbe {
+                let (_, error) = await AppleScriptExecutor.shared.execute(
+                    key: "automation-probe:\(target.bundleIdentifier)",
+                    source: target.probeScript
+                )
+                guard let self else { return }
+                self.applyAppAutomationProbeResult(error: error, for: target.bundleIdentifier, conclusiveOnly: true)
+            }
+        }
+    }
+
+    func requestAppAutomationAccess(for target: AppAutomationTarget) {
+        guard pendingAutomationRequests.insert(target.bundleIdentifier).inserted else { return }
+
+        // Targeting an app with an Apple Event launches it if needed, which
+        // is what we want here — the whole point is to surface the prompt.
+        Task { [weak self] in
+            var retriesRemaining = 3
+            while true {
+                let (_, error) = await AppleScriptExecutor.shared.execute(
+                    key: "automation-probe:\(target.bundleIdentifier)",
+                    source: target.probeScript
+                )
+                guard let self else { return }
+
+                let conclusive = self.applyAppAutomationProbeResult(
+                    error: error,
+                    for: target.bundleIdentifier,
+                    conclusiveOnly: false
+                )
+                retriesRemaining -= 1
+                if conclusive || retriesRemaining <= 0 {
+                    self.pendingAutomationRequests.remove(target.bundleIdentifier)
+                    return
+                }
+                try? await Task.sleep(for: .seconds(0.7))
+            }
+        }
+    }
+
+    /// Applies a probe outcome. Returns true when the outcome was
+    /// conclusive (granted or denied); launch races and other transient
+    /// errors leave the state untouched.
+    @discardableResult
+    private func applyAppAutomationProbeResult(
+        error: NSDictionary?,
+        for bundleIdentifier: String,
+        conclusiveOnly: Bool
+    ) -> Bool {
+        if error == nil {
+            setAppAutomationState(.granted, for: bundleIdentifier)
+            return true
+        }
+        if (error?[NSAppleScript.errorNumber] as? Int) == -1743 {
+            setAppAutomationState(.notGranted, for: bundleIdentifier)
+            return true
+        }
+        return false
+    }
+
+    func setAppAutomationState(_ state: BrowserPermissionState, for bundleIdentifier: String) {
+        appAutomationStates[bundleIdentifier] = isBrowserInstalled(bundleIdentifier) ? state : .notInstalled
+
+        let defaultsKey = Self.appAutomationDefaultsPrefix + bundleIdentifier
+        switch appAutomationStates[bundleIdentifier] {
+        case .granted?:
+            UserDefaults.standard.set(BrowserPermissionState.granted.rawValue, forKey: defaultsKey)
+        case .notGranted?:
+            UserDefaults.standard.set(BrowserPermissionState.notGranted.rawValue, forKey: defaultsKey)
+        case .undetermined?, .notInstalled?, nil:
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
         }
     }
 
@@ -255,8 +390,11 @@ final class BrowserPermissionsState {
     }
 
     private func storedBrowserPermissionState(for bundleIdentifier: String) -> BrowserPermissionState {
-        let defaultsKey = Self.browserPermissionDefaultsPrefix + bundleIdentifier
-        guard let rawValue = UserDefaults.standard.string(forKey: defaultsKey) else {
+        storedState(prefix: Self.browserPermissionDefaultsPrefix, bundleIdentifier: bundleIdentifier)
+    }
+
+    private func storedState(prefix: String, bundleIdentifier: String) -> BrowserPermissionState {
+        guard let rawValue = UserDefaults.standard.string(forKey: prefix + bundleIdentifier) else {
             return .notInstalled
         }
 

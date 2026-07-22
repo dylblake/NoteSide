@@ -129,9 +129,83 @@ struct OnboardingView: View {
                     }
                 }
 
+                appAutomationSection
+
                 dictationPermissionsSection
             }
         }
+    }
+
+    private var appAutomationSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+                .padding(.vertical, 4)
+
+            Text("App Automation")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(NoteSideTheme.primaryText)
+
+            Text("Finder and Xcode use the same per-app Automation permission as browsers. Without it, notes over these apps attach to the app itself instead of the folder or file you're in.")
+                .font(.footnote)
+                .foregroundStyle(NoteSideTheme.secondaryText)
+
+            ForEach(installedAppAutomationTargets, id: \.bundleIdentifier) { target in
+                appAutomationRow(for: target)
+            }
+        }
+    }
+
+    private var installedAppAutomationTargets: [AppAutomationTarget] {
+        BrowserPermissionsState.appAutomationTargets.filter { target in
+            guard let state = appState.browserPermissions.appAutomationStates[target.bundleIdentifier] else {
+                return false
+            }
+            return state != .notInstalled
+        }
+    }
+
+    private func appAutomationRow(for target: AppAutomationTarget) -> some View {
+        let status = appState.browserPermissions.appAutomationStates[target.bundleIdentifier] ?? .notInstalled
+
+        return HStack(alignment: .top, spacing: 12) {
+            browserStatusIcon(for: status)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(target.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(NoteSideTheme.primaryText)
+
+                Text(target.purpose)
+                    .font(.footnote)
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+
+                Text(browserStatusText(for: status))
+                    .font(.footnote)
+                    .foregroundStyle(NoteSideTheme.tertiaryText)
+            }
+
+            Spacer(minLength: 12)
+
+            if status == .undetermined {
+                secondaryButton("Request Access") {
+                    appState.browserPermissions.requestAppAutomationAccess(for: target)
+                }
+            } else if status == .notGranted {
+                secondaryButton("Open Settings") {
+                    appState.browserPermissions.openAutomationSettings()
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(NoteSideTheme.secondaryBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(NoteSideTheme.border.opacity(0.75), lineWidth: 1)
+                )
+        )
     }
 
     private var dictationPermissionsSection: some View {
@@ -284,9 +358,15 @@ struct OnboardingView: View {
 
             Spacer(minLength: 12)
 
-            if status == .notGranted || status == .undetermined {
+            if status == .undetermined {
                 secondaryButton("Request Access") {
                     appState.browserPermissions.requestAutomationAccess(for: bundleIdentifier)
+                }
+            } else if status == .notGranted {
+                // macOS won't re-prompt after a denial — the only path
+                // back is the Automation pane in System Settings.
+                secondaryButton("Open Settings") {
+                    appState.browserPermissions.openAutomationSettings()
                 }
             }
         }
@@ -340,7 +420,7 @@ struct OnboardingView: View {
         case .granted:
             return "Installed and automation access is enabled."
         case .notGranted:
-            return "Installed, but automation access is not enabled yet."
+            return "Automation is turned off. macOS asks only once — enable NoteSide in System Settings → Privacy & Security → Automation."
         case .undetermined:
             return "Installed. Automation access hasn't been requested yet — macOS will ask when you request it."
         case .notInstalled:
