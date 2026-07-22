@@ -34,7 +34,7 @@ struct AppAutomationTarget: Hashable {
 final class BrowserPermissionsState {
     private(set) var browserPermissionStates: [String: BrowserPermissionState] = [:]
     private(set) var appAutomationStates: [String: BrowserPermissionState] = [:]
-    var browserAutomationMessage = "Put Safari, Chrome, or Arc in front, then test browser access."
+    var browserAutomationMessage = "Grant access per browser below — macOS asks once per browser."
     var isBrowserAutomationGranted = false
     private var pendingAutomationRequests: Set<String> = []
 

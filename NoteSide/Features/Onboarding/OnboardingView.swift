@@ -1,6 +1,30 @@
 import AppKit
 import SwiftUI
 
+private enum PermissionRowStatus {
+    case granted
+    /// Explicitly denied or required-and-absent.
+    case missing
+    /// Not requested yet — nothing is wrong.
+    case pending
+
+    var symbolName: String {
+        switch self {
+        case .granted: return "checkmark.circle.fill"
+        case .missing: return "xmark.circle.fill"
+        case .pending: return "questionmark.circle"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .granted: return NoteSideTheme.success
+        case .missing: return NoteSideTheme.danger
+        case .pending: return NoteSideTheme.secondaryText
+        }
+    }
+}
+
 struct OnboardingView: View {
     @Environment(AppState.self) private var appState
 
@@ -100,19 +124,17 @@ struct OnboardingView: View {
                     detail: appState.isAccessibilityTrusted
                         ? "Enabled. NoteSide can detect in-app context (Slack channels, Figma files, editor documents) and dictation release."
                         : "Not enabled. Needed for Slack/Figma/editor context detection and dictation. Click Request Access, then enable NoteSide in macOS Accessibility settings.",
-                    isGranted: appState.isAccessibilityTrusted,
-                    buttonTitle: "Request Access",
-                    action: appState.openAccessibilitySettings
+                    status: appState.isAccessibilityTrusted ? .granted : .missing,
+                    buttonTitle: appState.isAccessibilityTrusted ? nil : "Request Access",
+                    action: appState.isAccessibilityTrusted ? nil : appState.openAccessibilitySettings
                 )
 
                 permissionStatusRow(
                     title: "Browser Automation",
                     detail: "Request access per browser below. macOS will ask the first time NoteSide tries to read that browser's active tab.",
-                    isGranted: !installedBrowsers.isEmpty && installedBrowsers.allSatisfy { browser in
-                        appState.browserPermissions.browserPermissionStates[browser.bundleIdentifier] == .granted
-                    },
-                    buttonTitle: "Open Settings",
-                    action: appState.browserPermissions.openAutomationSettings
+                    status: browserAutomationSummaryStatus,
+                    buttonTitle: browserAutomationSummaryStatus == .missing ? "Open Settings" : nil,
+                    action: browserAutomationSummaryStatus == .missing ? appState.browserPermissions.openAutomationSettings : nil
                 )
 
                 Text(appState.browserPermissions.browserAutomationMessage)
@@ -208,6 +230,18 @@ struct OnboardingView: View {
         )
     }
 
+    /// Aggregate over the per-browser rows: red only when a browser is
+    /// actually denied; a browser that merely hasn't been asked about yet
+    /// is "pending", not an error.
+    private var browserAutomationSummaryStatus: PermissionRowStatus {
+        let states = installedBrowsers.map { browser in
+            appState.browserPermissions.browserPermissionStates[browser.bundleIdentifier] ?? .undetermined
+        }
+        if states.contains(.notGranted) { return .missing }
+        if !states.isEmpty && states.allSatisfy({ $0 == .granted }) { return .granted }
+        return .pending
+    }
+
     private var dictationPermissionsSection: some View {
         let micDetail: String = appState.isMicrophoneAuthorized
             ? "Enabled. NoteSide can capture audio for dictation."
@@ -232,7 +266,7 @@ struct OnboardingView: View {
             permissionStatusRow(
                 title: "Microphone",
                 detail: micDetail,
-                isGranted: appState.isMicrophoneAuthorized,
+                status: appState.isMicrophoneAuthorized ? .granted : .missing,
                 buttonTitle: micButton,
                 action: micAction
             )
@@ -240,7 +274,7 @@ struct OnboardingView: View {
             permissionStatusRow(
                 title: "Speech Recognition",
                 detail: speechDetail,
-                isGranted: appState.isSpeechRecognitionAuthorized,
+                status: appState.isSpeechRecognitionAuthorized ? .granted : .missing,
                 buttonTitle: speechButton,
                 action: speechAction
             )
@@ -288,18 +322,14 @@ struct OnboardingView: View {
     private func permissionStatusRow(
         title: String,
         detail: String,
-        isGranted: Bool,
+        status: PermissionRowStatus,
         buttonTitle: String?,
         action: (() -> Void)?
     ) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: isGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
+            Image(systemName: status.symbolName)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(
-                    isGranted
-                        ? NoteSideTheme.success
-                        : NoteSideTheme.danger
-                )
+                .foregroundStyle(status.color)
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 6) {

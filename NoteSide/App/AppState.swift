@@ -333,6 +333,7 @@ final class AppState {
         notesState.allNotesScrollResetID = UUID()
         notesState.selectedNoteIDs.removeAll()
         notesState.keyboardFocusedNoteID = nil
+        notesState.searchText = ""
         isAllNotesPanelPresented = true
         allNotesPanelController.present()
     }
