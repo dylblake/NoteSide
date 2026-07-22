@@ -42,8 +42,25 @@ final class NoteStore {
         self.fileManager = fileManager
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(filePath: NSTemporaryDirectory())
-        directory = appSupport
-            .appending(path: "SideNote", directoryHint: .isDirectory)
+
+        // The storage folder predates the app's rename and was still
+        // called "SideNote". Move it once; if the move fails, keep using
+        // the legacy folder rather than presenting an empty library.
+        let legacyDirectory = appSupport.appending(path: "SideNote", directoryHint: .isDirectory)
+        let preferredDirectory = appSupport.appending(path: "NoteSide", directoryHint: .isDirectory)
+
+        if !fileManager.fileExists(atPath: preferredDirectory.path),
+           fileManager.fileExists(atPath: legacyDirectory.path) {
+            try? fileManager.moveItem(at: legacyDirectory, to: preferredDirectory)
+        }
+
+        if !fileManager.fileExists(atPath: preferredDirectory.path),
+           fileManager.fileExists(atPath: legacyDirectory.path) {
+            directory = legacyDirectory
+        } else {
+            directory = preferredDirectory
+        }
+
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         fileURL = directory.appending(path: "notes.json")
         backupURL = directory.appending(path: "notes.json.bak")
