@@ -27,6 +27,9 @@ final class NotesState {
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     var selectedNoteIDs: Set<UUID> = []
     var allNotesScrollResetID = UUID()
+    /// Row highlighted by keyboard navigation in All Notes (distinct from
+    /// the checkbox multi-selection).
+    var keyboardFocusedNoteID: UUID?
 
     /// Notes ever created, for the free-trial gate. Monotonic: deleting
     /// notes doesn't refund trial slots.

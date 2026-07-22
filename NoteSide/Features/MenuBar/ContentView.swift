@@ -16,6 +16,8 @@ private enum AllNotesViewMode: String {
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var showingBulkDeleteConfirmation = false
+    @State private var searchFocusRequestID = UUID()
+    @FocusState private var isListFocused: Bool
     @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
 
     var isFloatingPanel = false
@@ -47,9 +49,19 @@ struct ContentView: View {
                 .padding(.bottom, isFloatingPanel ? 14 : 18)
                 .animation(.easeInOut(duration: 0.15), value: appState.notesState.selectedNoteIDs.isEmpty)
 
-                TagSearchField(text: $notes.searchText)
-                    .padding(.horizontal, isFloatingPanel ? 18 : 24)
-                    .padding(.bottom, 10)
+                TagSearchField(
+                    text: $notes.searchText,
+                    focusRequestID: searchFocusRequestID,
+                    onMoveDown: {
+                        isListFocused = true
+                        if appState.notesState.keyboardFocusedNoteID == nil,
+                           let first = orderedVisibleNotes.first {
+                            appState.notesState.keyboardFocusedNoteID = first.id
+                        }
+                    }
+                )
+                .padding(.horizontal, isFloatingPanel ? 18 : 24)
+                .padding(.bottom, 10)
 
                 ScrollView {
                     Color.clear
@@ -80,8 +92,30 @@ struct ContentView: View {
                     }
                 }
             }
+            .focusable()
+            .focusEffectDisabled()
+            .focused($isListFocused)
+            .onKeyPress(.downArrow) { moveKeyboardFocus(by: 1, proxy: proxy) }
+            .onKeyPress(.upArrow) { moveKeyboardFocus(by: -1, proxy: proxy) }
+            .onKeyPress(.rightArrow) { moveKeyboardFocus(by: 1, proxy: proxy) }
+            .onKeyPress(.leftArrow) { moveKeyboardFocus(by: -1, proxy: proxy) }
+            .onKeyPress(.return) { openKeyboardFocusedNote() }
+            .onKeyPress(.space) { toggleKeyboardFocusedSelection() }
+            .onKeyPress(.delete) { confirmDeleteKeyboardFocusedNote() }
+            .onKeyPress(.deleteForward) { confirmDeleteKeyboardFocusedNote() }
+            .background(
+                // Hidden ⌘F target: moves focus into the search field.
+                Button("") { searchFocusRequestID = UUID() }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+            )
             .onChange(of: appState.notesState.allNotesScrollResetID) { _, _ in
                 proxy.scrollTo("top", anchor: .top)
+                if isFloatingPanel {
+                    isListFocused = true
+                }
             }
         }
 
@@ -94,6 +128,75 @@ struct ContentView: View {
             .frame(minWidth: 820, minHeight: 560)
             .background(Color(nsColor: .windowBackgroundColor))
         }
+    }
+
+    // MARK: - Keyboard navigation
+
+    /// Notes in on-screen order (sections top to bottom, groups, then
+    /// notes) so arrow keys walk the list the way it reads.
+    private var orderedVisibleNotes: [ContextNote] {
+        appState.notesState.noteSections.flatMap { $0.groups.flatMap(\.notes) }
+    }
+
+    private func moveKeyboardFocus(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+        let notes = orderedVisibleNotes
+        guard !notes.isEmpty else { return .ignored }
+
+        let currentIndex = appState.notesState.keyboardFocusedNoteID
+            .flatMap { id in notes.firstIndex(where: { $0.id == id }) }
+
+        let newIndex: Int
+        if let currentIndex {
+            newIndex = max(0, min(notes.count - 1, currentIndex + delta))
+        } else {
+            newIndex = delta >= 0 ? 0 : notes.count - 1
+        }
+
+        let target = notes[newIndex]
+        appState.notesState.keyboardFocusedNoteID = target.id
+        proxy.scrollTo(target.id, anchor: nil)
+        return .handled
+    }
+
+    private func openKeyboardFocusedNote() -> KeyPress.Result {
+        guard let note = keyboardFocusedNote else { return .ignored }
+        appState.open(note)
+        return .handled
+    }
+
+    private func toggleKeyboardFocusedSelection() -> KeyPress.Result {
+        guard let note = keyboardFocusedNote else { return .ignored }
+        appState.notesState.toggleSelection(note.id)
+        return .handled
+    }
+
+    private func confirmDeleteKeyboardFocusedNote() -> KeyPress.Result {
+        guard let note = keyboardFocusedNote else { return .ignored }
+
+        let alert = NSAlert()
+        alert.messageText = "Delete this note?"
+        alert.informativeText = "“\(NoteCardStyle.primaryTitle(for: note))” will be deleted. This can't be undone."
+        alert.alertStyle = .warning
+        let deleteButton = alert.addButton(withTitle: "Delete")
+        deleteButton.hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            // Move the highlight to a neighbor so keyboard flow continues.
+            let notes = orderedVisibleNotes
+            if let index = notes.firstIndex(where: { $0.id == note.id }) {
+                let neighbor = notes.indices.contains(index + 1) ? notes[index + 1]
+                    : (index > 0 ? notes[index - 1] : nil)
+                appState.notesState.keyboardFocusedNoteID = neighbor?.id
+            }
+            appState.notesState.delete(note)
+        }
+        return .handled
+    }
+
+    private var keyboardFocusedNote: ContextNote? {
+        guard let id = appState.notesState.keyboardFocusedNoteID else { return nil }
+        return orderedVisibleNotes.first { $0.id == id }
     }
 
     private var emptyStateView: some View {
@@ -277,6 +380,7 @@ private struct NoteGroupTile: View {
                 ForEach(group.notes) { note in
                     NoteTile(note: note)
                         .environment(appState)
+                        .id(note.id)
                 }
             }
         }
@@ -359,12 +463,19 @@ private struct NoteTile: View {
 
     private var tileColor: Color { NoteCardStyle.tint(for: note) }
 
+    private var isKeyboardFocused: Bool {
+        appState.notesState.keyboardFocusedNoteID == note.id
+    }
+
     private var tileBackground: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
             .fill(NoteSideTheme.tintedTileFill(for: tileColor))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(NoteSideTheme.tintedTileStroke(for: tileColor), lineWidth: 1)
+                    .stroke(
+                        isKeyboardFocused ? NoteSideTheme.accent : NoteSideTheme.tintedTileStroke(for: tileColor),
+                        lineWidth: isKeyboardFocused ? 2 : 1
+                    )
             )
     }
 
@@ -525,6 +636,7 @@ private struct NoteListGroup: View {
                 ForEach(group.notes) { note in
                     NoteListRow(note: note)
                         .environment(appState)
+                        .id(note.id)
                 }
             }
         }
@@ -610,7 +722,10 @@ private struct NoteListRow: View {
                 .fill(NoteSideTheme.tintedTileFill(for: tint))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(NoteSideTheme.tintedTileStroke(for: tint), lineWidth: 1)
+                        .stroke(
+                            isKeyboardFocused ? NoteSideTheme.accent : NoteSideTheme.tintedTileStroke(for: tint),
+                            lineWidth: isKeyboardFocused ? 2 : 1
+                        )
                 )
         )
         .contentShape(Rectangle())
@@ -618,10 +733,16 @@ private struct NoteListRow: View {
             appState.open(note)
         }
     }
+
+    private var isKeyboardFocused: Bool {
+        appState.notesState.keyboardFocusedNoteID == note.id
+    }
 }
 
 private struct TagSearchField: View {
     @Binding var text: String
+    var focusRequestID = UUID()
+    var onMoveDown: (() -> Void)?
     @State private var shouldPlaceCursor = false
 
     var body: some View {
@@ -629,7 +750,12 @@ private struct TagSearchField: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TagColoredTextField(text: $text, placeCursorAtEnd: shouldPlaceCursor)
+            TagColoredTextField(
+                text: $text,
+                placeCursorAtEnd: shouldPlaceCursor,
+                focusRequestID: focusRequestID,
+                onMoveDown: onMoveDown
+            )
                 .onChange(of: shouldPlaceCursor) { _, newValue in
                     if newValue {
                         DispatchQueue.main.async { shouldPlaceCursor = false }
@@ -676,6 +802,8 @@ private struct TagSearchField: View {
 private struct TagColoredTextField: NSViewRepresentable {
     @Binding var text: String
     var placeCursorAtEnd: Bool = false
+    var focusRequestID = UUID()
+    var onMoveDown: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -694,6 +822,15 @@ private struct TagColoredTextField: NSViewRepresentable {
     }
 
     func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+
+        if context.coordinator.lastFocusRequestID != focusRequestID {
+            context.coordinator.lastFocusRequestID = focusRequestID
+            DispatchQueue.main.async {
+                field.window?.makeFirstResponder(field)
+            }
+        }
+
         if field.stringValue != text {
             field.stringValue = text
             Coordinator.applyTagColoring(to: field)
@@ -711,17 +848,27 @@ private struct TagColoredTextField: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
-        private let parent: TagColoredTextField
+        var parent: TagColoredTextField
+        var lastFocusRequestID: UUID?
         private static let tagPattern = try! NSRegularExpression(pattern: #"#\w+"#)
 
         init(_ parent: TagColoredTextField) {
             self.parent = parent
+            self.lastFocusRequestID = parent.focusRequestID
         }
 
         func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSTextField else { return }
             parent.text = field.stringValue
             Self.applyTagColoring(to: field)
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.moveDown(_:)), let onMoveDown = parent.onMoveDown {
+                onMoveDown()
+                return true
+            }
+            return false
         }
 
         static func applyTagColoring(to field: NSTextField) {

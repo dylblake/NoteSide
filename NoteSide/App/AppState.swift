@@ -332,6 +332,7 @@ final class AppState {
     private func presentAllNotesPanel() {
         notesState.allNotesScrollResetID = UUID()
         notesState.selectedNoteIDs.removeAll()
+        notesState.keyboardFocusedNoteID = nil
         isAllNotesPanelPresented = true
         allNotesPanelController.present()
     }
