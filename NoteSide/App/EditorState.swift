@@ -234,14 +234,15 @@ final class EditorState {
             guard browserURLProvider.supports(bundleIdentifier: bundleId) else { return false }
 
             let state = browserPermissions.browserPermissionStates[bundleId]
-            // Attempt if: granted, OR never attempted before (nil)
-            return state == .granted || state == nil
+            // Attempt if: granted, OR never attempted before (nil/undetermined)
+            return state == .granted || state == nil || state == .undetermined
         }()
 
         // If this is a first-time browser attempt, probe it and record the result
         if shouldAttemptBrowserAutomation,
            let bundleId = bundleIdentifier,
-           browserPermissions.browserPermissionStates[bundleId] == nil {
+           browserPermissions.browserPermissionStates[bundleId] == nil
+            || browserPermissions.browserPermissionStates[bundleId] == .undetermined {
             let attempt = browserURLProvider.accessAttempt(bundleIdentifier: bundleId, activatesBrowser: false)
 
             switch attempt.result {
@@ -274,10 +275,10 @@ final class EditorState {
             guard let bundleId = bundleIdentifier else { return false }
             guard browserProvider.supports(bundleIdentifier: bundleId) else { return false }
             let state = permissionStates[bundleId]
-            return state == .granted || state == nil
+            return state == .granted || state == nil || state == .undetermined
         }()
         let isFirstAttempt = shouldAttemptBrowserAutomation
-            && (bundleIdentifier.map { permissionStates[$0] == nil } ?? false)
+            && (bundleIdentifier.map { permissionStates[$0] == nil || permissionStates[$0] == .undetermined } ?? false)
 
         // Run the heavy AppleScript / Accessibility work off the main thread
         let (context, probeSuccess): (NoteContext, Bool?) = await withCheckedContinuation { continuation in

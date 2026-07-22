@@ -11,6 +11,9 @@ import Observation
 
 enum BrowserPermissionState: String {
     case notInstalled
+    /// Installed, but NoteSide has never attempted Automation access, so
+    /// macOS hasn't shown its consent prompt yet. Never persisted.
+    case undetermined
     case notGranted
     case granted
 }
@@ -72,39 +75,45 @@ final class BrowserPermissionsState {
 
     func refreshBrowserPermissionStates() {
         for browser in Self.supportedBrowsers {
-            let storedState = storedBrowserPermissionState(for: browser.bundleIdentifier)
+            let bundleIdentifier = browser.bundleIdentifier
 
-            if !isBrowserInstalled(browser.bundleIdentifier) {
-                if storedState != .notInstalled {
-                    browserPermissionStates[browser.bundleIdentifier] = .notInstalled
-                }
+            guard isBrowserInstalled(bundleIdentifier) else {
+                browserPermissionStates[bundleIdentifier] = .notInstalled
                 continue
             }
 
-            guard storedState != .notInstalled else {
+            // Nothing stored decodes as .notInstalled — for an installed
+            // browser that sentinel means "never attempted", i.e. macOS has
+            // never shown its Automation prompt for this browser.
+            let storedState = storedBrowserPermissionState(for: bundleIdentifier)
+            let knownState: BrowserPermissionState? = storedState == .notInstalled ? nil : storedState
+
+            guard let knownState else {
+                // Don't probe here: an Apple Event to a never-attempted
+                // browser would fire the macOS consent prompt for every
+                // running browser the moment this refresh runs. Mark it
+                // undetermined so onboarding lists it with a Request
+                // Access button instead.
+                browserPermissionStates[bundleIdentifier] = .undetermined
                 continue
             }
 
-            if browserURLProvider.isRunning(bundleIdentifier: browser.bundleIdentifier) {
+            if browserURLProvider.isRunning(bundleIdentifier: bundleIdentifier) {
                 let attempt = browserURLProvider.accessAttempt(
-                    bundleIdentifier: browser.bundleIdentifier,
+                    bundleIdentifier: bundleIdentifier,
                     activatesBrowser: false
                 )
 
                 switch attempt.result {
                 case .success:
-                    browserPermissionStates[browser.bundleIdentifier] = .granted
-                    setBrowserPermissionState(.granted, for: browser.bundleIdentifier)
-                case .automationDenied, .unavailable:
-                    browserPermissionStates[browser.bundleIdentifier] = .notGranted
-                    setBrowserPermissionState(.notGranted, for: browser.bundleIdentifier)
+                    setBrowserPermissionState(.granted, for: bundleIdentifier)
+                case .automationDenied, .unavailable, .notBrowser:
+                    setBrowserPermissionState(.notGranted, for: bundleIdentifier)
                 case .noTab:
-                    browserPermissionStates[browser.bundleIdentifier] = storedState
-                case .notBrowser:
-                    browserPermissionStates[browser.bundleIdentifier] = .notGranted
+                    browserPermissionStates[bundleIdentifier] = knownState
                 }
             } else {
-                browserPermissionStates[browser.bundleIdentifier] = storedState
+                browserPermissionStates[bundleIdentifier] = knownState
             }
         }
     }
@@ -120,7 +129,7 @@ final class BrowserPermissionsState {
             UserDefaults.standard.set(BrowserPermissionState.granted.rawValue, forKey: defaultsKey)
         case .notGranted?:
             UserDefaults.standard.set(BrowserPermissionState.notGranted.rawValue, forKey: defaultsKey)
-        case .notInstalled?, nil:
+        case .undetermined?, .notInstalled?, nil:
             UserDefaults.standard.removeObject(forKey: defaultsKey)
         }
     }

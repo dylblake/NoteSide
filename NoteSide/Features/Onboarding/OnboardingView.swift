@@ -269,7 +269,7 @@ struct OnboardingView: View {
 
             Spacer(minLength: 12)
 
-            if status == .notGranted {
+            if status == .notGranted || status == .undetermined {
                 secondaryButton("Request Access") {
                     appState.browserPermissions.requestAutomationAccess(for: bundleIdentifier)
                 }
@@ -300,6 +300,8 @@ struct OnboardingView: View {
             return "checkmark.circle.fill"
         case .notGranted:
             return "xmark.circle.fill"
+        case .undetermined:
+            return "questionmark.circle"
         case .notInstalled:
             return "circle"
         }
@@ -311,6 +313,8 @@ struct OnboardingView: View {
             return NoteSideTheme.success
         case .notGranted:
             return NoteSideTheme.danger
+        case .undetermined:
+            return NoteSideTheme.secondaryText
         case .notInstalled:
             return NoteSideTheme.quaternaryText
         }
@@ -322,6 +326,8 @@ struct OnboardingView: View {
             return "Installed and automation access is enabled."
         case .notGranted:
             return "Installed, but automation access is not enabled yet."
+        case .undetermined:
+            return "Installed. Automation access hasn't been requested yet — macOS will ask when you request it."
         case .notInstalled:
             return "Not installed on this Mac."
         }
