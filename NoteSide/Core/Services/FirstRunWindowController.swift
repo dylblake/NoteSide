@@ -28,7 +28,7 @@ final class FirstRunWindowController: NSObject, NSWindowDelegate {
 
     func present() {
         guard let window else { return }
-        appState?.setOnboardingWindowVisible(true)
+        appState?.setFirstRunWindowVisible(true)
         if let screen = targetScreen() {
             let frame = centeredFrame(for: window.frame.size, on: screen)
             window.setFrame(frame, display: false)
@@ -38,12 +38,20 @@ final class FirstRunWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    /// Re-front the window when the user returns to NoteSide (e.g. after a
+    /// trip to System Settings). No-op if hidden or minimized.
+    func bringToFrontIfVisible() {
+        guard let window, window.isVisible, !window.isMiniaturized else { return }
+        window.orderFrontRegardless()
+        window.makeKeyAndOrderFront(nil)
+    }
+
     func dismiss() {
         window?.close()
     }
 
     func windowWillClose(_ notification: Notification) {
-        appState?.setOnboardingWindowVisible(false)
+        appState?.setFirstRunWindowVisible(false)
     }
 
     private func targetScreen() -> NSScreen? {

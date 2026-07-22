@@ -257,15 +257,7 @@ struct FirstRunView: View {
 
             Spacer(minLength: 12)
 
-            if state == .notGranted {
-                wizardButton("Open Settings", prominent: false) {
-                    appState.browserPermissions.openAutomationSettings()
-                }
-            } else if state != .granted {
-                wizardButton("Connect", prominent: true) {
-                    appState.browserPermissions.requestAutomationAccess(for: browser.bundleIdentifier)
-                }
-            }
+            browserActionButtons(for: browser.bundleIdentifier, state: state, prominentConnect: true)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -277,6 +269,39 @@ struct FirstRunView: View {
                         .stroke(state == .granted ? NoteSideTheme.success.opacity(0.5) : NoteSideTheme.border.opacity(0.8), lineWidth: 1)
                 )
         )
+    }
+
+    /// Connect / Open Settings / "Connecting…" cluster shared by the featured
+    /// card and the compact rows. A granted browser shows nothing; a pending
+    /// request shows a disabled "Connecting…" so the click is never invisible;
+    /// every other state always offers Open Settings as a working escape hatch,
+    /// plus Connect while the browser has never been asked (.undetermined).
+    @ViewBuilder
+    private func browserActionButtons(
+        for bundleIdentifier: String,
+        state: BrowserPermissionState,
+        prominentConnect: Bool
+    ) -> some View {
+        if state == .granted {
+            EmptyView()
+        } else if appState.browserPermissions.isRequestPending(for: bundleIdentifier) {
+            Text("Connecting…")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(NoteSideTheme.secondaryText)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+        } else {
+            HStack(spacing: 8) {
+                if state == .undetermined {
+                    wizardButton("Connect", prominent: prominentConnect) {
+                        appState.browserPermissions.requestAutomationAccess(for: bundleIdentifier)
+                    }
+                }
+                wizardButton("Open Settings", prominent: false) {
+                    appState.browserPermissions.openAutomationSettings()
+                }
+            }
+        }
     }
 
     private func featuredBrowserDetail(for state: BrowserPermissionState) -> String {
@@ -302,15 +327,7 @@ struct FirstRunView: View {
 
             Spacer()
 
-            if state == .notGranted {
-                wizardButton("Open Settings", prominent: false) {
-                    appState.browserPermissions.openAutomationSettings()
-                }
-            } else if state != .granted {
-                wizardButton("Connect", prominent: false) {
-                    appState.browserPermissions.requestAutomationAccess(for: browser.bundleIdentifier)
-                }
-            }
+            browserActionButtons(for: browser.bundleIdentifier, state: state, prominentConnect: false)
         }
     }
 

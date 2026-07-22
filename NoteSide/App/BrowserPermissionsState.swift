@@ -35,7 +35,16 @@ final class BrowserPermissionsState {
     private(set) var browserPermissionStates: [String: BrowserPermissionState] = [:]
     private(set) var appAutomationStates: [String: BrowserPermissionState] = [:]
     var browserAutomationMessage = "Grant access per browser below — macOS asks once per browser."
-    private var pendingAutomationRequests: Set<String> = []
+    // Timestamped so a stuck/blocked request can't leave a bundle id
+    // permanently "pending" and dead-end the button. Observed so the UI's
+    // "Connecting…" state appears the instant a request starts.
+    private(set) var pendingAutomationRequests: [String: Date] = [:]
+    private static let pendingRequestStaleAfter: TimeInterval = 15
+
+    func isRequestPending(for bundleIdentifier: String) -> Bool {
+        guard let started = pendingAutomationRequests[bundleIdentifier] else { return false }
+        return Date().timeIntervalSince(started) < Self.pendingRequestStaleAfter
+    }
 
     private static let browserPermissionDefaultsPrefix = "browserPermissionState."
     private static let appAutomationDefaultsPrefix = "appAutomationState."
@@ -86,12 +95,7 @@ final class BrowserPermissionsState {
     }
 
     func openAutomationSettings() {
-        openSettingsPane(candidates: [
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Automation",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension",
-            "x-apple.systempreferences:com.apple.preference.security"
-        ])
+        SystemSettingsOpener.openPrivacyPane(.automation)
     }
 
     func refreshBrowserPermissionStates() {
@@ -204,7 +208,8 @@ final class BrowserPermissionsState {
     }
 
     func requestAppAutomationAccess(for target: AppAutomationTarget) {
-        guard pendingAutomationRequests.insert(target.bundleIdentifier).inserted else { return }
+        guard !isRequestPending(for: target.bundleIdentifier) else { return }
+        pendingAutomationRequests[target.bundleIdentifier] = Date()
 
         // Targeting an app with an Apple Event launches it if needed, which
         // is what we want here — the whole point is to surface the prompt.
@@ -224,7 +229,7 @@ final class BrowserPermissionsState {
                 )
                 retriesRemaining -= 1
                 if conclusive || retriesRemaining <= 0 {
-                    self.pendingAutomationRequests.remove(target.bundleIdentifier)
+                    self.pendingAutomationRequests[target.bundleIdentifier] = nil
                     return
                 }
                 try? await Task.sleep(for: .seconds(0.7))
@@ -336,7 +341,8 @@ final class BrowserPermissionsState {
     // MARK: - Private Methods
 
     private func queueAutomationRequest(for bundleIdentifier: String, activatesBrowser: Bool) {
-        guard pendingAutomationRequests.insert(bundleIdentifier).inserted else { return }
+        guard !isRequestPending(for: bundleIdentifier) else { return }
+        pendingAutomationRequests[bundleIdentifier] = Date()
 
         if activatesBrowser {
             onOpenApplication(bundleIdentifier)
@@ -375,10 +381,10 @@ final class BrowserPermissionsState {
 
             switch attempt.result {
             case .success, .noTab, .automationDenied:
-                self.pendingAutomationRequests.remove(bundleIdentifier)
+                self.pendingAutomationRequests[bundleIdentifier] = nil
             case .unavailable, .notBrowser:
                 guard retriesRemaining > 0 else {
-                    self.pendingAutomationRequests.remove(bundleIdentifier)
+                    self.pendingAutomationRequests[bundleIdentifier] = nil
                     return
                 }
 
@@ -414,12 +420,4 @@ final class BrowserPermissionsState {
         defaults.set(true, forKey: browserPermissionMigrationKey)
     }
 
-    private func openSettingsPane(candidates: [String]) {
-        for candidate in candidates {
-            guard let url = URL(string: candidate) else { continue }
-            if NSWorkspace.shared.open(url) {
-                return
-            }
-        }
-    }
 }

@@ -52,7 +52,7 @@ final class DictationService: ObservableObject {
         } else if currentStatus == .authorized {
             isMicrophoneAuthorized = true
         } else {
-            openSystemSettings(privacy: "Privacy_Microphone")
+            SystemSettingsOpener.openPrivacyPane(.microphone)
         }
     }
 
@@ -69,19 +69,7 @@ final class DictationService: ObservableObject {
         } else if currentStatus == .authorized {
             isSpeechRecognitionAuthorized = true
         } else {
-            openSystemSettings(privacy: "Privacy_SpeechRecognition")
-        }
-    }
-
-    private func openSystemSettings(privacy suffix: String) {
-        let candidates = [
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(suffix)",
-            "x-apple.systempreferences:com.apple.preference.security?\(suffix)"
-        ]
-        for candidate in candidates {
-            if let url = URL(string: candidate), NSWorkspace.shared.open(url) {
-                return
-            }
+            SystemSettingsOpener.openPrivacyPane(.speechRecognition)
         }
     }
 

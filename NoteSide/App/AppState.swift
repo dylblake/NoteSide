@@ -48,7 +48,13 @@ final class AppState {
     private var cancellables: Set<AnyCancellable> = []
     private var isAllNotesPanelVisible = false
     private var isOnboardingWindowVisible = false
+    private var isFirstRunWindowVisible = false
     private var isInfoWindowVisible = false
+    private var permissionPollTask: Task<Void, Never>?
+
+    private var isAnySetupWindowVisible: Bool {
+        isFirstRunWindowVisible || isOnboardingWindowVisible
+    }
 
     private static let onboardingDefaultsKey = "hasCompletedOnboarding"
     static let supportedBrowsers = BrowserURLProvider.supportedBrowsers
@@ -130,7 +136,17 @@ final class AppState {
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.refreshPermissionStatus()
+                guard let self else { return }
+                self.refreshPermissionStatus()
+
+                // Deliberate return to NoteSide (Dock / Cmd-Tab / click) while
+                // setting up: refresh the automation-based permissions too and
+                // bring the buried setup window back to the front.
+                if self.isAnySetupWindowVisible {
+                    self.browserPermissions.refreshBrowserPermissionStates()
+                    self.browserPermissions.refreshAppAutomationStates()
+                    self.bringSetupWindowsToFront(activate: false)
+                }
             }
             .store(in: &cancellables)
 
@@ -406,7 +422,14 @@ final class AppState {
     }
 
     func openAccessibilitySettings() {
+        // Register NoteSide in the TCC list and fire the native prompt (macOS
+        // shows it at most once ever). Then always open the Accessibility
+        // pane when access still isn't granted — otherwise a second click,
+        // once the app is already listed, would be a silent no-op.
         requestAccessibilityAccessIfNeeded()
+        if !isAccessibilityTrusted {
+            SystemSettingsOpener.openPrivacyPane(.accessibility)
+        }
         refreshPermissionStatus()
     }
 
@@ -539,11 +562,76 @@ final class AppState {
     func setOnboardingWindowVisible(_ isVisible: Bool) {
         isOnboardingWindowVisible = isVisible
         applyDockIconPreference()
+        updatePermissionPolling()
+    }
+
+    func setFirstRunWindowVisible(_ isVisible: Bool) {
+        isFirstRunWindowVisible = isVisible
+        applyDockIconPreference()
+        updatePermissionPolling()
     }
 
     func setInfoWindowVisible(_ isVisible: Bool) {
         isInfoWindowVisible = isVisible
         applyDockIconPreference()
+    }
+
+    // MARK: - Permission Polling & Window Fronting
+
+    /// While a setup window is visible, poll permission status once a second
+    /// so cards flip to "granted" on their own after the user toggles a
+    /// switch in System Settings — no manual re-click needed. Idle cost is
+    /// zero: the task exists only while a setup window is open.
+    private func updatePermissionPolling() {
+        if isAnySetupWindowVisible {
+            startPermissionPolling()
+        } else {
+            stopPermissionPolling()
+        }
+    }
+
+    private func startPermissionPolling() {
+        guard permissionPollTask == nil else { return }
+        permissionPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self else { return }
+                self.pollPermissionsTick()
+            }
+        }
+    }
+
+    private func stopPermissionPolling() {
+        permissionPollTask?.cancel()
+        permissionPollTask = nil
+    }
+
+    private func pollPermissionsTick() {
+        // Cheap, non-prompting reads only. refreshPermissionStatus covers
+        // Accessibility + microphone + speech; never run browser/app-automation
+        // Apple Event probes here (they block and can fire consent prompts).
+        let wasAccessibilityTrusted = isAccessibilityTrusted
+        refreshPermissionStatus()
+
+        // The payoff moment: the instant Accessibility flips on, pop the
+        // wizard back to the front with its now-green card. Trust only flips
+        // after the System Settings auth completes, so this never fights the
+        // auth sheet.
+        if !wasAccessibilityTrusted && isAccessibilityTrusted {
+            bringSetupWindowsToFront(activate: true)
+        }
+    }
+
+    /// Re-fronts whichever setup window is visible. `activate` also pulls the
+    /// whole app forward (used on the grant transition); the reactivation
+    /// path passes false since the app is already frontmost.
+    private func bringSetupWindowsToFront(activate: Bool) {
+        guard isAnySetupWindowVisible else { return }
+        if activate {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        firstRunWindowController?.bringToFrontIfVisible()
+        onboardingWindowController?.bringToFrontIfVisible()
     }
 
     var appVersionDisplay: String {
@@ -613,7 +701,7 @@ final class AppState {
     #endif
 
     private func applyDockIconPreference() {
-        let shouldShowDockIcon = isAllNotesPanelVisible || isOnboardingWindowVisible || isInfoWindowVisible
+        let shouldShowDockIcon = isAllNotesPanelVisible || isAnySetupWindowVisible || isInfoWindowVisible
         showsDockIcon = shouldShowDockIcon
         NSApp?.setActivationPolicy(shouldShowDockIcon ? .regular : .accessory)
     }
