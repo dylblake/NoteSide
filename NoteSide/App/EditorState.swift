@@ -9,6 +9,7 @@ import AppKit
 import ApplicationServices
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -29,7 +30,11 @@ final class EditorState {
     @ObservationIgnored let richTextController: RichTextEditorController
     @ObservationIgnored let contextResolver: ContextResolver
     @ObservationIgnored let browserPermissions: BrowserPermissionsState
-    @ObservationIgnored let titleGenerator: NoteTitleGenerator
+    @ObservationIgnored let titleGenerator: any TitleGenerating
+    /// Bumped only when a *generated* title lands in an empty field, so the
+    /// view can ease it in; loading a stored title never bumps it.
+    private(set) var titleRevealToken = 0
+    private(set) var isGeneratingTitle = false
     @ObservationIgnored var isAutoTitleEnabled: () -> Bool
 
     static let intraAppPollingBundleIdentifiers: Set<String> = [
@@ -48,7 +53,7 @@ final class EditorState {
         richTextController: RichTextEditorController,
         contextResolver: ContextResolver,
         browserPermissions: BrowserPermissionsState,
-        titleGenerator: NoteTitleGenerator,
+        titleGenerator: any TitleGenerating,
         isAutoTitleEnabled: @escaping () -> Bool = { true }
     ) {
         self.notesState = notesState
@@ -476,8 +481,10 @@ final class EditorState {
     // MARK: - Title Generation
 
     func generateTitleIfNeeded(noteID: UUID, body: String, context: NoteContext) {
+        isGeneratingTitle = true
         Task { [weak self] in
             guard let self else { return }
+            defer { self.isGeneratingTitle = false }
             if let generated = await self.titleGenerator.generateTitle(body: body, context: context) {
                 guard let idx = self.notesState.notes.firstIndex(where: { $0.id == noteID }) else { return }
                 let existing = self.notesState.notes[idx]
@@ -489,20 +496,35 @@ final class EditorState {
                 if self.isEditorPresented,
                    self.activeContext?.id == context.id,
                    self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    self.editorTitle = generated
+                    self.revealGeneratedTitle(generated)
                 }
             }
         }
     }
 
     func generateTitleFromContext(context: NoteContext) {
+        isGeneratingTitle = true
         Task { [weak self] in
             guard let self else { return }
+            defer { self.isGeneratingTitle = false }
             if let generated = await self.titleGenerator.generateTitle(body: "", context: context) {
                 // Only apply if the user hasn't typed a title in the meantime
-                guard self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                self.editorTitle = generated
+                guard self.isEditorPresented,
+                      self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                self.revealGeneratedTitle(generated)
             }
+        }
+    }
+
+    /// Eases a generated title into the empty field instead of snapping
+    /// it in; a plain fade under Reduce Motion.
+    private func revealGeneratedTitle(_ title: String) {
+        let animation: Animation = PanelAnimation.prefersReducedMotion
+            ? .easeOut(duration: 0.2)
+            : .easeOut(duration: 0.35)
+        withAnimation(animation) {
+            editorTitle = title
+            titleRevealToken += 1
         }
     }
 }

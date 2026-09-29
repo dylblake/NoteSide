@@ -5,6 +5,7 @@ import SwiftUI
 /// glass footer for pin / delete and the dismiss hint.
 struct FloatingNoteEditorView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDeleteConfirmation = false
 
     var body: some View {
@@ -43,11 +44,19 @@ struct FloatingNoteEditorView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
+                // A generated title arriving bumps `titleRevealToken` inside
+                // withAnimation: the empty field fades out and the filled
+                // one fades in, settling down 4pt. Same font and frame, so
+                // nothing around it moves. Stored titles never bump it.
                 TextField("Title", text: $editor.editorTitle, prompt: Text("Title"))
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(NoteSideTheme.primaryText)
                     .textFieldStyle(.plain)
                     .accessibilityIdentifier("noteTitleField")
+                    .id(appState.editor.titleRevealToken)
+                    .transition(reduceMotion
+                        ? .opacity
+                        : .asymmetric(insertion: .opacity.combined(with: .offset(y: -4)), removal: .opacity))
 
                 contextRow
             }
