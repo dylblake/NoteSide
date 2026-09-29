@@ -290,11 +290,11 @@ final class EditorState {
     /// Async version of resolveCurrentContext that runs AppleScript and
     /// Accessibility API calls on a background thread, keeping the main
     /// thread free for UI work.
-    func resolveCurrentContextAsync(preferredBundleIdentifier: String? = nil) async -> NoteContext {
+    func resolveCurrentContextAsync(for sourceApp: NSRunningApplication? = nil) async -> NoteContext {
         isResolvingContext = true
         defer { isResolvingContext = false }
 
-        let bundleIdentifier = preferredBundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let bundleIdentifier = (sourceApp ?? NSWorkspace.shared.frontmostApplication)?.bundleIdentifier
         let permissionStates = browserPermissions.browserPermissionStates
         let browserProvider = browserPermissions.browserURLProvider
         let resolver = contextResolver
@@ -333,7 +333,7 @@ final class EditorState {
                     allowBrowserAutomation = true
                 }
 
-                let resolved = resolver.resolveCurrentContext(allowBrowserAutomation: allowBrowserAutomation)
+                let resolved = resolver.resolveCurrentContext(for: sourceApp, allowBrowserAutomation: allowBrowserAutomation)
                 continuation.resume(returning: (resolved, probeSuccess))
             }
         }

@@ -37,8 +37,10 @@ nonisolated struct ContextResolver: Sendable {
         "org.alacritty"
     ]
 
-    func resolveCurrentContext(allowBrowserAutomation: Bool = true) -> NoteContext {
-        guard let app = NSWorkspace.shared.frontmostApplication else {
+    /// `sourceApp` is the app the note is for; nil means the frontmost
+    /// app (context tracking follows whatever is in front).
+    func resolveCurrentContext(for sourceApp: NSRunningApplication? = nil, allowBrowserAutomation: Bool = true) -> NoteContext {
+        guard let app = sourceApp ?? NSWorkspace.shared.frontmostApplication else {
             return NoteContext(
                 kind: .application,
                 identifier: "unknown",
@@ -408,7 +410,12 @@ nonisolated struct ContextResolver: Sendable {
             focusedWindow: focusedWindow
         )
 
-        let parsed = SlackTitleParser.parse(windowTitle: windowTitle, candidateStrings: strings)
+        let location = axBrowserURLReader.activeURL(for: app).flatMap(SlackClientURL.location(from:))
+        let parsed = SlackTitleParser.parse(
+            windowTitle: windowTitle,
+            candidateStrings: strings,
+            conversationOpen: location.map { $0.conversationID != nil }
+        )
         let workspace = parsed.workspace
         let conversation = parsed.conversation
 
@@ -422,9 +429,7 @@ nonisolated struct ContextResolver: Sendable {
         // Identity stays name-based so existing notes keep matching; the
         // client URL only supplies the ids that let All Notes reopen the
         // conversation. Saving the note in Slack stores the link.
-        let navigationTarget = axBrowserURLReader.activeURL(for: app)
-            .flatMap(SlackClientURL.location(from:))
-            .map(SlackClientURL.deepLink(for:))
+        let navigationTarget = location.map(SlackClientURL.deepLink(for:))
 
         return NoteContext(
             kind: .application,

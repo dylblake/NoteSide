@@ -19,17 +19,36 @@ nonisolated enum SlackTitleParser {
 
     static let titleSeparators = [" — ", " – ", " - ", " | ", " • ", " · ", ":"]
 
-    static func parse(windowTitle: String?, candidateStrings: [String] = []) -> Result {
+    /// `conversationOpen` comes from the client URL when it's readable:
+    /// false means a workspace view (Activity, Threads, Later) is showing,
+    /// whose title is just "<view> - <workspace> - Slack" — the one
+    /// remaining token is the workspace, not a conversation.
+    static func parse(windowTitle: String?, candidateStrings: [String] = [], conversationOpen: Bool? = nil) -> Result {
         let titleTokens = windowTitle.map(tokens(from:)) ?? []
+
+        if conversationOpen == false, !titleTokens.isEmpty {
+            return Result(workspace: titleTokens.last, conversation: nil)
+        }
+        // With a conversation confirmed open, the title's order is
+        // reliable ("<conversation> - <workspace> - Slack"), and the keyword
+        // guesses below are not: "Slackbot (DM)" contains "slack", so they
+        // skipped it and swapped the workspace into its place.
+        if conversationOpen == true, titleTokens.count >= 2 {
+            return Result(workspace: titleTokens.last, conversation: titleTokens.first)
+        }
 
         var conversation = titleTokens.first(where: isLikelyConversation)
         var workspace = titleTokens.last(where: { isLikelyWorkspace($0) && $0 != conversation })
 
-        if conversation == nil {
-            conversation = candidateStrings.first(where: isLikelyConversation)
-        }
-        if workspace == nil {
-            workspace = candidateStrings.first { candidate in
+        // Candidate strings are everything the AX walk found — sidebar
+        // rows, tooltips ("This button also has an action to zoom the
+        // window") — so they only stand in for a missing title, never
+        // top up a title that named one thing. Otherwise a tooltip
+        // becomes the workspace.
+        if titleTokens.isEmpty {
+            let candidates = candidateStrings.filter { !looksLikeInterfaceText($0) }
+            conversation = candidates.first(where: isLikelyConversation)
+            workspace = candidates.first { candidate in
                 isLikelyWorkspace(candidate) && candidate != conversation
             }
         }
@@ -137,6 +156,15 @@ nonisolated enum SlackTitleParser {
             && !lowercased.contains("thread")
             && !lowercased.contains("unreads")
             && !lowercased.contains("activity")
+    }
+
+    /// Tooltips, hints and button labels: sentence-length strings or ones
+    /// that describe a control rather than name a place.
+    static func looksLikeInterfaceText(_ string: String) -> Bool {
+        let lowercased = string.lowercased()
+        let controlWords = ["button", "action", "click", "press", "window", "toggle", "tooltip", "toolbar", "sidebar"]
+        return controlWords.contains { lowercased.contains($0) }
+            || string.split(separator: " ").count > 6
     }
 
     static func normalize(_ string: String) -> String {

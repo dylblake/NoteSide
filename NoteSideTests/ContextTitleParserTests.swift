@@ -204,3 +204,53 @@ struct SlackClientURLTests {
         #expect(link("https://acme.slack.com/archives/C024BE91L") == nil)
     }
 }
+
+struct SlackTitleHardeningTests {
+
+    /// A title naming only the workspace (a workspace view such as
+    /// Activity) left the workspace slot to the AX walk, which filled it
+    /// with Slack's zoom-button tooltip.
+    @Test func tooltipNeverFillsInForATitle() {
+        let result = SlackTitleParser.parse(
+            windowTitle: "Activity - dylblake - Slack",
+            candidateStrings: ["This button also has an action to zoom the window", "all-dylblake"]
+        )
+        #expect(result.workspace == nil)
+        #expect(result.conversation == "dylblake")
+    }
+
+    @Test func workspaceViewPerURLNamesTheWorkspace() {
+        let result = SlackTitleParser.parse(
+            windowTitle: "Activity - dylblake - Slack",
+            candidateStrings: ["This button also has an action to zoom the window"],
+            conversationOpen: false
+        )
+        #expect(result == SlackTitleParser.Result(workspace: "dylblake", conversation: nil))
+    }
+
+    @Test func conversationTitleUnchangedWhenURLConfirmsIt() {
+        let result = SlackTitleParser.parse(
+            windowTitle: "new-channel (Channel) - dylblake - Slack",
+            conversationOpen: true
+        )
+        #expect(result == SlackTitleParser.Result(workspace: "dylblake", conversation: "new-channel (Channel)"))
+    }
+
+    /// Live title: "Slackbot" contains "slack", which the keyword
+    /// heuristics reject as a conversation name.
+    @Test func openConversationFollowsTitleOrder() {
+        let result = SlackTitleParser.parse(
+            windowTitle: "Slackbot (DM) - dylblake - Slack",
+            conversationOpen: true
+        )
+        #expect(result == SlackTitleParser.Result(workspace: "dylblake", conversation: "Slackbot (DM)"))
+    }
+
+    @Test func interfaceTextIsDroppedWithoutATitle() {
+        let result = SlackTitleParser.parse(
+            windowTitle: nil,
+            candidateStrings: ["This button also has an action to zoom the window", "#support", "Acme"]
+        )
+        #expect(result == SlackTitleParser.Result(workspace: "Acme", conversation: "#support"))
+    }
+}
