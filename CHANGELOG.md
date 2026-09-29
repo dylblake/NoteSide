@@ -2,11 +2,15 @@
 
 ## Unreleased
 
+### NoteSide is now Remora
+- The app has a new name and a new bundle identifier (`com.dylblake.remora`). Your notes come with it: on first launch, the NoteSide storage folder moves to `~/Library/Application Support/Remora`.
+- Because macOS sees Remora as a new app, it asks again for Accessibility and Automation access, the hotkey and other preferences return to their defaults, and a license key needs to be entered again. NoteSide 1.3.x can't update itself to Remora; install Remora from the new download.
+
 ### Designer, developer and student workflows
 - **Terminals**: notes in Terminal, iTerm2, Ghostty, Warp, kitty, WezTerm and Alacritty attach to the project the shell is in (the enclosing repository, so `cd src` keeps the same note) and reopen as a new terminal window there. iTerm2 asks once for Automation access to read the session's directory.
 - **Slack notes reopen their conversation**: clicking one in All Notes switches Slack to the channel or DM it was written in, so the note opens in place instead of on whatever channel Slack last showed. A note written with a thread open reopens on that thread's channel, since Slack has no link that opens a thread. Existing Slack notes gain the link the next time they're opened in Slack.
 - **Slack names are read reliably**: a conversation whose name contains "Slack" (Slackbot) no longer swaps places with the workspace, and a workspace view such as Activity no longer picks up a tooltip ("This button also has an action to zoom the window") as its name.
-- **The hotkey never files a note under NoteSide itself**: pressed while NoteSide is the active app, the note is for the app you were working in.
+- **The hotkey never files a note under Remora itself**: pressed while Remora is the active app, the note is for the app you were working in.
 - **Cursor**, Windsurf and VSCodium are recognised as code editors, like VS Code.
 - **Linear**: the desktop app attaches notes per issue or project, sharing one note with the same issue opened in a browser, and reopens it in the desktop app. Renaming an issue or project no longer orphans its note.
 - **GitHub**: a pull request, issue or discussion is one note across its tabs (Conversation, Files, Commits), and owner/repo case no longer matters.
@@ -18,9 +22,9 @@
 ### Passages: quote the selection, reopen the exact spot
 - Select text in any app, press the hotkey, and the selection lands in the note as a **quoted passage**. On a web page the quote links to that exact passage, and clicking it reopens the page in the browser it came from, scrolled to and highlighting the text.
 - Every capture on the same page, app or file lands in that context's one note: a second selection is appended beneath the first, never replacing it.
-- **Note This in NoteSide** appears in every app's Services menu, so a selection can be sent over without Accessibility access.
-- Works in **any app**: Safari and many native apps hand the selection over through Accessibility; where an app doesn't (Chromium browsers, Electron apps such as Slack or VS Code, and many others), NoteSide briefly copies the selection and then restores whatever was on your clipboard.
-- Clicking a NoteSide window while the drawer is open no longer re-attaches the note to NoteSide itself.
+- **Note This in Remora** appears in every app's Services menu, so a selection can be sent over without Accessibility access.
+- Works in **any app**: Safari and many native apps hand the selection over through Accessibility; where an app doesn't (Chromium browsers, Electron apps such as Slack or VS Code, and many others), Remora briefly copies the selection and then restores whatever was on your clipboard.
+- Clicking a Remora window while the drawer is open no longer re-attaches the note to Remora itself.
 - With automatic titles on, an empty title shows nothing (no "Title" placeholder waiting to be replaced) unless you're typing in it; the generated title simply fades in when it's ready. Stored titles still appear instantly.
 - **Click outside to close.** A click elsewhere on the same display saves and dismisses the note drawer, and closes All Notes; a click on another display moves the panel there, as before.
 - Web notes now reopen in the browser they were captured in, not the default browser.

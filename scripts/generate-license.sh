@@ -6,7 +6,7 @@
 #   ./scripts/generate-license.sh <email> <transaction_id> [product]
 #
 # Example:
-#   ./scripts/generate-license.sh user@example.com txn_01abc123 noteside
+#   ./scripts/generate-license.sh user@example.com txn_01abc123 remora
 #
 # Output: A license key string to send to the customer.
 #
@@ -22,7 +22,7 @@ fi
 
 EMAIL="$1"
 TXN="$2"
-PRODUCT="${3:-noteside}"
+PRODUCT="${3:-remora}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRIVATE_KEY_FILE="$SCRIPT_DIR/../keys/license.private.base64"

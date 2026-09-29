@@ -59,7 +59,7 @@ If a design calls for an exact hierarchy independent of Dynamic Type, use `.syst
 Never hardcode `Color(hex:)`/`Color(red:green:blue:)` for UI chrome — use the system semantic palette so dark mode and contrast/accessibility settings are handled for free:
 
 ```swift
-// macOS (NSColor-backed) — see NoteSide/Core/UI/NoteSideTheme.swift for
+// macOS (NSColor-backed) — see Remora/Core/UI/RemoraTheme.swift for
 // a worked example of collecting these into one enum per project.
 Color(nsColor: .windowBackgroundColor)     // primary background
 Color(nsColor: .controlBackgroundColor)    // content surface
@@ -74,7 +74,7 @@ Color.secondary
 Color(.systemBackground)   // iOS only
 ```
 
-Collect a project's tokens into one `enum`/namespace (as `NoteSideTheme` does) rather than scattering raw system-color calls through views — one place to retint or adjust contrast later.
+Collect a project's tokens into one `enum`/namespace (as `RemoraTheme` does) rather than scattering raw system-color calls through views — one place to retint or adjust contrast later.
 
 ## Spacing System
 
@@ -102,10 +102,10 @@ content
     .padding(16)
     .background(
         RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(NoteSideTheme.contentBackground)
+            .fill(RemoraTheme.contentBackground)
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(NoteSideTheme.border.opacity(0.8), lineWidth: 1)
+                    .stroke(RemoraTheme.border.opacity(0.8), lineWidth: 1)
             )
     )
 ```
@@ -162,6 +162,6 @@ Always check `NSWorkspace.shared.accessibilityDisplayShouldReduceMotion` (macOS)
 - [ ] Text contrast meets WCAG AA (4.5:1) against its background in both light and dark mode
 - [ ] Reading-width content stays comfortably narrow (~600–680pt) even in wide windows
 - [ ] Spacing follows one consistent rhythm, not ad-hoc magic numbers
-- [ ] Verified in both light and dark mode (`NoteSideTheme`/system colors, not hardcoded)
+- [ ] Verified in both light and dark mode (`RemoraTheme`/system colors, not hardcoded)
 - [ ] Animations respect Reduce Motion and stay at a native, non-janky frame rate
-- [ ] Verified with the XCUITest suite (`NoteSideUITests`) or a manual run, not just a compile check — see the README's Testing section
+- [ ] Verified with the XCUITest suite (`RemoraUITests`) or a manual run, not just a compile check — see the README's Testing section

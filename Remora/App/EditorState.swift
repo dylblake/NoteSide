@@ -1,0 +1,617 @@
+//
+//  EditorState.swift
+//  Remora
+//
+//  Created by Dylan Evans on 5/12/26.
+//
+
+import AppKit
+import ApplicationServices
+import Foundation
+import Observation
+import SwiftUI
+
+@MainActor
+@Observable
+final class EditorState {
+    var activeContext: NoteContext?
+    var editorAttributedText = NSAttributedString(string: "")
+    var editorTitle = ""
+    var editorErrorMessage: String?
+    var isEditorPresented = false
+    var isViewingOrphanedNote = false
+    var isActiveNotePinned = false
+    private var contextPollingTask: Task<Void, Never>?
+    private var autosaveTask: Task<Void, Never>?
+    private var isResolvingContext = false
+    @ObservationIgnored private let contextObserver = AXContextObserver()
+
+    @ObservationIgnored let notesState: NotesState
+    @ObservationIgnored let richTextController: RichTextEditorController
+    @ObservationIgnored let contextResolver: ContextResolver
+    @ObservationIgnored let browserPermissions: BrowserPermissionsState
+    @ObservationIgnored let titleGenerator: any TitleGenerating
+    /// Bumped only when a *generated* title lands in an empty field, so the
+    /// view can ease it in; loading a stored title never bumps it.
+    private(set) var titleRevealToken = 0
+    /// True from the moment a generated title is ready until the view
+    /// starts easing it in; the view keeps the field hidden meanwhile.
+    private(set) var isTitleRevealPending = false
+
+    enum TitleGeneration: Equatable {
+        /// Nothing requested yet for this note (the drawer is still opening).
+        case idle
+        case generating
+        /// The generator answered (or had nothing to say).
+        case finished
+    }
+    private(set) var titleGeneration: TitleGeneration = .idle
+    var isGeneratingTitle: Bool { titleGeneration == .generating }
+    @ObservationIgnored var isAutoTitleEnabled: () -> Bool
+
+    static let intraAppPollingBundleIdentifiers: Set<String> = [
+        "com.apple.finder",
+        "com.apple.dt.Xcode",
+        "com.microsoft.VSCode",
+        "com.microsoft.VSCodeInsiders",
+        "com.visualstudio.code.oss",
+        "com.tinyspeck.slackmacgap",
+        "com.tinyspeck.slackmacgap2",
+        "com.figma.Desktop"
+    ]
+
+    init(
+        notesState: NotesState,
+        richTextController: RichTextEditorController,
+        contextResolver: ContextResolver,
+        browserPermissions: BrowserPermissionsState,
+        titleGenerator: any TitleGenerating,
+        isAutoTitleEnabled: @escaping () -> Bool = { true }
+    ) {
+        self.notesState = notesState
+        self.richTextController = richTextController
+        self.contextResolver = contextResolver
+        self.browserPermissions = browserPermissions
+        self.titleGenerator = titleGenerator
+        self.isAutoTitleEnabled = isAutoTitleEnabled
+
+        contextObserver.onContextMayHaveChanged = { [weak self] in
+            self?.handleObservedContextChange()
+        }
+    }
+
+    // MARK: - Editor State Loading
+
+    func loadEditorState(for context: NoteContext) {
+        cancelAutosave()
+        titleGeneration = .idle
+        isTitleRevealPending = false
+        richTextController.discardQueuedPassages()
+        let existingNote = notesState.note(for: context)
+        editorAttributedText = attributedText(for: context)
+        editorTitle = existingNote?.title ?? ""
+        editorErrorMessage = nil
+        isActiveNotePinned = existingNote?.isPinned ?? false
+    }
+
+    func loadEditorState(for note: ContextNote) {
+        cancelAutosave()
+        titleGeneration = .idle
+        isTitleRevealPending = false
+        richTextController.discardQueuedPassages()
+        editorAttributedText = attributedText(for: note)
+        editorTitle = note.title ?? ""
+        editorErrorMessage = nil
+        isActiveNotePinned = note.isPinned
+    }
+
+    // MARK: - Persistence
+
+    @discardableResult
+    func persistCurrentEditorContent(deleteIfEmpty: Bool = true) -> Bool {
+        guard let context = activeContext else { return false }
+
+        let currentAttributedText = currentEditorAttributedTextSnapshot()
+        let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.isEmpty {
+            if deleteIfEmpty, let existing = notesState.note(for: context) {
+                notesState.delete(existing)
+            }
+            return false
+        }
+
+        let existingNote = notesState.note(for: context)
+        let existingID = existingNote?.id ?? UUID()
+        let createdAt = existingNote?.createdAt ?? .now
+        let userTitle = editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentTitle: String? = userTitle.isEmpty ? existingNote?.title : userTitle
+        let note = ContextNote(
+            id: existingID,
+            context: context,
+            body: trimmed,
+            richTextData: archivedRichText(from: currentAttributedText),
+            createdAt: createdAt,
+            updatedAt: .now,
+            isPinned: isActiveNotePinned,
+            title: currentTitle
+        )
+        notesState.upsert(note)
+
+        if currentTitle == nil && isAutoTitleEnabled() {
+            generateTitleIfNeeded(noteID: existingID, body: trimmed, context: context)
+        }
+
+        return true
+    }
+
+    // MARK: - Autosave
+
+    /// Called on every edit; persists the note a couple of seconds after
+    /// the user stops typing so a crash or force-quit while the editor is
+    /// open can't lose the whole session.
+    func scheduleAutosave() {
+        guard isEditorPresented else { return }
+        autosaveTask?.cancel()
+        autosaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled, self.isEditorPresented else { return }
+            self.autosaveNow()
+        }
+    }
+
+    func cancelAutosave() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+    }
+
+    private func autosaveNow() {
+        guard let context = activeContext else { return }
+
+        let currentAttributedText = currentEditorAttributedTextSnapshot()
+        let trimmed = currentAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Autosave never deletes: clearing the text and pausing shouldn't
+        // destroy the note. Deletion stays an explicit dismiss-time action.
+        guard !trimmed.isEmpty else { return }
+        guard hasUnpersistedChanges(context: context, attributedText: currentAttributedText, trimmedBody: trimmed) else {
+            return
+        }
+
+        persistCurrentEditorContent(deleteIfEmpty: false)
+    }
+
+    /// True when the editor buffer differs from what's stored for this
+    /// context. Prevents autosave from bumping updatedAt (and re-sorting
+    /// every list) when nothing actually changed, e.g. right after a note
+    /// is loaded into the editor.
+    private func hasUnpersistedChanges(
+        context: NoteContext,
+        attributedText: NSAttributedString,
+        trimmedBody: String
+    ) -> Bool {
+        guard let existing = notesState.note(for: context) else { return true }
+
+        let userTitle = editorTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveTitle = userTitle.isEmpty ? existing.title : userTitle
+
+        if existing.body != trimmedBody { return true }
+        if existing.title != effectiveTitle { return true }
+        return existing.richTextData != archivedRichText(from: attributedText)
+    }
+
+    // MARK: - Rich Text Helpers
+
+    func currentEditorAttributedTextSnapshot() -> NSAttributedString {
+        richTextController.currentAttributedText() ?? editorAttributedText
+    }
+
+    func archivedRichText(from attributedText: NSAttributedString) -> Data? {
+        try? attributedText.data(
+            from: NSRange(location: 0, length: attributedText.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        )
+    }
+
+    func attributedText(for context: NoteContext) -> NSAttributedString {
+        guard let note = notesState.note(for: context) else {
+            return NSAttributedString(string: "")
+        }
+        return attributedText(for: note)
+    }
+
+    func attributedText(for note: ContextNote) -> NSAttributedString {
+        if
+            let richTextData = note.richTextData,
+            let attributed = try? NSAttributedString(
+                data: richTextData,
+                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                documentAttributes: nil
+            )
+        {
+            return attributed
+        }
+
+        return NSAttributedString(string: note.body)
+    }
+
+    // MARK: - Selection capture
+
+    /// Reads the host app's selected text off the main thread. Returns nil
+    /// when nothing is selected or Accessibility isn't granted.
+    /// Starts the read immediately on a GCD queue — not a Swift concurrency
+    /// task, which can sit behind blocking context reads in the cooperative
+    /// pool (~100 ms on a cold start) while a Chromium host waits for its
+    /// ⌘C.
+    nonisolated static func startSelectionRead(from app: NSRunningApplication?, onHostDone: @escaping @MainActor @Sendable () -> Void) -> SelectionRead {
+        let read = SelectionRead()
+        let hostDone: @Sendable () -> Void = {
+            read.markHostDone()
+            DispatchQueue.main.async { onHostDone() }
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            #if DEBUG
+            // UI tests inject the selection; under XCUITest no other app is
+            // frontmost, so this must not depend on `app`.
+            if let injected = ProcessInfo.processInfo.environment["UITEST_SELECTION_TEXT"], !injected.isEmpty {
+                hostDone()
+                read.fulfill(SelectionReader.normalized(injected))
+                return
+            }
+            #endif
+            guard let app else {
+                hostDone()
+                read.fulfill(nil)
+                return
+            }
+            read.fulfill(SelectionReader().selectedText(in: app, onHostDone: hostDone))
+        }
+        return read
+    }
+
+    /// The page the active context points at, for building passage links.
+    var activePageURL: URL? {
+        guard let context = activeContext, context.kind == .url else { return nil }
+        return URL(string: context.secondaryLabel ?? context.identifier)
+    }
+
+    // MARK: - Context Resolution
+
+    func quickApplicationContext(for app: NSRunningApplication?) -> NoteContext {
+        NoteContext(
+            kind: .application,
+            identifier: app?.bundleIdentifier ?? "unknown",
+            displayName: app?.localizedName ?? "Current Context",
+            secondaryLabel: app?.bundleIdentifier,
+            navigationTarget: nil
+        )
+    }
+
+    /// Async version of resolveCurrentContext that runs AppleScript and
+    /// Accessibility API calls on a background thread, keeping the main
+    /// thread free for UI work.
+    func resolveCurrentContextAsync(for sourceApp: NSRunningApplication? = nil) async -> NoteContext {
+        isResolvingContext = true
+        defer { isResolvingContext = false }
+
+        let bundleIdentifier = (sourceApp ?? NSWorkspace.shared.frontmostApplication)?.bundleIdentifier
+        let permissionStates = browserPermissions.browserPermissionStates
+        let browserProvider = browserPermissions.browserURLProvider
+        let resolver = contextResolver
+
+        let shouldAttemptBrowserAutomation: Bool = {
+            #if MAS_BUILD
+            // Sandboxed builds have no browser Apple Events entitlement —
+            // the Accessibility reader is the only browser path.
+            return false
+            #else
+            guard let bundleId = bundleIdentifier else { return false }
+            guard browserProvider.supports(bundleIdentifier: bundleId) else { return false }
+            let state = permissionStates[bundleId]
+            return state == .granted || state == nil || state == .undetermined
+            #endif
+        }()
+        let isFirstAttempt = shouldAttemptBrowserAutomation
+            && (bundleIdentifier.map { permissionStates[$0] == nil || permissionStates[$0] == .undetermined } ?? false)
+
+        // Run the heavy AppleScript / Accessibility work off the main thread
+        let (context, probeSuccess): (NoteContext, Bool?) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var probeSuccess: Bool? = nil
+
+                if isFirstAttempt, let bundleId = bundleIdentifier {
+                    let attempt = browserProvider.accessAttempt(bundleIdentifier: bundleId, activatesBrowser: false)
+                    switch attempt.result {
+                    case .success: probeSuccess = true
+                    case .automationDenied: probeSuccess = false
+                    default: break
+                    }
+                }
+
+                var allowBrowserAutomation = bundleIdentifier.map { permissionStates[$0] == .granted } ?? false
+                if probeSuccess == true {
+                    allowBrowserAutomation = true
+                }
+
+                let resolved = resolver.resolveCurrentContext(for: sourceApp, allowBrowserAutomation: allowBrowserAutomation)
+                continuation.resume(returning: (resolved, probeSuccess))
+            }
+        }
+
+        // Apply probe results back on main actor
+        if let probeSuccess, let bundleId = bundleIdentifier {
+            browserPermissions.setBrowserPermissionState(probeSuccess ? .granted : .notGranted, for: bundleId)
+        }
+
+        return context
+    }
+
+    /// Fast path: the context resolved before the drawer was shown, so
+    /// the first frame already carries the right note.
+    func applyResolvedContextBeforePresenting(_ context: NoteContext) {
+        activeContext = context
+        loadEditorState(for: context)
+    }
+
+    /// Slow path: the context resolved after the drawer opened on the
+    /// cheap app-level fallback. Switch only if nothing has been typed.
+    func applyLateResolvedContext(_ context: NoteContext, fallback fallbackContext: NoteContext) {
+        guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
+        guard context.id != fallbackContext.id else { return }
+
+        let hasUnsavedEditorText = !editorAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !hasUnsavedEditorText else { return }
+
+        activeContext = context
+        loadEditorState(for: context)
+    }
+
+    // MARK: - Context Refresh
+
+    func applyRefreshedContext(_ context: NoteContext) {
+        // When the user explicitly opened an orphaned note (whose context no
+        // longer exists), don't let polling switch the editor to whatever app
+        // is currently in front.
+        if isViewingOrphanedNote { return }
+
+        // Our own windows (All Notes, Settings, the menu bar popover)
+        // coming to the front is not a context change: the note stays on
+        // whatever the user was working in.
+        if context.kind == .application, context.identifier == Bundle.main.bundleIdentifier { return }
+
+        // Same logical note (matching id), but the file was renamed/moved or
+        // some display field changed. Refresh the active context and rewrite
+        // the persisted note's context so the panel shows the new name and
+        // disk state stays in sync — but don't reload editor content.
+        if let active = activeContext, context.id == active.id {
+            guard context != active else { return }
+            activeContext = context
+            if let existing = notesState.note(for: context) {
+                notesState.upsert(existing.copying(context: context))
+            }
+            return
+        }
+
+        persistCurrentEditorContent()
+        activeContext = context
+        loadEditorState(for: context)
+
+        if isAutoTitleEnabled() && editorTitle.isEmpty {
+            if let existing = notesState.note(for: context), !existing.body.isEmpty {
+                generateTitleIfNeeded(noteID: existing.id, body: existing.body, context: context)
+            } else {
+                generateTitleFromContext(context: context)
+            }
+        }
+    }
+
+    // MARK: - Context Tracking (AX events + fallback polling)
+
+    /// True when the in-app context of this bundle can change without an
+    /// app switch: browser tabs and apps whose file / channel focus moves
+    /// within the same process, so didActivateApplication never fires.
+    private func isTrackableForIntraAppChanges(_ bundleIdentifier: String) -> Bool {
+        isTrackableBrowser(bundleIdentifier)
+            || Self.intraAppPollingBundleIdentifiers.contains(bundleIdentifier)
+    }
+
+    /// A browser is trackable through either URL-reading path: Automation
+    /// (AppleScript) or Accessibility (AXWebArea), whichever is granted.
+    private func isTrackableBrowser(_ bundleIdentifier: String) -> Bool {
+        guard browserPermissions.browserURLProvider.supports(bundleIdentifier: bundleIdentifier) else {
+            return false
+        }
+        return browserPermissions.browserPermissionStates[bundleIdentifier] == .granted
+            || AXIsProcessTrusted()
+    }
+
+    private var shouldRefreshDetailedContext: Bool {
+        guard let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else {
+            return false
+        }
+        return isTrackableForIntraAppChanges(bundleIdentifier)
+    }
+
+    /// Starts event-driven context tracking: an AXObserver on the frontmost
+    /// app catches focus/title changes the moment they happen, and a
+    /// polling loop remains as a safety net — slow when observation is
+    /// live, at the old 1.5s cadence when it isn't (e.g. no Accessibility
+    /// permission).
+    func startContextTracking() {
+        stopContextTracking()
+        retargetContextObserver()
+        contextPollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let interval = self?.fallbackPollingInterval() ?? .seconds(1.5)
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled else { break }
+                guard let self, self.isEditorPresented, self.shouldRefreshDetailedContext else {
+                    if self == nil { break }
+                    continue
+                }
+                // Skip this tick if another resolution (app switch, initial
+                // quick-note refine, AX event) is already in flight —
+                // queueing a second one behind it on the script executor
+                // would only apply a staler context afterwards.
+                guard !self.isResolvingContext else { continue }
+                let context = await self.resolveCurrentContextAsync()
+                guard !Task.isCancelled, self.isEditorPresented else { break }
+                self.applyRefreshedContext(context)
+            }
+        }
+    }
+
+    func stopContextTracking() {
+        contextPollingTask?.cancel()
+        contextPollingTask = nil
+        contextObserver.stop()
+    }
+
+    /// Points the AXObserver at the current frontmost app. Called when
+    /// tracking starts and after every app switch while the editor is
+    /// open. Observing is skipped for our own process and for apps whose
+    /// context can't change intra-app.
+    func retargetContextObserver() {
+        guard isEditorPresented,
+              let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              let bundleIdentifier = app.bundleIdentifier,
+              isTrackableForIntraAppChanges(bundleIdentifier)
+        else {
+            contextObserver.stop()
+            return
+        }
+        contextObserver.observe(app: app)
+    }
+
+    private func handleObservedContextChange() {
+        guard isEditorPresented, shouldRefreshDetailedContext, !isResolvingContext else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let context = await self.resolveCurrentContextAsync()
+            guard self.isEditorPresented else { return }
+            self.applyRefreshedContext(context)
+        }
+    }
+
+    private func fallbackPollingInterval() -> Duration {
+        guard contextObserver.isObserving else { return .seconds(1.5) }
+
+        // Observation is live, so polling is only a safety net. Browsers
+        // keep a moderate cadence because a same-title URL change (SPA
+        // navigation) doesn't fire any AX notification.
+        if let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+           isTrackableBrowser(bundleIdentifier) {
+            return .seconds(3)
+        }
+        return .seconds(10)
+    }
+
+    // MARK: - Title Generation
+
+    func generateTitleIfNeeded(noteID: UUID, body: String, context: NoteContext) {
+        titleGeneration = .generating
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.titleGeneration = .finished }
+            if let generated = await self.titleGenerator.generateTitle(body: body, context: context) {
+                guard let idx = self.notesState.notes.firstIndex(where: { $0.id == noteID }) else { return }
+                let existing = self.notesState.notes[idx]
+                // Don't overwrite if a title was set in the meantime
+                guard existing.title == nil || existing.title?.isEmpty == true else { return }
+                self.notesState.upsert(existing.copying(title: .some(generated)))
+
+                // Update the editor title if the note is currently open
+                if self.isEditorPresented,
+                   self.activeContext?.id == context.id,
+                   self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.revealGeneratedTitle(generated)
+                }
+            }
+        }
+    }
+
+    func generateTitleFromContext(context: NoteContext) {
+        titleGeneration = .generating
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.titleGeneration = .finished }
+            if let generated = await self.titleGenerator.generateTitle(body: "", context: context) {
+                // Only apply if the user hasn't typed a title in the meantime
+                guard self.isEditorPresented,
+                      self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                self.revealGeneratedTitle(generated)
+            }
+        }
+    }
+
+    /// Puts a generated title in the empty field for the view to ease in.
+    /// The still-empty field is hidden first and filled only on the next
+    /// turn, once that's on screen: the text and the hiding can't land in
+    /// different frames, so the title never flashes in ahead of its fade.
+    private func revealGeneratedTitle(_ title: String) {
+        isTitleRevealPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isTitleRevealPending else { return }
+            // Typed into it in the meantime: keep theirs, and show it.
+            guard self.editorTitle.isEmpty else {
+                self.isTitleRevealPending = false
+                return
+            }
+            self.editorTitle = title
+            self.titleRevealToken += 1
+        }
+    }
+
+    /// Called by the view as it starts the fade.
+    func finishTitleReveal() {
+        isTitleRevealPending = false
+    }
+}
+
+/// A selection read in flight: filled once from a GCD queue and awaited
+/// from Swift concurrency, with a flag for when the host app no longer needs
+/// to stay key — readable synchronously, so the drawer can take key status
+/// in the same transaction that shows it.
+nonisolated final class SelectionRead: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: String??
+    private var hostDone = false
+    private var waiters: [CheckedContinuation<String?, Never>] = []
+
+    var isHostDone: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return hostDone
+    }
+
+    func markHostDone() {
+        lock.lock()
+        hostDone = true
+        lock.unlock()
+    }
+
+    func fulfill(_ value: String?) {
+        lock.lock()
+        result = .some(value)
+        let pending = waiters
+        waiters = []
+        lock.unlock()
+        pending.forEach { $0.resume(returning: value) }
+    }
+
+    var text: String? {
+        get async {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                if let result {
+                    lock.unlock()
+                    continuation.resume(returning: result)
+                } else {
+                    waiters.append(continuation)
+                    lock.unlock()
+                }
+            }
+        }
+    }
+}
