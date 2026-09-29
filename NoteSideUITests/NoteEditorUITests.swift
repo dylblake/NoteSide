@@ -25,6 +25,10 @@ final class NoteEditorUITests: XCTestCase {
         app = XCUIApplication()
         app.launchEnvironment["UITEST_LAUNCH_ACTION"] = "quickNote"
         app.launchEnvironment["UITEST_STORE_DIRECTORY"] = storeDirectory.path
+        // The drawer follows the frontmost app's display; on a narrow one
+        // the toolbar folds into an overflow menu. Pin the width so the
+        // full toolbar is always present.
+        app.launchEnvironment["NOTESIDE_PANE_WIDTH"] = "640"
         app.launchArguments += [
             "-hasCompletedOnboarding", "YES",
             "-autoTitleEnabled", "NO",
@@ -53,7 +57,7 @@ final class NoteEditorUITests: XCTestCase {
 
     private func button(_ identifier: String) -> XCUIElement {
         let element = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
-        XCTAssertTrue(element.waitForExistence(timeout: 5), "\(identifier) not found")
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "\(identifier) not found\n\(app.debugDescription.prefix(1500))")
         return element
     }
 
@@ -270,7 +274,28 @@ final class NoteEditorUITests: XCTestCase {
         XCTAssertTrue(waitForEditorText { $0.contains("my thought") && $0.hasPrefix("\u{201C}") }, "note kept after activation: \(editorText().debugDescription)")
         button("formatQuote").click()
         XCTAssertTrue(waitForEditorText { $0.components(separatedBy: "the quick brown fox").count == 3 }, "second quote inserted: \(editorText().debugDescription)")
-        XCTAssertFalse(app.descendants(matching: .any)["pendingPassageChip"].exists)
+    }
+
+    /// A second capture on the same context appends to the existing note
+    /// instead of replacing it.
+    func testSecondCaptureAppendsToExistingNote() throws {
+        app.terminate()
+        app.launchEnvironment["UITEST_SELECTION_TEXT"] = "first passage"
+        app.launch()
+        var textView = editor
+        XCTAssertTrue(textView.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForEditorText { $0.hasPrefix("\u{201C}first passage\u{201D}") })
+        textView.click()
+        textView.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(textView.waitForNonExistence(timeout: 5))
+
+        app.terminate()
+        app.launchEnvironment["UITEST_SELECTION_TEXT"] = "second passage"
+        app.launch()
+        textView = editor
+        XCTAssertTrue(textView.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForEditorText { $0.contains("first passage") && $0.contains("second passage") }, "got: \(editorText().debugDescription)")
+        XCTAssertTrue(editorText().range(of: "first passage")!.lowerBound < editorText().range(of: "second passage")!.lowerBound)
     }
 
     func testEscapeSavesNoteAndItAppearsInAllNotes() throws {

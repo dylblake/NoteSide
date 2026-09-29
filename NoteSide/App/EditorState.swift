@@ -20,9 +20,6 @@ final class EditorState {
     var isEditorPresented = false
     var isViewingOrphanedNote = false
     var isActiveNotePinned = false
-    /// Text selected in the host app when the drawer opened on a note that
-    /// already had content; the editor offers to insert it.
-    var pendingPassage: Passage?
     private var contextPollingTask: Task<Void, Never>?
     private var autosaveTask: Task<Void, Never>?
     private var isResolvingContext = false
@@ -70,7 +67,6 @@ final class EditorState {
 
     func loadEditorState(for context: NoteContext) {
         cancelAutosave()
-        pendingPassage = nil
         richTextController.discardQueuedPassages()
         let existingNote = notesState.note(for: context)
         editorAttributedText = attributedText(for: context)
@@ -81,7 +77,6 @@ final class EditorState {
 
     func loadEditorState(for note: ContextNote) {
         cancelAutosave()
-        pendingPassage = nil
         richTextController.discardQueuedPassages()
         editorAttributedText = attributedText(for: note)
         editorTitle = note.title ?? ""

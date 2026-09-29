@@ -694,6 +694,40 @@ final class RichTextEditorController {
 
     // MARK: Quotes (passages)
 
+    /// Set when the model was changed behind the view's back; the view
+    /// places the caret at the end once it has synced.
+    var wantsCaretAtEndAfterSync = false
+
+    /// Pure: `document` (canonical, zoom-free) plus a linked quote
+    /// paragraph on its own line, followed by nothing — the trailing
+    /// newline leaves an empty Body line for the caret.
+    func appendingQuote(_ passage: Passage, to document: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: document)
+        let bodyFont = makeFont(size: TextStyle.body.canonicalSize, weight: .regular, italic: false, monospaced: false)
+        let bodyAttributes: [NSAttributedString.Key: Any] = [
+            .font: bodyFont,
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: defaultParagraphStyle
+        ]
+        let quoteStyle = defaultParagraphStyle.mutableCopy() as! NSMutableParagraphStyle
+        quoteStyle.firstLineHeadIndent = Self.quoteIndent
+        quoteStyle.headIndent = Self.quoteIndent
+        quoteStyle.paragraphSpacingBefore = 4
+        var quoteAttributes = bodyAttributes
+        quoteAttributes[.paragraphStyle] = quoteStyle
+        var linkedAttributes = quoteAttributes
+        if let link = passage.link {
+            linkedAttributes[.link] = link
+        }
+
+        if result.length > 0, !result.string.hasSuffix("\n") {
+            result.append(NSAttributedString(string: "\n", attributes: bodyAttributes))
+        }
+        result.append(NSAttributedString(string: "\u{201C}\(passage.text)\u{201D}", attributes: linkedAttributes))
+        result.append(NSAttributedString(string: "\n", attributes: quoteAttributes))
+        return result
+    }
+
     /// Inserts `“text”` as an indented quote paragraph linked to the
     /// passage's text-fragment URL, after the caret's paragraph (or as the
     /// first paragraph of an empty note), and leaves the caret on a fresh

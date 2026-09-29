@@ -125,43 +125,7 @@ struct FloatingNoteEditorView: View {
                     .lineLimit(3)
             }
 
-            if let passage = appState.editor.pendingPassage {
-                pendingPassageChip(passage)
-                    .padding(.top, Spacing.xxs)
-                    .transition(.opacity)
-            }
         }
-        .animation(PanelAnimation.prefersReducedMotion ? nil : .easeOut(duration: 0.18), value: appState.editor.pendingPassage)
-    }
-
-    /// The host app had text selected when the drawer opened on a note
-    /// that already has content: offer the quote instead of forcing it in.
-    private func pendingPassageChip(_ passage: Passage) -> some View {
-        HStack(spacing: Spacing.xs) {
-            Image(systemName: "quote.opening")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(NoteSideTheme.secondaryText)
-            Text("“\(passage.preview)”")
-                .font(.footnote)
-                .foregroundStyle(NoteSideTheme.primaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Button("Insert") {
-                appState.insertPendingPassage()
-            }
-            .buttonStyle(.borderless)
-            .controlSize(.small)
-            .accessibilityIdentifier("insertPassageButton")
-            IconButton(systemName: "xmark", accessibilityLabel: "Dismiss passage", size: 10, hitSize: 22) {
-                appState.dismissPendingPassage()
-            }
-        }
-        .padding(.leading, Spacing.sm)
-        .padding(.trailing, Spacing.xxs)
-        .padding(.vertical, Spacing.xxs)
-        .glassEffect(.regular, in: Capsule(style: .continuous))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("pendingPassageChip")
     }
 
     private var contextSymbolName: String {

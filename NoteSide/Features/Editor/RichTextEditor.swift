@@ -85,6 +85,12 @@ struct RichTextEditor: NSViewRepresentable {
             textView.typingAttributes = controller.defaultTypingAttributes
             Coordinator.colorTags(in: textView)
             scrollView.contentView.setBoundsOrigin(savedOrigin)
+            if controller.wantsCaretAtEndAfterSync {
+                controller.wantsCaretAtEndAfterSync = false
+                let end = NSRange(location: (textView.string as NSString).length, length: 0)
+                textView.setSelectedRange(end)
+                textView.scrollRangeToVisible(end)
+            }
             DispatchQueue.main.async {
                 controller.notifySelectionAttributesChange()
             }

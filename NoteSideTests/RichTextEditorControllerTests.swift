@@ -328,6 +328,20 @@ final class RichTextEditorControllerTests: XCTestCase {
         XCTAssertNil(textView.typingAttributes[.link])
     }
 
+    func testAppendingQuoteKeepsExistingNoteAndLinks() throws {
+        let existing = NSAttributedString(string: "first thought", attributes: controller.defaultTypingAttributes)
+        let appended = controller.appendingQuote(samplePassage, to: existing)
+        XCTAssertEqual(appended.string, "first thought\n\u{201C}the quick brown fox\u{201D}\n")
+        let linkLocation = (appended.string as NSString).range(of: "quick").location
+        XCTAssertEqual((appended.attribute(.link, at: linkLocation, effectiveRange: nil) as? URL)?.absoluteString, "https://example.com/story#:~:text=the%20quick%20brown%20fox")
+        XCTAssertEqual((appended.attribute(.paragraphStyle, at: linkLocation, effectiveRange: nil) as? NSParagraphStyle)?.headIndent, 16)
+        XCTAssertEqual((appended.attribute(.font, at: linkLocation, effectiveRange: nil) as? NSFont)?.pointSize, 15, "canonical size, not zoomed")
+
+        let twice = controller.appendingQuote(Passage(text: "second", sourceURL: nil), to: appended)
+        XCTAssertEqual(twice.string, "first thought\n\u{201C}the quick brown fox\u{201D}\n\u{201C}second\u{201D}\n")
+        XCTAssertEqual(controller.appendingQuote(samplePassage, to: NSAttributedString()).string, "\u{201C}the quick brown fox\u{201D}\n")
+    }
+
     func testQuoteQueuedUntilTextViewAttaches() {
         let detached = RichTextEditorController()
         detached.insertQuote(samplePassage)

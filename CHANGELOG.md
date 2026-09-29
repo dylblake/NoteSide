@@ -4,11 +4,11 @@
 
 ### Passages: quote the selection, reopen the exact spot
 - Select text in any app, press the hotkey, and the selection lands in the note as a **quoted passage**. On a web page the quote links to that exact passage, and clicking it reopens the page in the browser it came from, scrolled to and highlighting the text.
-- For a note that already has content, the drawer offers the selection as a chip you can insert or dismiss. **Quote Selection** (⇧⌘Q or the toolbar) grabs the current selection at any time.
+- Every capture on the same page, app or file lands in that context's one note: a second selection is appended beneath the first, never replacing it. **Quote Selection** (⇧⌘Q or the toolbar) grabs the current selection at any time.
 - **Note This in NoteSide** appears in every app's Services menu, so a selection can be sent over without Accessibility access.
 - Safari and native apps hand the selection over through Accessibility. Chromium browsers (Chrome, Edge, Brave, Arc, Vivaldi) don't expose it that way, so NoteSide briefly copies the selection and then restores whatever was on your clipboard.
 - Clicking a NoteSide window while the drawer is open no longer re-attaches the note to NoteSide itself.
-- **Click outside the drawer to close it.** A click elsewhere on the same display saves and dismisses the note; a click on another display moves the drawer there, as before.
+- **Click outside to close.** A click elsewhere on the same display saves and dismisses the note drawer, and closes All Notes; a click on another display moves the panel there, as before.
 - Web notes now reopen in the browser they were captured in, not the default browser.
 
 ### Notes stay attached to the page, not the link

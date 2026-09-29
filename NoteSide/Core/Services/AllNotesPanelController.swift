@@ -6,6 +6,10 @@ import SwiftUI
 final class AllNotesPanelController {
     private var panel: NoteEditorPanel?
     private var animationSequence = 0
+    private let clickOutsideMonitor = ClickOutsideMonitor()
+
+    /// A click outside the panel on its display (see `ClickOutsideMonitor`).
+    var onClickOutside: (() -> Void)?
 
     func install(appState: AppState) {
         let rootView = FloatingAllNotesView()
@@ -50,6 +54,7 @@ final class AllNotesPanelController {
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         panel.makeKey()
+        clickOutsideMonitor.start(watching: panel) { [weak self] in self?.onClickOutside?() }
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = reduceMotion ? PanelAnimation.reducedMotionFadeDuration : PanelAnimation.presentDuration
@@ -67,6 +72,7 @@ final class AllNotesPanelController {
     }
 
     func dismiss() {
+        clickOutsideMonitor.stop()
         guard let panel, let screen = targetScreen(), panel.isVisible else {
             panel?.orderOut(nil)
             return

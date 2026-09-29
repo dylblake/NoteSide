@@ -422,29 +422,18 @@ final class AppState {
         }
     }
 
-    func insertPendingPassage() {
-        guard let passage = editor.pendingPassage else { return }
-        editor.pendingPassage = nil
-        insertPassage(passage)
-    }
-
-    func dismissPendingPassage() {
-        editor.pendingPassage = nil
-    }
-
-    /// New/empty note: the passage goes straight in. Existing note: offer it.
+    /// Every capture on the same context lands in the same note: append
+    /// to the model (the source of truth after a context switch, which
+    /// the text view may not have caught up with yet) and let SwiftUI
+    /// push it to the view.
     private func attachPassage(text: String) {
         let passage = Passage(text: text, sourceURL: editor.activePageURL)
-        let isEmpty = editor.currentEditorAttributedTextSnapshot().string
-            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        DebugTrace.log("attachPassage isEmpty=\(isEmpty) link=\(passage.link?.absoluteString ?? "nil") context=\(editor.activeContext?.identifier ?? "nil")")
-        if isEmpty {
-            insertPassage(passage)
-        } else {
-            editor.pendingPassage = passage
-        }
+        editor.editorAttributedText = richTextController.appendingQuote(passage, to: editor.editorAttributedText)
+        richTextController.wantsCaretAtEndAfterSync = true
+        editor.scheduleAutosave()
     }
 
+    /// Toolbar / ⇧⌘Q path: the view is live, insert at the caret.
     private func insertPassage(_ passage: Passage) {
         richTextController.insertQuote(passage)
         editor.editorAttributedText = editor.currentEditorAttributedTextSnapshot()
@@ -1116,6 +1105,10 @@ final class AppState {
 
         let controller = AllNotesPanelController()
         controller.install(appState: self)
+        controller.onClickOutside = { [weak self] in
+            guard let self, self.isAllNotesPanelPresented else { return }
+            self.dismissAllNotesPanel()
+        }
         allNotesPanelCtrl = controller
         return controller
     }
