@@ -27,7 +27,7 @@ struct FirstRunView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
                     switch step {
                     case 0: hotkeyStep
                     #if MAS_BUILD
@@ -38,15 +38,15 @@ struct FirstRunView: View {
                     #endif
                     }
                 }
-                .padding(28)
+                .padding(Spacing.xl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Divider()
 
             navigationBar
-                .padding(.horizontal, 28)
-                .padding(.vertical, 16)
+                .padding(.horizontal, Spacing.xl)
+                .padding(.vertical, Spacing.md)
         }
         .frame(width: 620, height: 560)
         .background(background)
@@ -65,7 +65,7 @@ struct FirstRunView: View {
     // MARK: - Step 1: the hotkey
 
     private var hotkeyStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             stepHeader(
                 title: "Try it right now",
                 subtitle: "NoteSide lives behind one shortcut. Press it and the note drawer slides in from the right, attached to whatever you're in — at this moment, that's this window."
@@ -107,8 +107,8 @@ struct FirstRunView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack(spacing: Spacing.sm) {
                     Text("Prefer a different shortcut?")
                         .font(.subheadline)
                     Spacer()
@@ -159,7 +159,7 @@ struct FirstRunView: View {
     }
 
     private var browserStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             stepHeader(
                 title: "Connect your browser",
                 subtitle: "This is where NoteSide shines: notes attach to the exact page you're on and reappear when you come back. macOS asks for permission once per browser."
@@ -175,12 +175,12 @@ struct FirstRunView: View {
 
             if !otherInstalledBrowsers.isEmpty {
                 DisclosureGroup {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
                         ForEach(otherInstalledBrowsers, id: \.bundleIdentifier) { browser in
                             compactBrowserRow(browser)
                         }
                     }
-                    .padding(.top, 8)
+                    .padding(.top, Spacing.xs)
                 } label: {
                     Text("More browsers")
                         .font(.subheadline.weight(.medium))
@@ -196,12 +196,12 @@ struct FirstRunView: View {
     private func featuredBrowserCard(_ browser: BrowserDescriptor) -> some View {
         let state = appState.browserPermissions.browserPermissionStates[browser.bundleIdentifier] ?? .undetermined
 
-        return HStack(alignment: .center, spacing: 14) {
+        return HStack(alignment: .center, spacing: Spacing.md) {
             Image(systemName: state == .granted ? "checkmark.circle.fill" : "globe")
                 .font(.system(size: 28))
                 .foregroundStyle(state == .granted ? NoteSideTheme.success : NoteSideTheme.accent)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(browser.title)
                     .font(.headline)
                 Text(featuredBrowserDetail(for: state))
@@ -247,7 +247,7 @@ struct FirstRunView: View {
                     .foregroundStyle(NoteSideTheme.secondaryText)
             }
         } else {
-            HStack(spacing: 8) {
+            HStack(spacing: Spacing.xs) {
                 if state == .undetermined {
                     wizardButton("Connect", prominent: prominentConnect) {
                         appState.browserPermissions.requestAutomationAccess(for: bundleIdentifier)
@@ -274,7 +274,7 @@ struct FirstRunView: View {
     private func compactBrowserRow(_ browser: BrowserDescriptor) -> some View {
         let state = appState.browserPermissions.browserPermissionStates[browser.bundleIdentifier] ?? .undetermined
 
-        return HStack(spacing: 10) {
+        return HStack(spacing: Spacing.sm) {
             Image(systemName: state == .granted ? "checkmark.circle.fill" : "circle.dotted")
                 .foregroundStyle(state == .granted ? NoteSideTheme.success : NoteSideTheme.secondaryText)
 
@@ -292,7 +292,7 @@ struct FirstRunView: View {
     // MARK: - Final step: permissions (MAS) / optional extras (direct)
 
     private var extrasStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             #if MAS_BUILD
             stepHeader(
                 title: "Enable Accessibility",
@@ -383,13 +383,13 @@ struct FirstRunView: View {
         buttonTitle: String?,
         action: (() -> Void)?
     ) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: Spacing.md) {
             Image(systemName: showsStatusIcon && granted ? "checkmark.circle.fill" : icon)
                 .font(.title3)
                 .foregroundStyle(showsStatusIcon && granted ? NoteSideTheme.success : NoteSideTheme.secondaryText)
                 .frame(width: 26)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                 Text(detail)
@@ -412,7 +412,7 @@ struct FirstRunView: View {
     // MARK: - Shared pieces
 
     private func stepHeader(title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("Welcome to NoteSide")
                 .font(.caption.weight(.semibold))
                 .textCase(.uppercase)
@@ -432,7 +432,7 @@ struct FirstRunView: View {
     }
 
     private var navigationBar: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: Spacing.md) {
             if step > 0 {
                 Button("Back") {
                     step -= 1
@@ -442,7 +442,7 @@ struct FirstRunView: View {
 
             Spacer()
 
-            HStack(spacing: 6) {
+            HStack(spacing: Spacing.xs) {
                 ForEach(0..<Self.stepCount, id: \.self) { index in
                     Circle()
                         .fill(index == step ? NoteSideTheme.accent : NoteSideTheme.border)

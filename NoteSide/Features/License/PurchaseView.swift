@@ -18,7 +18,7 @@ private struct PurchaseContent: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
                 header
 
                 if store.isUnlocked {
@@ -27,7 +27,7 @@ private struct PurchaseContent: View {
                     purchaseCard
                 }
             }
-            .padding(28)
+            .padding(Spacing.xl)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(background)
@@ -39,7 +39,7 @@ private struct PurchaseContent: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("NoteSide")
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(NoteSideTheme.primaryText)
@@ -70,7 +70,7 @@ private struct PurchaseContent: View {
     }
 
     private var successCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Spacing.md) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(NoteSideTheme.success)
@@ -93,12 +93,12 @@ private struct PurchaseContent: View {
             .padding(.top, Spacing.xxs)
         }
         .frame(maxWidth: .infinity)
-        .padding(28)
+        .padding(Spacing.xl)
         .background(card)
     }
 
     private var purchaseCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Label("Unlimited Notes", systemImage: "infinity")
                 .font(.headline)
                 .foregroundStyle(NoteSideTheme.primaryText)
@@ -109,7 +109,7 @@ private struct PurchaseContent: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if let errorMessage = store.lastErrorMessage {
-                HStack(spacing: 6) {
+                HStack(spacing: Spacing.xs) {
                     Image(systemName: "exclamationmark.triangle.fill")
                     Text(errorMessage)
                 }
@@ -117,7 +117,7 @@ private struct PurchaseContent: View {
                 .foregroundStyle(NoteSideTheme.danger)
             }
 
-            HStack(spacing: 14) {
+            HStack(spacing: Spacing.md) {
                 Button {
                     Task { await store.purchaseUnlimited() }
                 } label: {
@@ -141,7 +141,7 @@ private struct PurchaseContent: View {
                 .disabled(store.isWorking)
             }
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(card)
     }
