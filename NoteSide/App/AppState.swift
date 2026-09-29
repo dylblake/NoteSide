@@ -365,7 +365,7 @@ final class AppState {
             let selection = await Deadline.value(of: selectionTask, until: deadline)
             // Outer nil from Deadline means the read hasn't finished yet.
             let selectionPending = passageText == nil && selection == nil
-            DebugTrace.log("quickNote open: resolved=\(resolved?.identifier ?? "PENDING") selection=\(selection.map { _ in "captured" } ?? (selectionPending ? "PENDING" : "none"))")
+            DebugTrace.log("quickNote open: resolved=\(resolved?.identifier ?? "PENDING") selection=\(selectionPending ? "PENDING" : ((selection ?? nil) == nil ? "none" : "captured"))")
 
             let context = resolved ?? initialContext
             self.editor.applyResolvedContextBeforePresenting(context)
