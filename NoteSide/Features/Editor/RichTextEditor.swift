@@ -68,6 +68,10 @@ struct RichTextEditor: NSViewRepresentable {
         scrollView.documentView = textView
         controller.attach(textView)
         Coordinator.colorTags(in: textView)
+        if controller.wantsCaretAtEndAfterSync {
+            controller.wantsCaretAtEndAfterSync = false
+            textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+        }
         DispatchQueue.main.async {
             controller.notifySelectionAttributesChange()
         }

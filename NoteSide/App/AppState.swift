@@ -288,6 +288,7 @@ final class AppState {
             saveAndDismissEditor()
             return
         }
+        if isOpeningQuickNote { return }
 
         // Trial gate: once the free-note allowance is used up, creating a
         // NEW note requires a license — but existing notes always stay
@@ -319,60 +320,102 @@ final class AppState {
             let context = await self.editor.resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier)
             guard !self.editor.isEditorPresented else { return }
             if self.notesState.note(for: context) != nil {
-                self.presentQuickNoteEditor()
+                self.presentQuickNoteEditor(resolvedContext: context)
             } else {
                 self.presentLicenseWindow()
             }
         }
     }
 
-    /// `passageText` supplies the selection when it arrived through the
-    /// Services menu; otherwise the host app's selection is read via
-    /// Accessibility while the context resolves.
-    private func presentQuickNoteEditor(passageText: String? = nil) {
+    /// Budget for resolving the context and reading the host app's
+    /// selection *before* the drawer appears. Typical costs are well
+    /// inside it (AX URL 7–50 ms, Finder script ~100 ms, Chromium ⌘C
+    /// ~80 ms); a hung Apple Event can therefore delay the slide-in by at
+    /// most this much, after which the drawer opens on the app-level
+    /// context and catches up.
+    private static let quickNoteOpenBudget: Duration = .milliseconds(200)
+
+    /// Opens the drawer with the right context, title, content and any
+    /// selected passage already in place. `passageText` supplies the
+    /// selection when it arrived through the Services menu;
+    /// `resolvedContext` skips resolution when the caller already has it.
+    private func presentQuickNoteEditor(passageText: String? = nil, resolvedContext: NoteContext? = nil) {
+        guard !isOpeningQuickNote else { return }
+        isOpeningQuickNote = true
         editor.editorErrorMessage = nil
         let frontmostApp = NSWorkspace.shared.frontmostApplication
         let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
-
-        // Open with the cheap frontmost-app context immediately — the full
-        // resolve below runs AppleScript/AX and must never gate the panel.
-        // An Apple Event to a busy target can block for seconds.
         let initialContext = editor.quickApplicationContext(for: frontmostApp)
-
-        editor.activeContext = initialContext
-        editor.loadEditorState(for: initialContext)
-
-        editor.isEditorPresented = true
-        editor.startContextTracking()
-        // Slide in now, but don't take key status until the host app's
-        // selection has been read: Chromium only answers ⌘C while its
-        // window is key.
-        noteEditorPanelController.present(makeKey: false)
 
         Task { [weak self] in
             guard let self else { return }
-            DebugTrace.log("quickNote frontmost=\(frontmostApp?.bundleIdentifier ?? "nil") passageText=\(passageText != nil)")
-            let captured = passageText == nil ? await self.editor.captureSelectionText(from: frontmostApp) : nil
-            DebugTrace.log("quickNote captured=\(captured.map { String($0.prefix(60)) } ?? "nil")")
-            guard self.editor.isEditorPresented else { return }
-            self.noteEditorPanelController.makeKeyIfVisible()
-            self.richTextController.focus()
+            defer { self.isOpeningQuickNote = false }
 
-            await self.editor.resolveInitialQuickNoteContextAsync(from: initialContext, sourceBundleIdentifier: sourceBundleIdentifier)
-            self.browserPermissions.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
-            if let text = passageText ?? captured, self.editor.isEditorPresented {
+            let editorState = self.editor
+            let contextTask = Task { @MainActor in
+                if let resolvedContext { return resolvedContext }
+                return await editorState.resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier)
+            }
+            let selectionTask = Task { @MainActor in
+                passageText == nil ? await editorState.captureSelectionText(from: frontmostApp) : nil
+            }
+
+            let deadline = ContinuousClock.now + Self.quickNoteOpenBudget
+            let resolved = await Deadline.value(of: contextTask, until: deadline)
+            let selection = await Deadline.value(of: selectionTask, until: deadline)
+            // Outer nil from Deadline means the read hasn't finished yet.
+            let selectionPending = passageText == nil && selection == nil
+            DebugTrace.log("quickNote open: resolved=\(resolved?.identifier ?? "PENDING") selection=\(selection.map { _ in "captured" } ?? (selectionPending ? "PENDING" : "none"))")
+
+            let context = resolved ?? initialContext
+            self.editor.applyResolvedContextBeforePresenting(context)
+            if let text = passageText ?? (selection ?? nil) {
                 self.attachPassage(text: text)
             }
 
-            // Generate the title only after the context has settled so we
-            // don't title the note against the transient app-level fallback.
-            guard self.editor.isEditorPresented, self.isAutoTitleEnabled, self.editor.editorTitle.isEmpty,
-                  let context = self.editor.activeContext else { return }
-            if let existingNote = self.notesState.note(for: context), !existingNote.body.isEmpty {
-                self.editor.generateTitleIfNeeded(noteID: existingNote.id, body: existingNote.body, context: context)
+            self.editor.isEditorPresented = true
+            self.editor.startContextTracking()
+            // Chromium only answers ⌘C while its window is key, so hold off
+            // taking key status only while such a read is still in flight.
+            self.noteEditorPanelController.present(makeKey: !selectionPending)
+            self.browserPermissions.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
+
+            if resolved == nil {
+                Task { [weak self] in
+                    let late = await contextTask.value
+                    guard let self, self.editor.isEditorPresented else { return }
+                    self.editor.applyLateResolvedContext(late, fallback: initialContext)
+                    self.generateQuickNoteTitleIfNeeded()
+                }
             } else {
-                self.editor.generateTitleFromContext(context: context)
+                self.generateQuickNoteTitleIfNeeded()
             }
+
+            if selectionPending {
+                Task { [weak self] in
+                    let text = await selectionTask.value
+                    guard let self, self.editor.isEditorPresented else { return }
+                    self.noteEditorPanelController.makeKeyIfVisible()
+                    self.richTextController.focus()
+                    if let text {
+                        self.attachPassage(text: text)
+                    }
+                }
+            }
+        }
+    }
+
+    private var isOpeningQuickNote = false
+
+    /// Only once the context has settled, so the note isn't titled against
+    /// the transient app-level fallback.
+    private func generateQuickNoteTitleIfNeeded() {
+        guard editor.isEditorPresented, isAutoTitleEnabled, editor.editorTitle.isEmpty,
+              let context = editor.activeContext else { return }
+        if let existingNote = notesState.note(for: context), !existingNote.body.isEmpty {
+            editor.generateTitleIfNeeded(noteID: existingNote.id, body: existingNote.body, context: context)
+        } else {
+            editor.generateTitleFromContext(context: context)
         }
     }
 

@@ -47,9 +47,9 @@ final class NoteEditorPanelController {
         self.panel = panel
     }
 
-    /// `makeKey: false` shows the drawer without taking key status, so the
-    /// host app's window keeps it while a selection is read; call
-    /// `makeKeyIfVisible()` afterwards.
+    /// `makeKey: false` is the rare slow path: a Chromium selection read is
+    /// still in flight and needs the host window to stay key; the caller
+    /// calls `makeKeyIfVisible()` when it lands.
     func present(makeKey: Bool = true) {
         guard let panel, let screen = targetScreen(preferPanelScreen: false) else { return }
         finalizeInFlightTransition()

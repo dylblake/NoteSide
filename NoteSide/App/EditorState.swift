@@ -312,10 +312,17 @@ final class EditorState {
         return context
     }
 
-    func resolveInitialQuickNoteContextAsync(from fallbackContext: NoteContext, sourceBundleIdentifier: String?) async {
-        guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
+    /// Fast path: the context resolved before the drawer was shown, so
+    /// the first frame already carries the right note.
+    func applyResolvedContextBeforePresenting(_ context: NoteContext) {
+        activeContext = context
+        loadEditorState(for: context)
+    }
 
-        let context = await resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier)
+    /// Slow path: the context resolved after the drawer opened on the
+    /// cheap app-level fallback. Switch only if nothing has been typed.
+    func applyLateResolvedContext(_ context: NoteContext, fallback fallbackContext: NoteContext) {
+        guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
         guard context.id != fallbackContext.id else { return }
 
         let hasUnsavedEditorText = !editorAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
