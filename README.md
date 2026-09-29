@@ -105,7 +105,6 @@ These hooks are compiled out of Release/MAS builds.
 | Indent / outdent list item, next / previous table cell | Tab / ⇧Tab |
 | Insert table | ⌥⌘T |
 | Add / delete table rows and columns | Table button in the toolbar, or right-click inside a cell |
-| Quote the host app's selection as a linked passage | ⇧⌘Q |
 | Bigger / Smaller / Actual size | ⌘+ / ⌘− / ⌘0 |
 
 ## Version

@@ -157,13 +157,6 @@ final class NoteEditorPanelController {
         panel.makeKey()
     }
 
-    /// Hands key status back to the host app so it will honour a posted
-    /// ⌘C; the drawer stays on screen (it never activates NoteSide).
-    func yieldKey(to app: NSRunningApplication?) {
-        guard let app, panel?.isKeyWindow == true else { return }
-        app.activate()
-    }
-
     /// Follows the user to another display: the drawer leaves the old one
     /// and slides in on the new one exactly as it opens — the same slide and
     /// timing, never a jump into place. (Snapshot "ghost" windows can't

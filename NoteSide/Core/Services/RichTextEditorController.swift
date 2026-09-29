@@ -114,7 +114,6 @@ final class RichTextEditorController {
         case toggleList(ListKind)
         case insertTable
         case table(TableEdit)
-        case quoteSelection
         case zoomIn, zoomOut, resetZoom
     }
 
@@ -174,8 +173,6 @@ final class RichTextEditorController {
     var onSelectionAttributesChange: ((FormattingState) -> Void)?
     /// Set by the app: a passage link (text fragment) was clicked.
     var onOpenLink: ((URL) -> Void)?
-    /// Set by the app: ⇧⌘Q / the toolbar asked to quote the host app's selection.
-    var onQuoteSelectionRequested: (() -> Void)?
 
     private static let quoteIndent: CGFloat = 16
 
@@ -336,7 +333,6 @@ final class RichTextEditorController {
         case .toggleList(let kind): toggleList(kind)
         case .insertTable: insertTable()
         case .table(let edit): performTableEdit(edit)
-        case .quoteSelection: onQuoteSelectionRequested?()
         case .zoomIn: zoomIn()
         case .zoomOut: zoomOut()
         case .resetZoom: setZoom(1)

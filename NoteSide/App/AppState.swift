@@ -102,7 +102,6 @@ final class AppState {
         )
 
         richTextController.onOpenLink = { [weak self] url in self?.openPassageLink(url) }
-        richTextController.onQuoteSelectionRequested = { [weak self] in self?.quoteCurrentSelection() }
 
         browserPermissions.configure(
             onEditorError: { [weak self] msg in self?.editor.editorErrorMessage = msg },
@@ -390,13 +389,13 @@ final class AppState {
         }
         editor.isEditorPresented = true
         editor.startContextTracking()
-        // A Chromium host must stay key until it has handled the ⌘C
-        // selection read; every other host frees it at once. By now (the
-        // drawer took ~35 ms to set up) it almost always has, so the drawer
-        // is key from its first frame — a non-key window draws its glass in
-        // the lighter inactive style. Otherwise it takes key when the host
-        // is done.
-        let hostMustStayKey = SelectionReader.hostMustStayKey(sourceBundleIdentifier) && selectionRead?.isHostDone == false
+        // The host must stay key until its selection has been read through
+        // Accessibility or it has handled a ⌘C (it ignores one otherwise).
+        // By now (the drawer took ~35 ms to set up) it almost always has, so
+        // the drawer is key from its first frame — a non-key window draws
+        // its glass in the lighter inactive style. Otherwise it takes key
+        // when the host is done.
+        let hostMustStayKey = selectionRead?.isHostDone == false
         noteEditorPanelController.present(makeKey: !hostMustStayKey)
         browserPermissions.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
 
@@ -448,34 +447,6 @@ final class AppState {
         presentQuickNoteEditor(passageText: passageText)
     }
 
-    /// Toolbar / ⇧⌘Q: quote whatever is selected in the app behind the drawer.
-    func quoteCurrentSelection() {
-        var trusted = AXIsProcessTrusted()
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["UITEST_SELECTION_TEXT"] != nil { trusted = true }
-        #endif
-        guard trusted else {
-            editor.editorErrorMessage = "Quoting a selection needs Accessibility access. Turn it on in Permissions & Setup, or use Services → Note This in NoteSide."
-            return
-        }
-        let hostApp = NSWorkspace.shared.frontmostApplication
-        noteEditorPanelController.yieldKey(to: hostApp)
-        Task { [weak self] in
-            guard let self else { return }
-            let text = await self.editor.captureSelectionText(from: hostApp)
-            self.noteEditorPanelController.makeKeyIfVisible()
-            self.richTextController.focus()
-            guard self.editor.isEditorPresented else { return }
-            guard let text else {
-                let name = hostApp?.localizedName ?? "the app in front"
-                self.editor.editorErrorMessage = "Nothing is selected in \(name)."
-                return
-            }
-            self.editor.editorErrorMessage = nil
-            self.insertPassage(Passage(text: text, sourceURL: self.editor.activePageURL))
-        }
-    }
-
     /// Every capture on the same context lands in the same note: append
     /// to the model (the source of truth after a context switch, which
     /// the text view may not have caught up with yet) and let SwiftUI
@@ -484,13 +455,6 @@ final class AppState {
         let passage = Passage(text: text, sourceURL: editor.activePageURL)
         editor.editorAttributedText = richTextController.appendingQuote(passage, to: editor.editorAttributedText)
         richTextController.wantsCaretAtEndAfterSync = true
-        editor.scheduleAutosave()
-    }
-
-    /// Toolbar / ⇧⌘Q path: the view is live, insert at the caret.
-    private func insertPassage(_ passage: Passage) {
-        richTextController.insertQuote(passage)
-        editor.editorAttributedText = editor.currentEditorAttributedTextSnapshot()
         editor.scheduleAutosave()
     }
 

@@ -239,13 +239,6 @@ final class EditorState {
 
     /// Reads the host app's selected text off the main thread. Returns nil
     /// when nothing is selected or Accessibility isn't granted.
-    /// Reads the host app's selection. `onHostDone` runs on the main thread
-    /// once the host no longer needs to stay key (see
-    /// `SelectionReader.hostMustStayKey`).
-    func captureSelectionText(from app: NSRunningApplication?, onHostDone: @escaping @MainActor @Sendable () -> Void = {}) async -> String? {
-        await Self.startSelectionRead(from: app, onHostDone: onHostDone).text
-    }
-
     /// Starts the read immediately on a GCD queue — not a Swift concurrency
     /// task, which can sit behind blocking context reads in the cooperative
     /// pool (~100 ms on a cold start) while a Chromium host waits for its
