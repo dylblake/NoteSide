@@ -34,6 +34,9 @@ final class EditorState {
     /// Bumped only when a *generated* title lands in an empty field, so the
     /// view can ease it in; loading a stored title never bumps it.
     private(set) var titleRevealToken = 0
+    /// True from the moment a generated title is ready until the view
+    /// starts easing it in; the view keeps the field hidden meanwhile.
+    private(set) var isTitleRevealPending = false
 
     enum TitleGeneration: Equatable {
         /// Nothing requested yet for this note (the drawer is still opening).
@@ -82,6 +85,7 @@ final class EditorState {
     func loadEditorState(for context: NoteContext) {
         cancelAutosave()
         titleGeneration = .idle
+        isTitleRevealPending = false
         richTextController.discardQueuedPassages()
         let existingNote = notesState.note(for: context)
         editorAttributedText = attributedText(for: context)
@@ -93,6 +97,7 @@ final class EditorState {
     func loadEditorState(for note: ContextNote) {
         cancelAutosave()
         titleGeneration = .idle
+        isTitleRevealPending = false
         richTextController.discardQueuedPassages()
         editorAttributedText = attributedText(for: note)
         editorTitle = note.title ?? ""
@@ -234,21 +239,41 @@ final class EditorState {
 
     /// Reads the host app's selected text off the main thread. Returns nil
     /// when nothing is selected or Accessibility isn't granted.
-    func captureSelectionText(from app: NSRunningApplication?) async -> String? {
-        #if DEBUG
-        // UI tests inject the selection; under XCUITest no other app is
-        // frontmost, so this must not depend on `app`.
-        if let injected = ProcessInfo.processInfo.environment["UITEST_SELECTION_TEXT"], !injected.isEmpty {
-            return SelectionReader.normalized(injected)
+    /// Reads the host app's selection. `onHostDone` runs on the main thread
+    /// once the host no longer needs to stay key (see
+    /// `SelectionReader.hostMustStayKey`).
+    func captureSelectionText(from app: NSRunningApplication?, onHostDone: @escaping @MainActor @Sendable () -> Void = {}) async -> String? {
+        await Self.startSelectionRead(from: app, onHostDone: onHostDone).text
+    }
+
+    /// Starts the read immediately on a GCD queue — not a Swift concurrency
+    /// task, which can sit behind blocking context reads in the cooperative
+    /// pool (~100 ms on a cold start) while a Chromium host waits for its
+    /// ⌘C.
+    nonisolated static func startSelectionRead(from app: NSRunningApplication?, onHostDone: @escaping @MainActor @Sendable () -> Void) -> SelectionRead {
+        let read = SelectionRead()
+        let hostDone: @Sendable () -> Void = {
+            read.markHostDone()
+            DispatchQueue.main.async { onHostDone() }
         }
-        #endif
-        guard let app else { return nil }
-        let reader = SelectionReader()
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: reader.selectedText(in: app))
+        DispatchQueue.global(qos: .userInitiated).async {
+            #if DEBUG
+            // UI tests inject the selection; under XCUITest no other app is
+            // frontmost, so this must not depend on `app`.
+            if let injected = ProcessInfo.processInfo.environment["UITEST_SELECTION_TEXT"], !injected.isEmpty {
+                hostDone()
+                read.fulfill(SelectionReader.normalized(injected))
+                return
             }
+            #endif
+            guard let app else {
+                hostDone()
+                read.fulfill(nil)
+                return
+            }
+            read.fulfill(SelectionReader().selectedText(in: app, onHostDone: hostDone))
         }
+        return read
     }
 
     /// The page the active context points at, for building passage links.
@@ -527,15 +552,73 @@ final class EditorState {
         }
     }
 
-    /// Eases a generated title into the empty field instead of snapping
-    /// it in; a plain fade under Reduce Motion.
+    /// Puts a generated title in the empty field for the view to ease in.
+    /// The still-empty field is hidden first and filled only on the next
+    /// turn, once that's on screen: the text and the hiding can't land in
+    /// different frames, so the title never flashes in ahead of its fade.
     private func revealGeneratedTitle(_ title: String) {
-        let animation: Animation = PanelAnimation.prefersReducedMotion
-            ? .easeOut(duration: 0.2)
-            : .easeOut(duration: 0.35)
-        withAnimation(animation) {
-            editorTitle = title
-            titleRevealToken += 1
+        isTitleRevealPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isTitleRevealPending else { return }
+            // Typed into it in the meantime: keep theirs, and show it.
+            guard self.editorTitle.isEmpty else {
+                self.isTitleRevealPending = false
+                return
+            }
+            self.editorTitle = title
+            self.titleRevealToken += 1
+        }
+    }
+
+    /// Called by the view as it starts the fade.
+    func finishTitleReveal() {
+        isTitleRevealPending = false
+    }
+}
+
+/// A selection read in flight: filled once from a GCD queue and awaited
+/// from Swift concurrency, with a flag for when the host app no longer needs
+/// to stay key — readable synchronously, so the drawer can take key status
+/// in the same transaction that shows it.
+nonisolated final class SelectionRead: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: String??
+    private var hostDone = false
+    private var waiters: [CheckedContinuation<String?, Never>] = []
+
+    var isHostDone: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return hostDone
+    }
+
+    func markHostDone() {
+        lock.lock()
+        hostDone = true
+        lock.unlock()
+    }
+
+    func fulfill(_ value: String?) {
+        lock.lock()
+        result = .some(value)
+        let pending = waiters
+        waiters = []
+        lock.unlock()
+        pending.forEach { $0.resume(returning: value) }
+    }
+
+    var text: String? {
+        get async {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                if let result {
+                    lock.unlock()
+                    continuation.resume(returning: result)
+                } else {
+                    waiters.append(continuation)
+                    lock.unlock()
+                }
+            }
         }
     }
 }

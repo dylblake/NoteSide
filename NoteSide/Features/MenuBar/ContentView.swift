@@ -379,8 +379,7 @@ private struct NoteTile: View {
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tileBackground)
-        .contentShape(Rectangle())
-        .onTapGesture {
+        .pressableCard(cornerRadius: CornerRadius.card) {
             appState.open(note)
         }
     }
@@ -686,8 +685,7 @@ private struct NoteListRow: View {
                         )
                 )
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
+        .pressableCard(cornerRadius: CornerRadius.control + 2) {
             appState.open(note)
         }
     }

@@ -5,11 +5,13 @@ import SwiftUI
 /// glass footer for pin / delete and the dismiss hint.
 struct FloatingNoteEditorView: View {
     @Environment(AppState.self) private var appState
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDeleteConfirmation = false
-    /// A generated title being eased in by the overlay `Text`; the real
-    /// field is hidden underneath until the overlay has settled.
-    @State private var revealingTitle: String?
+    @FocusState private var isTitleFocused: Bool
+
+    /// A generated title fades in on its own field: no overlay, no drift,
+    /// no blur — it isn't there, then it is. The same gentle ease-out as
+    /// the drawer's slide.
+    private static let titleReveal = Animation.timingCurve(0.5, 1, 0.89, 1, duration: 0.35)
 
     var body: some View {
         @Bindable var editor = appState.editor
@@ -86,59 +88,29 @@ struct FloatingNoteEditorView: View {
 
     // MARK: Title
 
-    /// With automatic titles on, the field stays blank until the generated
-    /// title lands — an explicitly empty prompt, because a nil prompt makes
-    /// SwiftUI fall back to the label "Title". The arrival is animated on a
-    /// pure-SwiftUI `Text` overlay (fade, 4pt settle, blur-to-sharp), never
-    /// on the AppKit-backed field; once settled, the field is shown with the
-    /// same text, font and position, so the handoff is invisible.
+    /// With automatic titles on, an empty title shows nothing — no "Title"
+    /// placeholder waiting to be replaced — unless the user is in the field
+    /// to type one. (An explicitly empty prompt: a nil prompt makes SwiftUI
+    /// fall back to the label "Title".) A generated title lands in a
+    /// hidden field (see `EditorState.revealGeneratedTitle`), then fades in.
     private var titleSlot: some View {
         @Bindable var editor = appState.editor
-        let waitingForGeneratedTitle = appState.isAutoTitleEnabled
-            && appState.editor.titleGeneration != .finished
-            && appState.editor.editorTitle.isEmpty
+        let showsPlaceholder = !appState.isAutoTitleEnabled || isTitleFocused
 
-        return ZStack(alignment: .leading) {
-            TextField("Title", text: $editor.editorTitle, prompt: waitingForGeneratedTitle ? Text(verbatim: "") : Text("Title"))
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(NoteSideTheme.primaryText)
-                .textFieldStyle(.plain)
-                .accessibilityIdentifier("noteTitleField")
-                .opacity(revealingTitle == nil ? 1 : 0)
-
-            if let revealingTitle {
-                Text(revealingTitle)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(NoteSideTheme.primaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                    .transition(reduceMotion
-                        ? .opacity
-                        : .opacity.combined(with: .offset(y: -4)).combined(with: .softBlur))
+        return TextField("Title", text: $editor.editorTitle, prompt: showsPlaceholder ? Text("Title") : Text(verbatim: ""))
+            .font(.title2.weight(.semibold))
+            .foregroundStyle(NoteSideTheme.primaryText)
+            .textFieldStyle(.plain)
+            .focused($isTitleFocused)
+            .accessibilityIdentifier("noteTitleField")
+            .opacity(appState.editor.isTitleRevealPending ? 0 : 1)
+            .onChange(of: appState.editor.titleRevealToken) { _, _ in
+                // The field was hidden a turn ago and now holds the title.
+                PanelMotionTrace.mark("titleArrived")
+                withAnimation(Self.titleReveal) {
+                    appState.editor.finishTitleReveal()
+                }
             }
-        }
-        .onChange(of: appState.editor.titleRevealToken) { _, _ in
-            revealGeneratedTitle(appState.editor.editorTitle)
-        }
-        .onDisappear {
-            revealingTitle = nil
-        }
-    }
-
-    private func revealGeneratedTitle(_ title: String) {
-        guard !title.isEmpty else { return }
-        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .easeOut(duration: 0.4)) {
-            revealingTitle = title
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(reduceMotion ? 250 : 450))
-            guard revealingTitle == title else { return }
-            withTransaction(Transaction(animation: nil)) {
-                revealingTitle = nil
-            }
-        }
     }
 
     private var contextRow: some View {
@@ -291,20 +263,5 @@ private struct DictationIndicatorView: View {
         .onChange(of: isDictating) { _, active in
             scale = active && !reduceMotion ? 1.4 : 1.0
         }
-    }
-}
-
-/// A light blur that resolves to sharp as a view appears; paired with a
-/// fade it reads as "settling in" rather than "switching".
-private struct SoftBlurModifier: ViewModifier {
-    let radius: CGFloat
-    func body(content: Content) -> some View {
-        content.blur(radius: radius)
-    }
-}
-
-private extension AnyTransition {
-    static var softBlur: AnyTransition {
-        .modifier(active: SoftBlurModifier(radius: 4), identity: SoftBlurModifier(radius: 0))
     }
 }

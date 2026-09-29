@@ -162,8 +162,6 @@ final class AppState {
             .sink { [weak self] _ in
                 guard let self else { return }
 
-                let oldSnapshot = self.panelController?.captureCurrentSnapshot()
-
                 Task { [weak self] in
                     guard let self else { return }
 
@@ -179,8 +177,8 @@ final class AppState {
                         let context = await self.editor.resolveCurrentContextAsync()
                         guard self.editor.isEditorPresented else { return }
 
-                        // Suppress SwiftUI's contentTransition animation
-                        // so the snapshot captured below isn't mid-fade.
+                        // No animation: if the drawer follows to another
+                        // display, it slides in with the new context.
                         withTransaction(Transaction(animation: nil)) {
                             self.editor.applyRefreshedContext(context)
                         }
@@ -189,9 +187,7 @@ final class AppState {
                     // Defer the reposition by one runloop tick so SwiftUI's
                     // re-render has time to commit to the layer.
                     DispatchQueue.main.async { [weak self] in
-                        self?.panelController?.repositionToActiveScreenIfNeeded(
-                            oldContextSnapshot: oldSnapshot
-                        )
+                        self?.panelController?.repositionToActiveScreenIfNeeded()
                         self?.allNotesPanelCtrl?.repositionToActiveScreenIfNeeded()
                     }
                 }
@@ -232,6 +228,14 @@ final class AppState {
             }
         }
 
+        // Build and draw the drawer now, invisibly, so the first hotkey
+        // press after launch is as quick as every other (building it on
+        // demand cost ~130 ms, and a slow first `makeKey` let the drawer's
+        // first frames draw in the inactive style).
+        DispatchQueue.main.async { [weak self] in
+            self?.noteEditorPanelController.prewarm()
+        }
+
         #if DEBUG
         // UI-test hook: lets XCUITest drive a real window deterministically
         // instead of through the MenuBarExtra status item, which doesn't
@@ -239,6 +243,28 @@ final class AppState {
         if let action = ProcessInfo.processInfo.environment["UITEST_LAUNCH_ACTION"] {
             DispatchQueue.main.async { [weak self] in
                 self?.performUITestLaunchAction(action)
+            }
+        }
+        // UI-test hook: moves the open drawer to the other display, as
+        // switching to an app there would.
+        if ProcessInfo.processInfo.environment["UITEST_REMOTE_TOGGLE"] != nil {
+            DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("com.noteside.uitest.moveDrawerToOtherScreen"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.panelController?.moveToOtherScreenForTesting() }
+            }
+        }
+        // UI-test hook: stands in for the quick-note hotkey, so motion
+        // tests can open and close the drawer on demand.
+        if ProcessInfo.processInfo.environment["UITEST_REMOTE_TOGGLE"] != nil {
+            DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("com.noteside.uitest.toggleQuickNote"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.toggleQuickNote() }
             }
         }
         #endif
@@ -280,6 +306,7 @@ final class AppState {
     }
 
     func toggleQuickNote() {
+        PanelMotionTrace.mark("hotkey")
         if isAllNotesPanelPresented {
             dismissAllNotesPanel()
         }
@@ -288,7 +315,6 @@ final class AppState {
             saveAndDismissEditor()
             return
         }
-        if isOpeningQuickNote { return }
 
         // Trial gate: once the free-note allowance is used up, creating a
         // NEW note requires a license — but existing notes always stay
@@ -327,85 +353,70 @@ final class AppState {
         }
     }
 
-    /// Budget for resolving the context and reading the host app's
-    /// selection *before* the drawer appears. Typical costs are well
-    /// inside it (AX URL 7–50 ms, Finder script ~100 ms, Chromium ⌘C
-    /// ~80 ms); a hung Apple Event can therefore delay the slide-in by at
-    /// most this much, after which the drawer opens on the app-level
-    /// context and catches up.
-    private static let quickNoteOpenBudget: Duration = .milliseconds(200)
-
-    /// Opens the drawer with the right context, title, content and any
-    /// selected passage already in place. `passageText` supplies the
-    /// selection when it arrived through the Services menu;
-    /// `resolvedContext` skips resolution when the caller already has it.
+    /// Slides the drawer in at once, on the app-level context, and lets
+    /// the precise context (page, file, channel) and any selected passage
+    /// land as they resolve — usually within the slide's first frames.
+    /// Nothing waits before the slide: the drawer answers the hotkey.
+    /// `passageText` supplies the selection when it arrived through the
+    /// Services menu; `resolvedContext` skips resolution when the caller
+    /// already has it.
     private func presentQuickNoteEditor(passageText: String? = nil, resolvedContext: NoteContext? = nil) {
-        guard !isOpeningQuickNote else { return }
-        isOpeningQuickNote = true
         editor.editorErrorMessage = nil
         let frontmostApp = NSWorkspace.shared.frontmostApplication
         let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
-        let initialContext = editor.quickApplicationContext(for: frontmostApp)
+        let initialContext = resolvedContext ?? editor.quickApplicationContext(for: frontmostApp)
 
+        // Start both reads before the drawer takes anything from the host.
+        let editorState = editor
+        let contextTask: Task<NoteContext, Never>? = resolvedContext == nil
+            ? Task { @MainActor in await editorState.resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier) }
+            : nil
+        let panelController = noteEditorPanelController
+        let richText = richTextController
+        // Starts now, before the drawer does anything, so a Chromium host
+        // gets its ⌘C straight away.
+        let selectionRead: SelectionRead? = passageText == nil
+            ? EditorState.startSelectionRead(from: frontmostApp) {
+                // The host has handled its ⌘C: take key so typing lands here.
+                guard editorState.isEditorPresented else { return }
+                panelController.makeKeyIfVisible()
+                richText.focus()
+            }
+            : nil
+
+        editor.applyResolvedContextBeforePresenting(initialContext)
+        if let passageText {
+            attachPassage(text: passageText)
+        }
+        editor.isEditorPresented = true
+        editor.startContextTracking()
+        // A Chromium host must stay key until it has handled the ⌘C
+        // selection read; every other host frees it at once. By now (the
+        // drawer took ~35 ms to set up) it almost always has, so the drawer
+        // is key from its first frame — a non-key window draws its glass in
+        // the lighter inactive style. Otherwise it takes key when the host
+        // is done.
+        let hostMustStayKey = SelectionReader.hostMustStayKey(sourceBundleIdentifier) && selectionRead?.isHostDone == false
+        noteEditorPanelController.present(makeKey: !hostMustStayKey)
+        browserPermissions.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
+
+        // The context first, then the passage: a passage attached to the
+        // app-level note would pin the drawer to it (a late context only
+        // replaces an untouched note).
         Task { [weak self] in
-            guard let self else { return }
-            defer { self.isOpeningQuickNote = false }
-
-            let editorState = self.editor
-            let contextTask = Task { @MainActor in
-                if let resolvedContext { return resolvedContext }
-                return await editorState.resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier)
+            if let contextTask {
+                let context = await contextTask.value
+                guard let self, self.editor.isEditorPresented else { return }
+                self.editor.applyLateResolvedContext(context, fallback: initialContext)
             }
-            let selectionTask = Task { @MainActor in
-                passageText == nil ? await editorState.captureSelectionText(from: frontmostApp) : nil
-            }
-
-            let deadline = ContinuousClock.now + Self.quickNoteOpenBudget
-            let resolved = await Deadline.value(of: contextTask, until: deadline)
-            let selection = await Deadline.value(of: selectionTask, until: deadline)
-            // Outer nil from Deadline means the read hasn't finished yet.
-            let selectionPending = passageText == nil && selection == nil
-            DebugTrace.log("quickNote open: resolved=\(resolved?.identifier ?? "PENDING") selection=\(selectionPending ? "PENDING" : ((selection ?? nil) == nil ? "none" : "captured"))")
-
-            let context = resolved ?? initialContext
-            self.editor.applyResolvedContextBeforePresenting(context)
-            if let text = passageText ?? (selection ?? nil) {
+            guard let self, self.editor.isEditorPresented else { return }
+            self.generateQuickNoteTitleIfNeeded()
+            if let selectionRead, let text = await selectionRead.text, self.editor.isEditorPresented {
                 self.attachPassage(text: text)
             }
-
-            self.editor.isEditorPresented = true
-            self.editor.startContextTracking()
-            // Chromium only answers ⌘C while its window is key, so hold off
-            // taking key status only while such a read is still in flight.
-            self.noteEditorPanelController.present(makeKey: !selectionPending)
-            self.browserPermissions.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
-
-            if resolved == nil {
-                Task { [weak self] in
-                    let late = await contextTask.value
-                    guard let self, self.editor.isEditorPresented else { return }
-                    self.editor.applyLateResolvedContext(late, fallback: initialContext)
-                    self.generateQuickNoteTitleIfNeeded()
-                }
-            } else {
-                self.generateQuickNoteTitleIfNeeded()
-            }
-
-            if selectionPending {
-                Task { [weak self] in
-                    let text = await selectionTask.value
-                    guard let self, self.editor.isEditorPresented else { return }
-                    self.noteEditorPanelController.makeKeyIfVisible()
-                    self.richTextController.focus()
-                    if let text {
-                        self.attachPassage(text: text)
-                    }
-                }
-            }
+            DebugTrace.log("quickNote open: context=\(self.editor.activeContext?.identifier ?? "none")")
         }
     }
-
-    private var isOpeningQuickNote = false
 
     /// Only once the context has settled, so the note isn't titled against
     /// the transient app-level fallback.
@@ -507,17 +518,25 @@ final class AppState {
     }
 
     func saveAndDismissEditor() {
+        // Start the slide-out before the save: the flush writes
+        // synchronously, and the close should answer the keypress, not
+        // wait for the disk. The slide runs in the render server meanwhile.
+        panelController?.dismiss()
         editor.persistCurrentEditorContent()
         notesState.flush()
-        dismissEditor()
+        resetEditorAfterDismiss()
     }
 
     func dismissEditor() {
+        panelController?.dismiss()
+        resetEditorAfterDismiss()
+    }
+
+    private func resetEditorAfterDismiss() {
         editor.isEditorPresented = false
         editor.isViewingOrphanedNote = false
         editor.stopContextTracking()
         editor.cancelAutosave()
-        panelController?.dismiss()
     }
 
     func openAllNotes() {

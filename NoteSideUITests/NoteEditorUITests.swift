@@ -294,7 +294,7 @@ final class NoteEditorUITests: XCTestCase {
         app.launch()
         textView = editor
         XCTAssertTrue(textView.waitForExistence(timeout: 8))
-        // The drawer opens already loaded: no settling time needed.
+        // The passage lands moments after the drawer starts sliding in.
         XCTAssertTrue(waitForEditorText({ $0.contains("first passage") && $0.contains("second passage") }, timeout: 1), "got: \(editorText().debugDescription)")
         XCTAssertTrue(editorText().range(of: "first passage")!.lowerBound < editorText().range(of: "second passage")!.lowerBound)
     }

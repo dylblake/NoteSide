@@ -44,8 +44,64 @@ final class EditorStateTitleRevealTests: XCTestCase {
 
         XCTAssertEqual(editor.editorTitle, "Stub Title")
         XCTAssertEqual(editor.titleRevealToken, 1)
+        XCTAssertTrue(editor.isTitleRevealPending, "the field stays hidden until the view starts the fade")
         await waitUntil { !editor.isGeneratingTitle }
         XCTAssertEqual(editor.titleGeneration, .finished)
+
+        editor.finishTitleReveal()
+        XCTAssertFalse(editor.isTitleRevealPending)
+    }
+
+    /// The field must be hidden while it's still empty, and only then
+    /// filled — otherwise the text and the hiding can reach the screen in
+    /// different frames and the title flashes in before its fade.
+    func testRevealHidesTheFieldBeforeFillingIt() async throws {
+        let (editor, directory) = try makeEditor(generator: StubTitleGenerator())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        editor.activeContext = context
+        editor.isEditorPresented = true
+
+        // Fires synchronously, on the main thread, as the field is hidden.
+        final class Box: @unchecked Sendable { var title: String? }
+        let titleWhenHidden = Box()
+        withObservationTracking { _ = editor.isTitleRevealPending } onChange: {
+            MainActor.assumeIsolated { titleWhenHidden.title = editor.editorTitle }
+        }
+        editor.generateTitleFromContext(context: context)
+        await waitUntil { editor.titleRevealToken == 1 }
+
+        XCTAssertEqual(titleWhenHidden.title, "", "the title was already in the field when it was hidden")
+        XCTAssertEqual(editor.editorTitle, "Stub Title")
+    }
+
+    func testTypingDuringTheRevealKeepsTheTypedTitleVisible() async throws {
+        let (editor, directory) = try makeEditor(generator: StubTitleGenerator())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        editor.activeContext = context
+        editor.isEditorPresented = true
+
+        // Type in the gap between hiding the field and filling it.
+        withObservationTracking { _ = editor.isTitleRevealPending } onChange: {
+            MainActor.assumeIsolated { editor.editorTitle = "Mine" }
+        }
+        editor.generateTitleFromContext(context: context)
+        await waitUntil { !editor.isGeneratingTitle && !editor.isTitleRevealPending }
+
+        XCTAssertEqual(editor.editorTitle, "Mine")
+        XCTAssertFalse(editor.isTitleRevealPending, "the typed title was left hidden")
+        XCTAssertEqual(editor.titleRevealToken, 0)
+    }
+
+    func testLoadingANoteClearsAPendingReveal() async throws {
+        let (editor, directory) = try makeEditor(generator: StubTitleGenerator())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        editor.activeContext = context
+        editor.isEditorPresented = true
+        editor.generateTitleFromContext(context: context)
+        await waitUntil { editor.isTitleRevealPending }
+
+        editor.loadEditorState(for: context)
+        XCTAssertFalse(editor.isTitleRevealPending)
     }
 
     func testGeneratorWithNothingToSayFinishesSoPlaceholderCanShow() async throws {

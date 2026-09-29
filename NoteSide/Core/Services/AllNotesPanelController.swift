@@ -46,66 +46,142 @@ final class AllNotesPanelController {
         let sequence = animationSequence
         let finalFrame = paneFrame(for: screen)
 
-        // Start as a collapsed sliver at the right edge of the active
-        // screen, then expand leftward — no bleed onto adjacent monitors.
-        // Under Reduce Motion, fade in at the final position instead.
+        // A visible panel on this screen means a dismiss is still in flight:
+        // reverse it from where it is instead of restarting from off-screen.
+        let isReversingDismiss = panel.isVisible && panel.screen?.frame == screen.frame
         let reduceMotion = PanelAnimation.prefersReducedMotion
-        panel.setFrame(reduceMotion ? finalFrame : collapsedFrame(for: screen), display: false)
-        panel.alphaValue = 0
+        let layer = panel.contentView?.layer
+        panel.setFrame(finalFrame, display: false)
+
+        var duration: TimeInterval
+        var startX: CGFloat = 0
+        if reduceMotion {
+            // Fade in place, continuing a fade-out that's still running.
+            if let layer { PanelAnimation.clearSlide(layer) }
+            let startAlpha = isReversingDismiss ? panel.alphaValue : 0
+            duration = PanelAnimation.reducedMotionFadeDuration * Double(1 - startAlpha)
+            panel.alphaValue = startAlpha
+        } else {
+            // The window sits at its final frame; only its content slides in
+            // from the right edge, fully opaque (see PanelAnimation.slide).
+            // Lay it out and draw it before it's shown, and pin it off-screen
+            // so ordering front can't flash it; the slide starts below.
+            let width = finalFrame.width
+            startX = isReversingDismiss
+                ? min(layer.map(PanelAnimation.currentOffset(of:)) ?? width, width)
+                : width
+            if !isReversingDismiss {
+                panel.contentView?.layoutSubtreeIfNeeded()
+                panel.displayIfNeeded()
+            }
+            panel.alphaValue = 1
+            PanelAnimation.hold(panel, atX: startX)
+            duration = 0
+        }
+
         panel.orderFrontRegardless()
         panel.makeKey()
         clickOutsideMonitor.start(watching: panel) { [weak self] in self?.onClickOutside?() }
+        if !reduceMotion {
+            // Commit the window, held off-screen, before the slide's clock
+            // starts: putting it up (on another display especially) can take
+            // tens of ms, which would otherwise come out of the slide.
+            CATransaction.flush()
+            duration = PanelAnimation.slide(
+                panel,
+                fromX: startX,
+                toX: 0,
+                duration: PanelAnimation.duration(PanelAnimation.presentDuration, remaining: startX, of: finalFrame.width)
+            )
+        }
+        // Hand the animation to the render server now, so it starts on the
+        // keypress rather than after the rest of this main-thread turn.
+        CATransaction.flush()
 
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = reduceMotion ? PanelAnimation.reducedMotionFadeDuration : PanelAnimation.presentDuration
-            context.timingFunction = PanelAnimation.smoothEaseOut
-            context.allowsImplicitAnimation = true
-            panel.animator().setFrame(finalFrame, display: true)
-            panel.animator().alphaValue = 1
-        }, completionHandler: { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self, self.animationSequence == sequence else { return }
-                panel.setFrame(finalFrame, display: false)
-                panel.alphaValue = 1
+        let finish = { [weak self] in
+            guard let self, self.animationSequence == sequence else { return }
+            panel.alphaValue = 1
+            if let layer = panel.contentView?.layer {
+                PanelAnimation.clearSlide(layer)
             }
-        })
+        }
+        if reduceMotion {
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = duration
+                panel.animator().alphaValue = 1
+            }, completionHandler: { Task { @MainActor in finish() } })
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { finish() }
+        }
     }
 
     func dismiss() {
         clickOutsideMonitor.stop()
-        guard let panel, let screen = targetScreen(), panel.isVisible else {
+        guard let panel, targetScreen() != nil, panel.isVisible else {
             panel?.orderOut(nil)
             return
         }
         animationSequence += 1
         let sequence = animationSequence
 
-        // Under Reduce Motion, fade out in place instead of sliding.
-        let reduceMotion = PanelAnimation.prefersReducedMotion
-        let endFrame = reduceMotion ? panel.frame : collapsedFrame(for: screen)
-
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = reduceMotion ? PanelAnimation.reducedMotionFadeDuration : PanelAnimation.dismissDuration
-            context.timingFunction = PanelAnimation.smoothEaseIn
-            context.allowsImplicitAnimation = true
-            panel.animator().setFrame(endFrame, display: true)
-            panel.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self, self.animationSequence == sequence else { return }
-                panel.orderOut(nil)
-                panel.setFrame(endFrame, display: false)
-                panel.alphaValue = 1
+        let finish = { [weak self] in
+            guard let self, self.animationSequence == sequence else { return }
+            panel.orderOut(nil)
+            panel.alphaValue = 1
+            if let layer = panel.contentView?.layer {
+                PanelAnimation.clearSlide(layer)
             }
-        })
+        }
+
+        if PanelAnimation.prefersReducedMotion {
+            // Fade out in place instead of sliding.
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = PanelAnimation.reducedMotionFadeDuration
+                panel.animator().alphaValue = 0
+            }, completionHandler: { Task { @MainActor in finish() } })
+            return
+        }
+
+        // Slide the content back off the right edge, fully opaque, from
+        // wherever it is on screen (mid-present included), over the share
+        // of the duration the remaining distance deserves.
+        let width = panel.frame.width
+        let startX = panel.contentView?.layer.map(PanelAnimation.currentOffset(of:)) ?? 0
+        let duration = PanelAnimation.slide(
+            panel,
+            fromX: startX,
+            toX: width,
+            duration: PanelAnimation.duration(PanelAnimation.dismissDuration, remaining: width - startX, of: width)
+        )
+        CATransaction.flush()
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { finish() }
     }
 
+    /// Follows the user to another display with the same slide it opens
+    /// with, never a jump into place.
     func repositionToActiveScreenIfNeeded() {
         guard let panel, panel.isVisible else { return }
         let pointerLocation = NSEvent.mouseLocation
         guard let target = NSScreen.screens.first(where: { NSMouseInRect(pointerLocation, $0.frame, false) }) else { return }
         guard let currentScreen = panel.screen, currentScreen.frame != target.frame else { return }
-        panel.setFrame(paneFrame(for: target), display: true, animate: false)
+        // Arrive invisibly and settle before sliding in; see
+        // `NoteEditorPanelController.repositionToActiveScreenIfNeeded`.
+        animationSequence += 1
+        let sequence = animationSequence
+        panel.orderOut(nil)
+        let finalFrame = paneFrame(for: target)
+        panel.setFrame(finalFrame, display: false)
+        PanelAnimation.hold(panel, atX: finalFrame.width)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        CATransaction.flush()
+        DispatchQueue.main.asyncAfter(deadline: .now() + PanelAnimation.displaySwitchSettle) { [weak self] in
+            guard let self, self.animationSequence == sequence else { return }
+            if !PanelAnimation.prefersReducedMotion {
+                panel.alphaValue = 1
+            }
+            self.present()
+        }
     }
 
     private func paneFrame(for screen: NSScreen) -> NSRect {
@@ -115,17 +191,6 @@ final class AllNotesPanelController {
             x: screenFrame.maxX - paneWidth,
             y: screenFrame.minY,
             width: paneWidth,
-            height: screenFrame.height
-        )
-    }
-
-    private func collapsedFrame(for screen: NSScreen) -> NSRect {
-        let screenFrame = screen.visibleFrame.integral
-        let collapsedWidth = PanelAnimation.collapsedWidth
-        return NSRect(
-            x: screenFrame.maxX - collapsedWidth,
-            y: screenFrame.minY,
-            width: collapsedWidth,
             height: screenFrame.height
         )
     }
