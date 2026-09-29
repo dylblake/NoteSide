@@ -53,15 +53,14 @@ nonisolated enum URLCanonicalizer {
     /// First matching rule wins; keep specific hosts above general ones.
     static let hostRules: [HostRule] = [
         HostRule(hostSuffix: "figma.com", keepPathComponents: 2, keptQueryKeys: ["node-id"]),
-        HostRule(hostSuffix: "docs.google.com", keepPathComponents: 3, keptQueryKeys: []),
-        HostRule(hostSuffix: "drive.google.com", keepPathComponents: 3, keptQueryKeys: []),
+        HostRule(hostSuffix: "docs.google.com", keptQueryKeys: [], pathTransform: googleDocumentPath),
+        HostRule(hostSuffix: "drive.google.com", keptQueryKeys: [], pathTransform: googleDocumentPath),
         HostRule(hostSuffix: "mail.google.com", keptQueryKeys: [], keepFragment: true),
         HostRule(hostSuffix: "notion.so", keptQueryKeys: [], pathTransform: notionPath),
         HostRule(hostSuffix: "notion.site", keptQueryKeys: [], pathTransform: notionPath),
         HostRule(hostSuffix: "youtube.com", keptQueryKeys: ["v"]),
-        HostRule(hostSuffix: "youtu.be", keepPathComponents: 1, keptQueryKeys: []),
-        HostRule(hostSuffix: "github.com", keptQueryKeys: []),
-        HostRule(hostSuffix: "linear.app", keptQueryKeys: []),
+        HostRule(hostSuffix: "github.com", keptQueryKeys: [], pathTransform: githubPath),
+        HostRule(hostSuffix: "linear.app", keptQueryKeys: [], pathTransform: linearPath),
         HostRule(hostSuffix: "atlassian.net", keptQueryKeys: []),
         HostRule(hostSuffix: "app.slack.com", keptQueryKeys: [])
     ]
@@ -86,7 +85,9 @@ nonisolated enum URLCanonicalizer {
             return url
         }
 
-        let host = rawHost.hasPrefix("www.") ? String(rawHost.dropFirst(4)) : rawHost
+        rewriteAliases(&components, host: rawHost)
+        let aliasedHost = components.host?.lowercased() ?? rawHost
+        let host = aliasedHost.hasPrefix("www.") ? String(aliasedHost.dropFirst(4)) : aliasedHost
         let rule = hostRules.first { host == $0.hostSuffix || host.hasSuffix("." + $0.hostSuffix) }
 
         components.scheme = scheme
@@ -135,6 +136,82 @@ nonisolated enum URLCanonicalizer {
     static func isTrackingKey(_ key: String) -> Bool {
         if trackingQueryKeys.contains(key) { return true }
         return trackingQueryKeyPrefixes.contains { key.hasPrefix($0) }
+    }
+
+    /// Hosts and paths that are different spellings of one document:
+    /// `youtu.be/ID`, `youtube.com/shorts/ID` and `/live/ID` are all
+    /// `youtube.com/watch?v=ID`, and `m.youtube.com` is the same site.
+    private static func rewriteAliases(_ components: inout URLComponents, host: String) {
+        let path = components.percentEncodedPath.split(separator: "/").map(String.init)
+        let isYouTube = host == "youtube.com" || host.hasSuffix(".youtube.com")
+        let videoID: String?
+        if host == "youtu.be" || host == "www.youtu.be" {
+            videoID = path.first
+        } else if isYouTube, path.count >= 2, ["shorts", "live"].contains(path[0]) {
+            videoID = path[1]
+        } else {
+            videoID = nil
+        }
+
+        if let videoID, !videoID.isEmpty {
+            components.host = "youtube.com"
+            components.percentEncodedPath = "/watch"
+            let rest = (components.queryItems ?? []).filter { $0.name != "v" }
+            components.queryItems = [URLQueryItem(name: "v", value: videoID)] + rest
+        } else if host == "m.youtube.com" {
+            components.host = "youtube.com"
+        }
+    }
+
+    /// `docs.google.com/document/u/1/d/ID/edit` → `/document/d/ID`: the
+    /// signed-in account slot (`u/N`) is not part of the document, and
+    /// keeping it collapsed every doc of a second account into one note.
+    /// Published docs (`/d/e/ID/pub`) carry their id one segment later.
+    private static let googleDocumentPath: @Sendable ([String]) -> [String] = { components in
+        var stripped: [String] = []
+        var index = 0
+        while index < components.count {
+            if components[index] == "u", index + 1 < components.count, Int(components[index + 1]) != nil {
+                index += 2
+                continue
+            }
+            stripped.append(components[index])
+            index += 1
+        }
+        let keep = stripped.count > 2 && stripped[1] == "d" && stripped[2] == "e" ? 4 : 3
+        return Array(stripped.prefix(keep))
+    }
+
+    /// Owner and repo are case-insensitive on GitHub, and a pull request
+    /// or issue is one thing across its tabs (`/pull/42/files`,
+    /// `/pull/42/commits`).
+    private static let githubPath: @Sendable ([String]) -> [String] = { components in
+        var result = components
+        for index in result.indices.prefix(2) {
+            result[index] = result[index].lowercased()
+        }
+        if result.count > 4, ["pull", "issues", "discussions"].contains(result[2]) {
+            result = Array(result.prefix(4))
+        }
+        return result
+    }
+
+    /// Linear issue URLs end in a title slug that changes on rename:
+    /// `/acme/issue/ENG-123/fix-login` → `/acme/issue/ENG-123`. Project
+    /// URLs end in `<slug>-<12 hex id>` plus a tab; only the id is stable.
+    private static let linearPath: @Sendable ([String]) -> [String] = { components in
+        guard components.count >= 3 else { return components }
+        switch components[1] {
+        case "issue":
+            return Array(components.prefix(3))
+        case "project":
+            let slug = components[2]
+            let id = slug.split(separator: "-").last.map(String.init) ?? slug
+            let stableID = id.count == 12 && id.allSatisfy(\.isHexDigit) ? id : slug
+            return [components[0], components[1], stableID]
+        default:
+            return components
+        }
     }
 
     /// Notion page URLs end in `<Slug>-<32 hex>`; only the id is stable.

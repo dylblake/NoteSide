@@ -11,14 +11,15 @@
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
 	<!-- Browsers are read via Accessibility (AXBrowserURLReader), so no
-	     browser Apple Events exceptions are needed. Finder folder context
-	     and Xcode document paths still use Apple Events; justification
+	     browser Apple Events exceptions are needed. Finder folder context,
+	     Xcode document paths and iTerm2's working directory still use Apple Events; justification
 	     for review: NoteSide attaches notes to the folder/file the user
 	     is viewing, which these apps expose only via scripting. -->
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>
 		<string>com.apple.finder</string>
 		<string>com.apple.dt.Xcode</string>
+		<string>com.googlecode.iterm2</string>
 	</array>
 </dict>
 </plist>

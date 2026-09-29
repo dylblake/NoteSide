@@ -488,7 +488,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab and Finder selection so notes can attach to the right context.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab, Finder selection and iTerm2 working directory so notes can attach to the right context.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dylan Evans";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "NoteSide uses the microphone for voice-to-text dictation in your notes.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "NoteSide uses on-device speech recognition to convert speech to text in your notes.";
@@ -529,7 +529,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab and Finder selection so notes can attach to the right context.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab, Finder selection and iTerm2 working directory so notes can attach to the right context.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dylan Evans";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "NoteSide uses the microphone for voice-to-text dictation in your notes.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "NoteSide uses on-device speech recognition to convert speech to text in your notes.";
@@ -571,7 +571,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab and Finder selection so notes can attach to the right context.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "NoteSide needs Automation access to read the active browser tab, Finder selection and iTerm2 working directory so notes can attach to the right context.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dylan Evans";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "NoteSide uses the microphone for voice-to-text dictation in your notes.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "NoteSide uses on-device speech recognition to convert speech to text in your notes.";

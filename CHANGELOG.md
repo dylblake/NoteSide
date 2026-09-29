@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Designer, developer and student workflows
+- **Terminals**: notes in Terminal, iTerm2, Ghostty, Warp, kitty, WezTerm and Alacritty attach to the project the shell is in (the enclosing repository, so `cd src` keeps the same note) and reopen as a new terminal window there. iTerm2 asks once for Automation access to read the session's directory.
+- **Cursor**, Windsurf and VSCodium are recognised as code editors, like VS Code.
+- **Linear**: the desktop app attaches notes per issue or project, sharing one note with the same issue opened in a browser, and reopens it in the desktop app. Renaming an issue or project no longer orphans its note.
+- **GitHub**: a pull request, issue or discussion is one note across its tabs (Conversation, Files, Commits), and owner/repo case no longer matters.
+- **Google Docs, Sheets, Slides and Drive**: documents opened from a second signed-in account (`/u/1/`) each get their own note — previously they all shared one — and published docs are told apart.
+- **YouTube**: `youtu.be` links, Shorts, live streams and m.youtube.com share the video's one note.
+- **PDFs opened in a browser** (a local file in Chrome or Safari) attach as the file, following renames, rather than as a `file://` "page".
+- The notes file moves to schema version 3; notes split under the old rules are merged on first launch, as in version 2.
+
 ### Passages: quote the selection, reopen the exact spot
 - Select text in any app, press the hotkey, and the selection lands in the note as a **quoted passage**. On a web page the quote links to that exact passage, and clicking it reopens the page in the browser it came from, scrolled to and highlighting the text.
 - Every capture on the same page, app or file lands in that context's one note: a second selection is appended beneath the first, never replacing it.

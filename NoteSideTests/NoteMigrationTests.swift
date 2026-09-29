@@ -78,7 +78,7 @@ final class NoteMigrationTests: XCTestCase {
         FileManager.default.temporaryDirectory.appending(path: "NoteMigrationTests-\(UUID().uuidString)", directoryHint: .isDirectory)
     }
 
-    func testStoreMigratesVersionOneFileAndRewritesAsVersionTwo() throws {
+    func testStoreMigratesVersionOneFileAndRewritesAsCurrentVersion() throws {
         let directory = temporaryStoreDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -96,10 +96,10 @@ final class NoteMigrationTests: XCTestCase {
 
         let rewritten = try Data(contentsOf: directory.appending(path: "notes.json"))
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: rewritten) as? [String: Any])
-        XCTAssertEqual(json["version"] as? Int, 2)
+        XCTAssertEqual(json["version"] as? Int, 3)
         XCTAssertEqual((json["notes"] as? [Any])?.count, 1)
 
-        // Second load is a no-op read of the v2 file.
+        // Second load is a no-op read of the current-version file.
         XCTAssertEqual(NoteStore(directoryOverride: directory).loadNotes().count, 1)
     }
 
@@ -116,6 +116,27 @@ final class NoteMigrationTests: XCTestCase {
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].context.identifier, "https://figma.com/design/v8EbQR4j7Echm4lGGjyz5t?node-id=0-1")
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: directory.appending(path: "notes.json"))) as? [String: Any])
-        XCTAssertEqual(json["version"] as? Int, 2)
+        XCTAssertEqual(json["version"] as? Int, 3)
+    }
+
+    func testStoreMigratesVersionTwoFileUnderCurrentRules() throws {
+        let directory = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        // v2 kept each PR tab as its own identity; v3 merges them.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        struct V2: Encodable { let version: Int; let notes: [ContextNote] }
+        let notes = [
+            webNote("https://github.com/apple/swift/pull/42", body: "conversation", updated: 1),
+            webNote("https://github.com/apple/swift/pull/42/files", body: "diff", updated: 2)
+        ]
+        try encoder.encode(V2(version: 2, notes: notes)).write(to: directory.appending(path: "notes.json"))
+
+        let loaded = NoteStore(directoryOverride: directory).loadNotes()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].context.identifier, "https://github.com/apple/swift/pull/42")
+        XCTAssertEqual(loaded[0].body, "diff\n\n\(NoteMigration.mergeDivider)\n\nconversation")
     }
 }

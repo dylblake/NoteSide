@@ -10,7 +10,7 @@ final class NoteStore {
 
     /// 1: original envelope. 2: web identities canonicalised (see
     /// `NoteMigration.canonicalizeWebIdentifiers`).
-    private static let currentSchemaVersion = 2
+    private static let currentSchemaVersion = 3
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -149,9 +149,12 @@ final class NoteStore {
         var notes = decoded.notes
         var version = decoded.version
 
-        if version < 2 {
+        // 2: first canonicalisation. 3: Google account slots, GitHub PR
+        // tabs, Linear slugs and YouTube aliases. The pass is idempotent,
+        // so re-running it under the current rules covers both.
+        if version < 3 {
             notes = NoteMigration.canonicalizeWebIdentifiers(notes)
-            version = 2
+            version = 3
         }
 
         if version != decoded.version || forceSave {
