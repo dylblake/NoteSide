@@ -3,6 +3,9 @@ import Combine
 import ServiceManagement
 import SwiftUI
 
+/// Menu bar popover. Primary actions and recent notes up top; settings
+/// and hotkeys fold away behind a disclosure so the everyday view stays
+/// short; license and update status sit at the bottom.
 struct MenuBarContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
@@ -11,107 +14,25 @@ struct MenuBarContentView: View {
     #endif
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @State private var launchAtLoginNeedsApproval: Bool = false
+    @AppStorage("menuBarShowsSettings") private var showsSettings = false
 
     var body: some View {
-        @Bindable var appState = appState
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("NoteSide")
-                        .font(.title3.weight(.semibold))
-                    Text("Leave notes for the app, page, or file you are in.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            header
 
-                Spacer(minLength: 0)
-
-                Button {
-                    dismiss()
-                    appState.showInfoWindow()
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.title3)
-                        .foregroundStyle(NoteSideTheme.secondaryText)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("About NoteSide")
-                .accessibilityLabel("About NoteSide")
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Button {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                menuButton("View All Notes", systemImage: "square.grid.2x2", shortcut: appState.hotkeys.allNotesHotKeyDisplayString) {
                     dismiss()
                     appState.openAllNotes()
-                } label: {
-                    Label("View All Notes", systemImage: "square.grid.2x2")
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                Button {
+                menuButton("New Note Here", systemImage: "square.and.pencil", shortcut: appState.hotkeys.hotKeyDisplayString) {
                     dismiss()
-                    appState.showOnboarding()
-                } label: {
-                    Label("Permissions & Setup", systemImage: "checklist")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    appState.toggleQuickNote()
                 }
-            }
-
-            Divider()
-
-            sectionHeader("Settings")
-
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Launch on startup", isOn: $launchAtLogin)
-                    .toggleStyle(.checkbox)
-                    .font(.subheadline)
-                    .onChange(of: launchAtLogin) { _, newValue in
-                        setLaunchAtLogin(newValue)
-                    }
-
-                Toggle("Auto-generate note titles", isOn: $appState.isAutoTitleEnabled)
-                    .toggleStyle(.checkbox)
-                    .font(.subheadline)
-
-                if launchAtLoginNeedsApproval {
-                    HStack(spacing: 6) {
-                        Text("Enable NoteSide in System Settings to allow launch on startup.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button("Open") {
-                            SMAppService.openSystemSettingsLoginItems()
-                        }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                    }
-                }
-            }
-
-            Divider()
-
-            sectionHeader("Hotkeys")
-
-            VStack(alignment: .leading, spacing: 8) {
-                hotkeyRow("Quick Note", displayText: appState.hotkeys.hotKeyDisplayString) { shortcut in
-                    appState.hotkeys.setHotKeyShortcut(shortcut)
-                }
-                hotkeyRow("All Notes", displayText: appState.hotkeys.allNotesHotKeyDisplayString) { shortcut in
-                    appState.hotkeys.setAllNotesHotKeyShortcut(shortcut)
-                }
-                hotkeyRow("Dictation (hold)", displayText: appState.hotkeys.dictationHotKeyDisplayString) { shortcut in
-                    appState.hotkeys.setDictationHotKeyShortcut(shortcut)
-                }
-
-                Text("Click a shortcut, then press the keys you want.")
-                    .font(.caption)
-                    .foregroundStyle(NoteSideTheme.tertiaryText)
             }
 
             if let errorMessage = appState.editor.editorErrorMessage {
-                Text(errorMessage)
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
                     .foregroundStyle(NoteSideTheme.warning)
                     .fixedSize(horizontal: false, vertical: true)
@@ -119,86 +40,15 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            sectionHeader("Recent")
-
-            if appState.notesState.recentNotes.isEmpty {
-                Text("No notes yet.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(appState.notesState.recentNotes) { note in
-                        Button {
-                            dismiss()
-                            appState.open(note)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(note.context.displayName)
-                                    .font(.subheadline.weight(.medium))
-                                    .lineLimit(1)
-                                Text(note.body)
-                                    .lineLimit(1)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
+            recentSection
 
             Divider()
 
-            if appState.isLicensed {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(NoteSideTheme.success)
-                    Text("Licensed")
-                        .font(.subheadline)
-                        .foregroundStyle(NoteSideTheme.secondaryText)
-                    Spacer()
-                    #if !MAS_BUILD
-                    Button("Deactivate") {
-                        appState.deactivateLicense()
-                    }
-                    .font(.caption)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(NoteSideTheme.tertiaryText)
-                    #endif
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: appState.isTrialExhausted ? "hourglass.bottomhalf.filled" : "hourglass")
-                            .foregroundStyle(appState.isTrialExhausted ? NoteSideTheme.warning : NoteSideTheme.secondaryText)
-                        Text(trialStatusText)
-                            .font(.subheadline)
-                            .foregroundStyle(NoteSideTheme.secondaryText)
-                    }
+            settingsSection
 
-                    Button {
-                        dismiss()
-                        appState.presentLicenseWindow()
-                    } label: {
-                        #if MAS_BUILD
-                        Label("Unlock Unlimited Notes", systemImage: "infinity")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        #else
-                        Label("Activate License", systemImage: "key")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        #endif
-                    }
-                    #if MAS_BUILD
-                    Button("Restore Purchases") {
-                        appState.restorePurchases()
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    #endif
-                }
-            }
+            Divider()
+
+            licenseSection
 
             #if !MAS_BUILD
             updateRow
@@ -206,17 +56,184 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            Button {
-                NSApp.terminate(nil)
-            } label: {
-                Label("Quit NoteSide", systemImage: "power")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: Spacing.xs) {
+                menuButton("Permissions & Setup", systemImage: "checklist") {
+                    dismiss()
+                    appState.showOnboarding()
+                }
+                menuButton("Quit", systemImage: "power") {
+                    NSApp.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
             }
         }
         .padding(Spacing.md)
-        .frame(width: 360)
+        .frame(width: 340)
         .onAppear { refreshLaunchAtLoginState() }
     }
+
+    // MARK: Sections
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("NoteSide")
+                    .font(.headline)
+                Text("Notes for the app, page, or file you're in.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                dismiss()
+                appState.showInfoWindow()
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.title3)
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("About NoteSide")
+            .accessibilityLabel("About NoteSide")
+        }
+    }
+
+    private var recentSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            sectionHeader("Recent")
+
+            if appState.notesState.recentNotes.isEmpty {
+                Text("No notes yet. Press \(appState.hotkeys.hotKeyDisplayString) in any app to write one.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(appState.notesState.recentNotes) { note in
+                        RecentNoteRow(note: note) {
+                            dismiss()
+                            appState.open(note)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var settingsSection: some View {
+        @Bindable var appState = appState
+        return DisclosureGroup(isExpanded: $showsSettings) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Toggle("Launch at login", isOn: $launchAtLogin)
+                        .onChange(of: launchAtLogin) { _, newValue in
+                            setLaunchAtLogin(newValue)
+                        }
+
+                    Toggle("Generate note titles automatically", isOn: $appState.isAutoTitleEnabled)
+
+                    if launchAtLoginNeedsApproval {
+                        HStack(spacing: Spacing.xs - 2) {
+                            Text("Approve NoteSide in System Settings to launch at login.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button("Open") {
+                                SMAppService.openSystemSettingsLoginItems()
+                            }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .font(.subheadline)
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    sectionHeader("Hotkeys")
+                    hotkeyRow("Quick Note", displayText: appState.hotkeys.hotKeyDisplayString) { shortcut in
+                        appState.hotkeys.setHotKeyShortcut(shortcut)
+                    }
+                    hotkeyRow("All Notes", displayText: appState.hotkeys.allNotesHotKeyDisplayString) { shortcut in
+                        appState.hotkeys.setAllNotesHotKeyShortcut(shortcut)
+                    }
+                    hotkeyRow("Dictation (hold)", displayText: appState.hotkeys.dictationHotKeyDisplayString) { shortcut in
+                        appState.hotkeys.setDictationHotKeyShortcut(shortcut)
+                    }
+                    Text("Click a shortcut, then press the keys you want.")
+                        .font(.caption)
+                        .foregroundStyle(NoteSideTheme.tertiaryText)
+                }
+            }
+            .padding(.top, Spacing.xs)
+        } label: {
+            Label("Settings & Hotkeys", systemImage: "gearshape")
+                .font(.subheadline.weight(.medium))
+        }
+        .accessibilityIdentifier("menuBarSettingsDisclosure")
+    }
+
+    @ViewBuilder
+    private var licenseSection: some View {
+        if appState.isLicensed {
+            HStack(spacing: Spacing.xs - 2) {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(NoteSideTheme.success)
+                Text("Licensed")
+                    .font(.subheadline)
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+                Spacer()
+                #if !MAS_BUILD
+                Button("Deactivate") {
+                    appState.deactivateLicense()
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .foregroundStyle(NoteSideTheme.tertiaryText)
+                #endif
+            }
+        } else {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack(spacing: Spacing.xs - 2) {
+                    Image(systemName: appState.isTrialExhausted ? "hourglass.bottomhalf.filled" : "hourglass")
+                        .foregroundStyle(appState.isTrialExhausted ? NoteSideTheme.warning : NoteSideTheme.secondaryText)
+                    Text(trialStatusText)
+                        .font(.subheadline)
+                        .foregroundStyle(NoteSideTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: Spacing.xs) {
+                    Button {
+                        dismiss()
+                        appState.presentLicenseWindow()
+                    } label: {
+                        #if MAS_BUILD
+                        Label("Unlock Unlimited Notes", systemImage: "infinity")
+                        #else
+                        Label("Activate License", systemImage: "key")
+                        #endif
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    #if MAS_BUILD
+                    Button("Restore Purchases") {
+                        appState.restorePurchases()
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    #endif
+                }
+            }
+        }
+    }
+
+    // MARK: Pieces
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
@@ -224,6 +241,24 @@ struct MenuBarContentView: View {
             .textCase(.uppercase)
             .tracking(0.7)
             .foregroundStyle(NoteSideTheme.secondaryText)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func menuButton(_ title: String, systemImage: String, shortcut: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.xs) {
+                Label(title, systemImage: systemImage)
+                Spacer(minLength: 0)
+                if let shortcut {
+                    Text(shortcut)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.bordered)
     }
 
     private func hotkeyRow(
@@ -231,20 +266,20 @@ struct MenuBarContentView: View {
         displayText: String,
         onRecorded: @escaping (HotKeyShortcut) -> Void
     ) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.sm) {
             Text(title)
                 .font(.subheadline)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Spacing.xs)
 
             ShortcutRecorderView(displayText: displayText, onShortcutRecorded: onRecorded)
-                .frame(width: 150)
+                .frame(width: 140)
         }
     }
 
     private var trialStatusText: String {
         if appState.isTrialExhausted {
-            return "Trial complete — a license unlocks new notes."
+            return "Trial complete. A license unlocks new notes."
         }
         return "Free trial: \(appState.trialNotesUsed) of \(AppState.trialNoteLimit) notes used."
     }
@@ -288,51 +323,40 @@ struct MenuBarContentView: View {
                 updateChecker.check()
             } label: {
                 Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
 
         case .checking:
-            statusRow(
-                systemImage: nil,
-                tint: nil,
-                message: "Checking for updates…",
-                showsSpinner: true
-            )
+            statusRow(systemImage: nil, tint: nil, message: "Checking for updates…", showsSpinner: true)
 
         case .upToDate:
             statusRow(
                 systemImage: "checkmark.circle.fill",
                 tint: NoteSideTheme.success,
-                message: "You're up to date (v\(UpdateChecker.currentVersion))",
+                message: "Up to date (v\(UpdateChecker.currentVersion))",
                 showsSpinner: false
             )
 
         case .updateAvailable(let version, _, let releaseURL):
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Update Available — v\(version)", systemImage: "arrow.down.circle.fill")
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Label("Update available: v\(version)", systemImage: "arrow.down.circle.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(NoteSideTheme.accent)
 
-                Text("You have v\(UpdateChecker.currentVersion). Install the latest version now?")
+                Text("You have v\(UpdateChecker.currentVersion).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 8) {
-                    Button {
+                HStack(spacing: Spacing.xs) {
+                    Button("Install Update") {
                         updateChecker.installUpdate()
-                    } label: {
-                        Text("Install Update")
-                            .font(.subheadline.weight(.medium))
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
 
-                    Button {
+                    Button("Release Notes") {
                         NSWorkspace.shared.open(releaseURL)
-                    } label: {
-                        Text("Release Notes")
-                            .font(.subheadline)
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
@@ -341,8 +365,8 @@ struct MenuBarContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
         case .downloading(let received, let total):
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.xs - 2) {
+                HStack(spacing: Spacing.xs) {
                     ProgressView()
                         .controlSize(.small)
                     Text("Downloading update…")
@@ -358,15 +382,10 @@ struct MenuBarContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
         case .installing:
-            statusRow(
-                systemImage: nil,
-                tint: nil,
-                message: "Installing update — the app will restart…",
-                showsSpinner: true
-            )
+            statusRow(systemImage: nil, tint: nil, message: "Installing update. The app will restart…", showsSpinner: true)
 
         case .failed(let message):
-            HStack(spacing: 8) {
+            HStack(spacing: Spacing.xs) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(NoteSideTheme.warning)
                 Text(message)
@@ -378,14 +397,14 @@ struct MenuBarContentView: View {
                     updateChecker.check()
                 }
                 .buttonStyle(.borderless)
-                .font(.caption)
+                .controlSize(.small)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func statusRow(systemImage: String?, tint: Color?, message: String, showsSpinner: Bool) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Spacing.xs) {
             if showsSpinner {
                 ProgressView()
                     .controlSize(.small)
@@ -401,4 +420,42 @@ struct MenuBarContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     #endif
+}
+
+/// A recent note: title line plus one-line preview, with a hover
+/// highlight so it reads as a row rather than loose text.
+private struct RecentNoteRow: View {
+    let note: ContextNote
+    let action: () -> Void
+    @State private var isHovered = false
+
+    private var title: String {
+        if let title = note.title, !title.isEmpty { return title }
+        return note.context.displayName
+    }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                Text(note.body.replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: "  "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.xs)
+            .padding(.vertical, Spacing.xxs + 1)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.control - 2, style: .continuous)
+                    .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .accessibilityLabel("Open note \(title)")
+    }
 }

@@ -7,6 +7,9 @@
 - Every window uses system buttons, semantic fonts and system colours, so the app follows your accent colour, Increase Contrast and light/dark mode exactly like the rest of macOS.
 - Note cards are tinted with system colours; the view switcher is a native segmented control.
 - The drawer and All Notes keep a usable width on portrait, laptop and ultra-wide displays; the formatting toolbar folds into an overflow menu when the pane is narrow, and note cards flow into one, two or three columns.
+- **Permissions & Setup** is one row per capability with a status glyph; individual browsers, Finder / Xcode and microphone / speech live behind disclosures that open only when something needs attention.
+- The **menu bar popover** leads with All Notes, New Note and recent notes; settings and hotkeys fold away behind "Settings & Hotkeys".
+- Every screen shares the same 4/8/12/16/24/32/48pt spacing scale and reads correctly in light and dark mode.
 
 ### A real text editor
 - **Paragraph styles** like Apple Notes — Title, Heading, Subheading, Body and Monospaced — from the toolbar or ⇧⌘T / ⇧⌘H / ⇧⌘J / ⇧⌘B / ⇧⌘M. Return after a heading drops back to Body.

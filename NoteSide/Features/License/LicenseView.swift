@@ -10,7 +10,7 @@ struct LicenseView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
                 header
 
                 if isActivated {
@@ -19,7 +19,7 @@ struct LicenseView: View {
                     licenseCard
                 }
             }
-            .padding(28)
+            .padding(Spacing.xl)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(background)
@@ -34,7 +34,7 @@ struct LicenseView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("NoteSide")
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(NoteSideTheme.primaryText)
@@ -65,7 +65,7 @@ struct LicenseView: View {
     }
 
     private var successCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Spacing.md) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(NoteSideTheme.success)
@@ -88,17 +88,17 @@ struct LicenseView: View {
             .padding(.top, Spacing.xxs)
         }
         .frame(maxWidth: .infinity)
-        .padding(28)
+        .padding(Spacing.xl)
         .cardSurface(cornerRadius: CornerRadius.sheet)
     }
 
     private var licenseCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Label("License Key", systemImage: "key")
                 .font(.headline)
                 .foregroundStyle(NoteSideTheme.primaryText)
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 TextField("Paste your license key…", text: $licenseKey)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.large)
@@ -116,7 +116,7 @@ struct LicenseView: View {
                     }
 
                 if let errorMessage {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Spacing.xs) {
                         Image(systemName: "exclamationmark.triangle.fill")
                         Text(errorMessage)
                     }
@@ -133,7 +133,7 @@ struct LicenseView: View {
                 }
             }
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface(cornerRadius: CornerRadius.sheet)
     }

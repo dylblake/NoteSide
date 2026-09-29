@@ -48,4 +48,23 @@ final class NoteSideUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["NoteSide"].waitForExistence(timeout: 5), "Onboarding window did not open")
     }
+
+    /// Permissions & Setup shows one summary row per capability, with the
+    /// per-app detail folded behind disclosures.
+    func testPermissionsWindowShowsSummaryRowsWithFoldedDetail() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UITEST_LAUNCH_ACTION"] = "onboarding"
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["How it works"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Permissions"].exists)
+        for title in ["Accessibility", "Finder & Xcode", "Voice Dictation"] {
+            XCTAssertTrue(app.staticTexts[title].firstMatch.exists, "\(title) summary row missing")
+        }
+
+        let dictationDisclosure = app.descendants(matching: .any).matching(identifier: "dictationDetailsDisclosure").firstMatch
+        XCTAssertTrue(dictationDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Try a Note"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["Done"].firstMatch.exists || app.buttons["Get Started"].firstMatch.exists)
+    }
 }

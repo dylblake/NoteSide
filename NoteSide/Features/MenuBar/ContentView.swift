@@ -185,7 +185,7 @@ struct ContentView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Spacing.sm) {
             Image(systemName: "note.text")
                 .font(.system(size: 36))
                 .foregroundStyle(.tertiary)
@@ -200,12 +200,12 @@ struct ContentView: View {
                 .frame(maxWidth: 380)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 80)
-        .padding(.horizontal, 40)
+        .padding(.top, Spacing.xxl)
+        .padding(.horizontal, Spacing.xl)
     }
 
     private var noResultsView: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Spacing.xs) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 28))
                 .foregroundStyle(.tertiary)
@@ -215,7 +215,7 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        .padding(.top, Spacing.xxl)
     }
 
     private var viewModeToggle: some View {
@@ -281,7 +281,7 @@ private struct NoteTileSection: View {
     let section: NoteSection
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text(section.title)
                 .font(.title2.weight(.bold))
 
@@ -291,7 +291,7 @@ private struct NoteTileSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 ForEach(section.groups) { group in
                     NoteGroupTile(group: group)
                         .environment(appState)
@@ -312,7 +312,7 @@ private struct NoteGroupTile: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             if !group.title.isEmpty {
                 Text(group.title)
                     .font(.headline)
@@ -346,7 +346,7 @@ private struct NoteTile: View {
     let note: ContextNote
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: Spacing.sm) {
             NoteSelectionCheckbox(noteID: note.id)
                 .environment(appState)
 
@@ -355,7 +355,7 @@ private struct NoteTile: View {
     }
 
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             headerRow
 
             if !note.body.isEmpty {
@@ -376,7 +376,7 @@ private struct NoteTile: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .padding(14)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tileBackground)
         .contentShape(Rectangle())
@@ -386,7 +386,7 @@ private struct NoteTile: View {
     }
 
     private var headerRow: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: Spacing.xs) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(primaryTitle)
                     .font(.headline)
@@ -550,7 +550,7 @@ private struct NoteListSection: View {
     let section: NoteSection
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text(section.title)
                 .font(.title2.weight(.bold))
 
@@ -560,7 +560,7 @@ private struct NoteListSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 ForEach(section.groups) { group in
                     NoteListGroup(group: group)
                         .environment(appState)
@@ -576,7 +576,7 @@ private struct NoteListGroup: View {
     let group: NoteSectionGroup
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             if !group.title.isEmpty {
                 Text(group.title)
                     .font(.headline)
@@ -592,7 +592,7 @@ private struct NoteListGroup: View {
                     .textSelection(.enabled)
             }
 
-            VStack(spacing: 6) {
+            VStack(spacing: Spacing.xs) {
                 ForEach(group.notes) { note in
                     NoteListRow(note: note)
                         .environment(appState)
@@ -612,7 +612,7 @@ private struct NoteListRow: View {
     private var tint: Color { NoteCardStyle.tint(for: note) }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: Spacing.sm) {
             NoteSelectionCheckbox(noteID: note.id)
                 .environment(appState)
 
@@ -621,8 +621,8 @@ private struct NoteListRow: View {
     }
 
     private var rowContent: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 12) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(alignment: .center, spacing: Spacing.sm) {
                 Circle()
                     .fill(tint)
                     .frame(width: 8, height: 8)
@@ -664,16 +664,16 @@ private struct NoteListRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .padding(.leading, 20)
+                    .padding(.leading, Spacing.lg)
             }
 
             if !note.tags.isEmpty {
                 NoteTagPills(tags: note.tags, limit: 3)
-                    .padding(.leading, 20)
+                    .padding(.leading, Spacing.lg)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.control + 2, style: .continuous)
@@ -704,7 +704,7 @@ private struct TagSearchField: View {
     @State private var shouldPlaceCursor = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Spacing.xs) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
@@ -860,13 +860,13 @@ private struct NoteTagPills: View {
     var limit: Int = 10
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.xs) {
             ForEach(tags.prefix(limit), id: \.self) { tag in
                 Text("#\(tag)")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(NoteSideTheme.accent)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule(style: .continuous)
                             .fill(NoteSideTheme.accent.opacity(0.15))

@@ -6,16 +6,16 @@ struct InfoView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
                     header
                     privacyCard
                 }
-                .padding(28)
+                .padding(Spacing.xl)
             }
 
             footer
-                .padding(.horizontal, 28)
-                .padding(.bottom, 18)
+                .padding(.horizontal, Spacing.xl)
+                .padding(.bottom, Spacing.md)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(background)
@@ -27,7 +27,7 @@ struct InfoView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("NoteSide")
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(NoteSideTheme.primaryText)
@@ -40,12 +40,12 @@ struct InfoView: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .trailing, spacing: 6) {
+        VStack(alignment: .trailing, spacing: Spacing.xs) {
             Text("Version \(appState.appVersionDisplay)")
                 .font(.footnote)
                 .foregroundStyle(NoteSideTheme.tertiaryText)
 
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.sm) {
                 footerLink("Privacy Settings", destination: "https://www.dylblake.dev/noteside/privacy-settings")
             }
         }
@@ -54,7 +54,7 @@ struct InfoView: View {
 
     private var privacyCard: some View {
         infoCard(title: "Privacy", systemImage: "hand.raised") {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 bullet("Notes are stored locally on this Mac.")
                 bullet("Accessibility is only used for the hotkey and context detection.")
                 bullet("Browser Automation is only used to read the active tab URL for supported browsers.")
@@ -68,24 +68,24 @@ struct InfoView: View {
         systemImage: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Label(title, systemImage: systemImage)
                 .font(.headline)
                 .foregroundStyle(NoteSideTheme.primaryText)
 
             content()
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface(cornerRadius: CornerRadius.sheet)
     }
 
     private func bullet(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: Spacing.sm) {
             Circle()
                 .fill(NoteSideTheme.secondaryText)
                 .frame(width: 5, height: 5)
-                .padding(.top, 7)
+                .padding(.top, Spacing.xs)
 
             Text(text)
                 .font(.subheadline)
