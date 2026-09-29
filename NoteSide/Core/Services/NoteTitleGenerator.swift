@@ -17,6 +17,17 @@ final class NoteTitleGenerator: TitleGenerating {
     static let minimumBodyLength = 20
 
     func generateTitle(body: String, context: NoteContext) async -> String? {
+        #if DEBUG
+        // UI-test hook: a fixed title after a model-like delay
+        // (`UITEST_GENERATED_TITLE_DELAY_MS`, default 800), so the reveal
+        // can be measured deterministically.
+        let environment = ProcessInfo.processInfo.environment
+        if let stub = environment["UITEST_GENERATED_TITLE"] {
+            let delay = environment["UITEST_GENERATED_TITLE_DELAY_MS"].flatMap(Int.init) ?? 800
+            try? await Task.sleep(for: .milliseconds(delay))
+            return stub
+        }
+        #endif
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
 
         #if canImport(FoundationModels)

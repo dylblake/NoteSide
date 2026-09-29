@@ -4,26 +4,106 @@ import QuartzCore
 /// Shared animation vocabulary for the edge panels (note editor and All
 /// Notes), so the two controllers can't drift apart.
 ///
-/// Fast enough that the drawer reads as instant — this is the app's
-/// signature interaction — while the soft ease-out keeps the settle from
-/// feeling abrupt. Present is slightly longer than dismiss because the
-/// eye reads "appear" as the more meaningful event.
+/// The panels slide, fully opaque, on a gentle ease-out: they leave the
+/// edge the moment they're asked to move and slow evenly to a stop. A
+/// panel travels its whole width, so a strong ease-out (quint, the iOS
+/// sheet curve) is wrong here: it covers 90% of the distance in the first
+/// ~35% of the time and creeps through the rest, which reads as a pop and
+/// a drift rather than a slide. Dismiss is shorter than present because
+/// the eye reads "appear" as the more meaningful event.
+/// `PanelAnimationCurveTests` and `PanelMotionUITests` hold these to
+/// measured limits, so a change that makes the drawer lag, lurch or stall
+/// fails a test.
 @MainActor
 enum PanelAnimation {
-    static let presentDuration: TimeInterval = 0.28
+    static let presentDuration: TimeInterval = 0.3
     static let dismissDuration: TimeInterval = 0.22
     static let reducedMotionFadeDuration: TimeInterval = 0.15
+    /// How long a panel that has moved to another display waits there,
+    /// invisible, before it slides in (see
+    /// `NoteEditorPanelController.repositionToActiveScreenIfNeeded`).
+    static let displaySwitchSettle: TimeInterval = 0.25
 
-    /// Width of the edge sliver a panel collapses to / expands from.
-    static let collapsedWidth: CGFloat = 28
-
-    /// Gentle decel ("ease out quint") for present and expansion.
-    static let smoothEaseOut = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
-    /// Mirrored accel for dismiss, so the panel speeds up as it leaves.
-    static let smoothEaseIn = CAMediaTimingFunction(controlPoints: 0.7, 0.0, 0.84, 0.0)
+    /// Ease-out quad for every panel move, in and out: peaks at ~1.9× the
+    /// average speed, at the start, and decelerates evenly.
+    static let slideCurve = CAMediaTimingFunction(controlPoints: 0.5, 1, 0.89, 1)
 
     static var prefersReducedMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    /// Floor for a retargeted slide, so a reversal that's nearly done
+    /// still reads as motion rather than a snap.
+    static let minimumRetargetDuration: TimeInterval = 0.1
+
+    /// Duration for a slide that only covers part of the full distance,
+    /// so a reversed panel keeps the same pace instead of crawling.
+    static func duration(_ full: TimeInterval, remaining: CGFloat, of total: CGFloat) -> TimeInterval {
+        guard total > 0 else { return full }
+        let fraction = Double(min(max(remaining / total, 0), 1))
+        return max(full * fraction, minimumRetargetDuration)
+    }
+
+    /// Present/dismiss move the panel's hosting layer, never the window:
+    /// the window sits at its final frame, so SwiftUI lays the content out
+    /// once instead of on every frame, and the window clips the layer so
+    /// nothing bleeds onto an adjacent display.
+    private static let slideKey = "panelSlide"
+
+    /// Pins `panel`'s content at `x` until a slide replaces it, so a window
+    /// can be ordered front without flashing its settled content first.
+    static func hold(_ panel: NSWindow, atX x: CGFloat) {
+        guard let layer = panel.contentView?.layer else { return }
+        let animation = CABasicAnimation(keyPath: "transform.translation.x")
+        animation.fromValue = x
+        animation.toValue = x
+        animation.duration = 3600
+        animation.fillMode = .forwards
+        animation.isRemovedOnCompletion = false
+        layer.add(animation, forKey: slideKey)
+    }
+
+    /// Slides `panel`'s content layer and returns how long until it has
+    /// finished, for completion timing. Call it after the window is front
+    /// and key, right before the transaction is flushed.
+    @discardableResult
+    static func slide(_ panel: NSWindow, fromX: CGFloat, toX: CGFloat, duration: TimeInterval) -> TimeInterval {
+        guard let layer = panel.contentView?.layer else { return 0 }
+        // The start time is explicit, taken just before the commit: an
+        // animation left to pick up its start time at commit restarts from
+        // zero whenever the layer tree is re-committed (a window turning
+        // key can do it), and one timed any earlier — say, before the 50ms
+        // or so it takes to order a window front — would already be well
+        // into the curve by its first frame. That frame still reaches the
+        // screen a refresh or two after the commit, so the clock starts one
+        // refresh late, holding the start value until then; otherwise the
+        // first visible frame lands on the curve's fastest part, a lurch.
+        let startDelay = panel.screen?.minimumRefreshInterval ?? (1.0 / 60)
+        let animation = CABasicAnimation(keyPath: "transform.translation.x")
+        animation.fromValue = fromX
+        animation.toValue = toX
+        animation.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) + startDelay
+        animation.duration = duration
+        animation.timingFunction = slideCurve
+        // Hold the start value until the clock starts, and the end value
+        // afterwards: a dismissed panel must stay off-screen until it's
+        // ordered out. `clearSlide` removes it once it's settled.
+        animation.fillMode = .both
+        animation.isRemovedOnCompletion = false
+        layer.add(animation, forKey: slideKey)
+        return startDelay + duration
+    }
+
+    static func clearSlide(_ layer: CALayer) {
+        layer.removeAnimation(forKey: slideKey)
+    }
+
+    /// Where the layer is on screen right now (0 = settled). Reading the
+    /// presentation layer lets a new slide start from the live position
+    /// instead of jumping.
+    static func currentOffset(of layer: CALayer) -> CGFloat {
+        let value = layer.presentation()?.value(forKeyPath: "transform.translation.x") as? NSNumber
+        return CGFloat(value?.doubleValue ?? 0)
     }
 }
 

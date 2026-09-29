@@ -8,10 +8,17 @@
 - **Note This in NoteSide** appears in every app's Services menu, so a selection can be sent over without Accessibility access.
 - Safari and native apps hand the selection over through Accessibility. Chromium browsers (Chrome, Edge, Brave, Arc, Vivaldi) don't expose it that way, so NoteSide briefly copies the selection and then restores whatever was on your clipboard.
 - Clicking a NoteSide window while the drawer is open no longer re-attaches the note to NoteSide itself.
-- **The drawer opens already loaded.** Context, title, content and any selected passage are resolved before the drawer slides in (capped at 200 ms so a busy app can never stall the hotkey), so there is no lighter "loading" state and nothing pops in afterwards.
-- With automatic titles on, the title field no longer shows a "Title" placeholder first: it stays blank until the generated title eases in (fade, settle, blur-to-sharp; a plain fade under Reduce Motion). Stored titles still appear instantly.
+- With automatic titles on, an empty title shows nothing (no "Title" placeholder waiting to be replaced) unless you're typing in it; the generated title simply fades in when it's ready. Stored titles still appear instantly.
 - **Click outside to close.** A click elsewhere on the same display saves and dismisses the note drawer, and closes All Notes; a click on another display moves the panel there, as before.
 - Web notes now reopen in the browser they were captured in, not the default browser.
+
+### The drawer answers the hotkey
+- **The drawer slides in the moment you press the hotkey** (about 40 ms, including the first press after launch), on the app you're in; the page, file or channel and any selected passage land within its first frames.
+- A **natural slide**: the drawer moves as one opaque sheet, laid out once at its final width, and slows evenly to a stop — no pop, no creep, no text reflowing mid-slide. It closes the same way, and pressing the hotkey mid-slide reverses it from where it is.
+- **Looks active from its first frame**, rather than in the lighter inactive style until it settles — Chromium browsers get their copy request first, so the drawer can take focus almost at once.
+- **Follows you to another display with the same slide**, instead of jumping into place; All Notes does too.
+- All Notes cards respond to hover and press.
+- The drawer's motion is covered by frame-by-frame UI tests, so a change that makes it lag, lurch or flash fails the build.
 
 ### Notes stay attached to the page, not the link
 - Web notes now key on a **canonical page identity**: session tokens (Figma's `t=`), analytics tags (`utm_*`, `fbclid`, …), renamed slugs (Figma, Notion, Google Docs) and share suffixes no longer split one page into several notes or hide the note you already wrote. Hash-routed apps such as Gmail keep their fragment.
