@@ -8,3 +8,6 @@ xcuserdata/
 # macOS junk
 .DS_Store
 keys/
+
+# Claude Code local/personal settings (per-developer permission allowlist)
+.claude/settings.local.json

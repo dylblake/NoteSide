@@ -224,7 +224,37 @@ final class AppState {
                 self?.presentFirstRunWindow()
             }
         }
+
+        #if DEBUG
+        // UI-test hook: lets XCUITest drive a real window deterministically
+        // instead of through the MenuBarExtra status item, which doesn't
+        // reliably report its popover window to the accessibility tree.
+        if let action = ProcessInfo.processInfo.environment["UITEST_LAUNCH_ACTION"] {
+            DispatchQueue.main.async { [weak self] in
+                self?.performUITestLaunchAction(action)
+            }
+        }
+        #endif
     }
+
+    #if DEBUG
+    private func performUITestLaunchAction(_ action: String) {
+        switch action {
+        case "allNotes":
+            openAllNotes()
+        case "onboarding":
+            showOnboarding()
+        case "info":
+            showInfoWindow()
+        case "quickNote":
+            toggleQuickNote()
+        case "license":
+            presentLicenseWindow()
+        default:
+            break
+        }
+    }
+    #endif
 
     convenience init() {
         self.init(

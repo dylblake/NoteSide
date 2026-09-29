@@ -57,6 +57,33 @@ The app prompts for these when needed.
 3. Build and run on `My Mac`.
 4. Grant Accessibility and browser Automation permissions when prompted.
 
+## Testing
+
+- Unit tests: `NoteSideTests`
+- UI tests: `NoteSideUITests` (XCUITest — there is no web frontend to drive with Playwright; the UI is native SwiftUI/AppKit)
+
+Run from the command line (no need to open Xcode first):
+
+```sh
+xcodebuild -project NoteSide.xcodeproj -scheme NoteSide -destination 'platform=macOS' test
+```
+
+Run a single target:
+
+```sh
+xcodebuild -project NoteSide.xcodeproj -scheme NoteSide -destination 'platform=macOS' test -only-testing:NoteSideUITests
+```
+
+NoteSide is a menu-bar-only (`LSUIElement`) app with no Dock icon or main window, and SwiftUI's `MenuBarExtra(.window)` popover doesn't reliably expose itself to the accessibility tree under XCUITest. So UI tests don't click the status item to reach app content — in `DEBUG` builds only, `AppState` reads a `UITEST_LAUNCH_ACTION` launch environment variable (`allNotes`, `onboarding`, `info`, `quickNote`, `license`) and opens that window directly on launch:
+
+```swift
+let app = XCUIApplication()
+app.launchEnvironment["UITEST_LAUNCH_ACTION"] = "allNotes"
+app.launch()
+```
+
+This hook is compiled out of Release/MAS builds.
+
 ## Version
 
 <!-- VERSION_BLOCK_START -->
