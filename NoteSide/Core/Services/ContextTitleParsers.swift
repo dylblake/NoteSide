@@ -393,3 +393,40 @@ nonisolated enum TerminalTitleParser {
         return nil
     }
 }
+
+/// Reads the conversation out of a Slack client URL and turns it into a
+/// deep link. The desktop app is the web client in a shell, and its web
+/// area reports `https://app.slack.com/client/<team>/<conversation>/…`
+/// (a trailing `thread/…` or `user_profile/…` names the side pane, not
+/// the conversation). Slack's documented deep links open a channel or DM
+/// by id, `slack://channel?team=T…&id=C…`; there is none for a thread,
+/// so a thread note reopens on its conversation.
+nonisolated enum SlackClientURL {
+    struct Location: Equatable {
+        let teamID: String
+        let conversationID: String?
+    }
+
+    static func location(from url: URL) -> Location? {
+        guard let host = url.host()?.lowercased(), host == "app.slack.com" else { return nil }
+        let path = url.path(percentEncoded: false).split(separator: "/").map(String.init)
+        guard path.count >= 2, path[0] == "client", isID(path[1], prefixes: "TE") else { return nil }
+        let conversation = path.count >= 3 && isID(path[2], prefixes: "CDG") ? path[2] : nil
+        return Location(teamID: path[1], conversationID: conversation)
+    }
+
+    /// `slack://channel` for a conversation (channels, private channels
+    /// and DMs all have channel ids); `slack://open` for the workspace
+    /// when only the team is known (Activity, Later, Unreads).
+    static func deepLink(for location: Location) -> String {
+        if let conversationID = location.conversationID {
+            return "slack://channel?team=\(location.teamID)&id=\(conversationID)"
+        }
+        return "slack://open?team=\(location.teamID)"
+    }
+
+    private static func isID(_ string: String, prefixes: String) -> Bool {
+        guard let first = string.first, prefixes.contains(first), string.count >= 5 else { return false }
+        return string.allSatisfy { $0.isASCII && ($0.isUppercase || $0.isNumber) }
+    }
+}

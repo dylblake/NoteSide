@@ -4,6 +4,7 @@
 
 ### Designer, developer and student workflows
 - **Terminals**: notes in Terminal, iTerm2, Ghostty, Warp, kitty, WezTerm and Alacritty attach to the project the shell is in (the enclosing repository, so `cd src` keeps the same note) and reopen as a new terminal window there. iTerm2 asks once for Automation access to read the session's directory.
+- **Slack notes reopen their conversation**: clicking one in All Notes switches Slack to the channel or DM it was written in, so the note opens in place instead of on whatever channel Slack last showed. A note written with a thread open reopens on that thread's channel, since Slack has no link that opens a thread. Existing Slack notes gain the link the next time they're opened in Slack.
 - **Cursor**, Windsurf and VSCodium are recognised as code editors, like VS Code.
 - **Linear**: the desktop app attaches notes per issue or project, sharing one note with the same issue opened in a browser, and reopens it in the desktop app. Renaming an issue or project no longer orphans its note.
 - **GitHub**: a pull request, issue or discussion is one note across its tabs (Conversation, Files, Commits), and owner/repo case no longer matters.

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NoteSide
 
@@ -171,5 +172,35 @@ struct TerminalTitleParserTests {
         #expect(TerminalTitleParser.directoryPath(in: "app — -zsh — 80×24", homeDirectory: home) == nil)
         #expect(TerminalTitleParser.directoryPath(in: "vim", homeDirectory: home) == nil)
         #expect(TerminalTitleParser.directoryPath(in: "/", homeDirectory: home) == nil)
+    }
+}
+
+struct SlackClientURLTests {
+    private func link(_ string: String) -> String? {
+        SlackClientURL.location(from: URL(string: string)!).map(SlackClientURL.deepLink(for:))
+    }
+
+    @Test func channelAndDMOpenTheConversation() {
+        #expect(link("https://app.slack.com/client/T0AR0MQEYLS/C024BE91L") == "slack://channel?team=T0AR0MQEYLS&id=C024BE91L")
+        #expect(link("https://app.slack.com/client/T0AR0MQEYLS/D024BE91L") == "slack://channel?team=T0AR0MQEYLS&id=D024BE91L")
+        #expect(link("https://app.slack.com/client/E0ENTERPR/G024BE91L") == "slack://channel?team=E0ENTERPR&id=G024BE91L")
+    }
+
+    @Test func threadPaneReopensItsConversation() {
+        #expect(
+            link("https://app.slack.com/client/T0AR0MQEYLS/C024BE91L/thread/C024BE91L-1712345678.123456")
+                == "slack://channel?team=T0AR0MQEYLS&id=C024BE91L"
+        )
+    }
+
+    @Test func workspaceViewsOpenTheWorkspace() {
+        #expect(link("https://app.slack.com/client/T0AR0MQEYLS/unreads") == "slack://open?team=T0AR0MQEYLS")
+        #expect(link("https://app.slack.com/client/T0AR0MQEYLS") == "slack://open?team=T0AR0MQEYLS")
+    }
+
+    @Test func nonClientURLsAreIgnored() {
+        // What the signed-out app reports: no conversation to reopen.
+        #expect(link("https://app.slack.com/ssb/first?team=T0AR0MQEYLS") == nil)
+        #expect(link("https://acme.slack.com/archives/C024BE91L") == nil)
     }
 }
