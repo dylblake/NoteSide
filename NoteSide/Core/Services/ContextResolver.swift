@@ -142,7 +142,7 @@ nonisolated struct ContextResolver: Sendable {
         allowBrowserAutomation: Bool
     ) -> NoteContext {
         if let url = axBrowserURLReader.activeURL(for: app) {
-            return webPageContext(for: url)
+            return webPageContext(for: url, sourceBundleIdentifier: bundleIdentifier)
         }
 
         if allowBrowserAutomation {
@@ -153,7 +153,7 @@ nonisolated struct ContextResolver: Sendable {
 
             switch attempt.result {
             case .success(_, let url):
-                return webPageContext(for: url)
+                return webPageContext(for: url, sourceBundleIdentifier: bundleIdentifier)
             case .noTab:
                 return NoteContext(
                     kind: .application,
@@ -181,7 +181,9 @@ nonisolated struct ContextResolver: Sendable {
         )
     }
 
-    private func webPageContext(for url: URL) -> NoteContext {
+    /// `sourceBundleIdentifier` records the browser the page was captured
+    /// in so the note reopens there rather than in the default browser.
+    private func webPageContext(for url: URL, sourceBundleIdentifier: String? = nil) -> NoteContext {
         let host = normalizedHost(for: url)
         let navigationURL = URLCanonicalizer.navigationURL(for: url).absoluteString
         return NoteContext(
@@ -189,7 +191,8 @@ nonisolated struct ContextResolver: Sendable {
             identifier: pageIdentifier(for: url),
             displayName: host ?? displayName(for: url),
             secondaryLabel: navigationURL,
-            navigationTarget: navigationURL
+            navigationTarget: navigationURL,
+            sourceBundleIdentifier: sourceBundleIdentifier
         )
     }
 

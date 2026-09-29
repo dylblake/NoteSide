@@ -42,6 +42,11 @@ struct RichTextEditor: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
         textView.defaultParagraphStyle = controller.defaultParagraphStyle
         textView.typingAttributes = controller.defaultTypingAttributes
+        textView.linkTextAttributes = [
+            .foregroundColor: NSColor.controlAccentColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .cursor: NSCursor.pointingHand
+        ]
         textView.setAccessibilityIdentifier("noteEditorTextView")
         textView.setAccessibilityLabel("Note body")
         textView.textStorage?.setAttributedString(controller.normalizedAttributedText(attributedText))
@@ -63,6 +68,10 @@ struct RichTextEditor: NSViewRepresentable {
         scrollView.documentView = textView
         controller.attach(textView)
         Coordinator.colorTags(in: textView)
+        if controller.wantsCaretAtEndAfterSync {
+            controller.wantsCaretAtEndAfterSync = false
+            textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+        }
         DispatchQueue.main.async {
             controller.notifySelectionAttributesChange()
         }
@@ -80,6 +89,12 @@ struct RichTextEditor: NSViewRepresentable {
             textView.typingAttributes = controller.defaultTypingAttributes
             Coordinator.colorTags(in: textView)
             scrollView.contentView.setBoundsOrigin(savedOrigin)
+            if controller.wantsCaretAtEndAfterSync {
+                controller.wantsCaretAtEndAfterSync = false
+                let end = NSRange(location: (textView.string as NSString).length, length: 0)
+                textView.setSelectedRange(end)
+                textView.scrollRangeToVisible(end)
+            }
             DispatchQueue.main.async {
                 controller.notifySelectionAttributesChange()
             }
@@ -125,6 +140,13 @@ struct RichTextEditor: NSViewRepresentable {
             if parent.controller.handleAutoListTrigger(for: affectedCharRange, replacementString: replacementString) {
                 return false
             }
+            return true
+        }
+
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            let url = (link as? URL) ?? (link as? String).flatMap { URL(string: $0) }
+            guard let url else { return false }
+            parent.controller.onOpenLink?(url)
             return true
         }
 
@@ -205,6 +227,7 @@ private final class EditorTextView: NSTextView {
         case ("7", [.command, .shift]): command = .toggleList(.bulleted)
         case ("9", [.command, .shift]): command = .toggleList(.numbered)
         case ("t", [.command, .option]): command = .insertTable
+        case ("q", [.command, .shift]): command = .quoteSelection
         case ("=", [.command]), ("+", [.command]), ("=", [.command, .shift]): command = .zoomIn
         case ("-", [.command]): command = .zoomOut
         case ("0", [.command]): command = .resetZoom

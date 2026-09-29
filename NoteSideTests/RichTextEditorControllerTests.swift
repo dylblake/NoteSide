@@ -293,6 +293,80 @@ final class RichTextEditorControllerTests: XCTestCase {
         XCTAssertEqual((restored.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as! NSParagraphStyle).headIndent, 26)
     }
 
+    // MARK: Quotes
+
+    private var samplePassage: Passage {
+        Passage(text: "the quick brown fox", sourceURL: URL(string: "https://example.com/story?utm_source=x"))
+    }
+
+    func testInsertQuoteAddsLinkedIndentedParagraphAndBodyLineAfter() throws {
+        load("")
+        controller.insertQuote(samplePassage)
+        XCTAssertEqual(text, "\u{201C}the quick brown fox\u{201D}\n")
+        let link = try XCTUnwrap(textView.attributedString().attribute(.link, at: 1, effectiveRange: nil) as? URL)
+        XCTAssertEqual(link.absoluteString, "https://example.com/story#:~:text=the%20quick%20brown%20fox")
+        XCTAssertEqual(paragraphStyle(at: 0).headIndent, 16)
+        XCTAssertEqual(textView.selectedRange().location, (text as NSString).length, "caret on the line after the quote")
+        XCTAssertNil(textView.typingAttributes[.link])
+        XCTAssertEqual((textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.headIndent, 0, "next paragraph is Body")
+    }
+
+    func testInsertQuoteAfterExistingParagraphKeepsExistingText() {
+        load("notes so far")
+        caret(5)
+        controller.insertQuote(samplePassage)
+        XCTAssertEqual(text, "notes so far\n\u{201C}the quick brown fox\u{201D}\n")
+    }
+
+    func testReturnAtEndOfQuoteDropsToBody() {
+        load("")
+        controller.insertQuote(samplePassage)
+        let quoteEnd = (text as NSString).length - 1
+        caret(quoteEnd)
+        XCTAssertTrue(controller.handleReturn())
+        XCTAssertEqual((textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.headIndent, 0)
+        XCTAssertNil(textView.typingAttributes[.link])
+    }
+
+    func testAppendingQuoteKeepsExistingNoteAndLinks() throws {
+        let existing = NSAttributedString(string: "first thought", attributes: controller.defaultTypingAttributes)
+        let appended = controller.appendingQuote(samplePassage, to: existing)
+        XCTAssertEqual(appended.string, "first thought\n\u{201C}the quick brown fox\u{201D}\n")
+        let linkLocation = (appended.string as NSString).range(of: "quick").location
+        XCTAssertEqual((appended.attribute(.link, at: linkLocation, effectiveRange: nil) as? URL)?.absoluteString, "https://example.com/story#:~:text=the%20quick%20brown%20fox")
+        XCTAssertEqual((appended.attribute(.paragraphStyle, at: linkLocation, effectiveRange: nil) as? NSParagraphStyle)?.headIndent, 16)
+        XCTAssertEqual((appended.attribute(.font, at: linkLocation, effectiveRange: nil) as? NSFont)?.pointSize, 15, "canonical size, not zoomed")
+
+        let twice = controller.appendingQuote(Passage(text: "second", sourceURL: nil), to: appended)
+        XCTAssertEqual(twice.string, "first thought\n\u{201C}the quick brown fox\u{201D}\n\u{201C}second\u{201D}\n")
+        XCTAssertEqual(controller.appendingQuote(samplePassage, to: NSAttributedString()).string, "\u{201C}the quick brown fox\u{201D}\n")
+    }
+
+    func testQuoteQueuedUntilTextViewAttaches() {
+        let detached = RichTextEditorController()
+        detached.insertQuote(samplePassage)
+        let view = NSTextView(usingTextLayoutManager: false)
+        view.isRichText = true
+        view.typingAttributes = detached.defaultTypingAttributes
+        detached.attach(view)
+        let flushed = expectation(description: "queued passage inserted after attach")
+        DispatchQueue.main.async { flushed.fulfill() }
+        wait(for: [flushed], timeout: 2)
+        XCTAssertEqual(view.string, "\u{201C}the quick brown fox\u{201D}\n")
+    }
+
+    func testQuoteLinkSurvivesRTFRoundTrip() throws {
+        load("")
+        controller.insertQuote(samplePassage)
+        let canonical = try XCTUnwrap(controller.currentAttributedText())
+        let rtf = try canonical.data(from: NSRange(location: 0, length: canonical.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+        let restored = controller.normalizedAttributedText(try NSAttributedString(data: rtf, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil))
+        let link = restored.attribute(.link, at: 1, effectiveRange: nil)
+        let linkString = (link as? URL)?.absoluteString ?? (link as? String)
+        XCTAssertEqual(linkString, "https://example.com/story#:~:text=the%20quick%20brown%20fox")
+        XCTAssertEqual((restored.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?.headIndent, 16)
+    }
+
     // MARK: Tables
 
     func testInsertTableCreatesCellsAndExitParagraph() {

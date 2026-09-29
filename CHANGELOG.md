@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Passages: quote the selection, reopen the exact spot
+- Select text in any app, press the hotkey, and the selection lands in the note as a **quoted passage**. On a web page the quote links to that exact passage, and clicking it reopens the page in the browser it came from, scrolled to and highlighting the text.
+- Every capture on the same page, app or file lands in that context's one note: a second selection is appended beneath the first, never replacing it. **Quote Selection** (⇧⌘Q or the toolbar) grabs the current selection at any time.
+- **Note This in NoteSide** appears in every app's Services menu, so a selection can be sent over without Accessibility access.
+- Safari and native apps hand the selection over through Accessibility. Chromium browsers (Chrome, Edge, Brave, Arc, Vivaldi) don't expose it that way, so NoteSide briefly copies the selection and then restores whatever was on your clipboard.
+- Clicking a NoteSide window while the drawer is open no longer re-attaches the note to NoteSide itself.
+- **The drawer opens already loaded.** Context, title, content and any selected passage are resolved before the drawer slides in (capped at 200 ms so a busy app can never stall the hotkey), so there is no lighter "loading" state and nothing pops in afterwards.
+- With automatic titles on, the title field no longer shows a "Title" placeholder first: it stays blank until the generated title eases in (fade, settle, blur-to-sharp; a plain fade under Reduce Motion). Stored titles still appear instantly.
+- **Click outside to close.** A click elsewhere on the same display saves and dismisses the note drawer, and closes All Notes; a click on another display moves the panel there, as before.
+- Web notes now reopen in the browser they were captured in, not the default browser.
+
 ### Notes stay attached to the page, not the link
 - Web notes now key on a **canonical page identity**: session tokens (Figma's `t=`), analytics tags (`utm_*`, `fbclid`, …), renamed slugs (Figma, Notion, Google Docs) and share suffixes no longer split one page into several notes or hide the note you already wrote. Hash-routed apps such as Gmail keep their fragment.
 - On first launch after updating, notes that had been split across variants of the same URL are **merged into one** (newest first, separated by a divider). The notes file moves to schema version 2.

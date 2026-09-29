@@ -4,8 +4,15 @@ import NaturalLanguage
 import FoundationModels
 #endif
 
+/// Anything that can propose a title; the editor depends on this so tests
+/// can substitute a stub for the on-device model.
 @MainActor
-final class NoteTitleGenerator {
+protocol TitleGenerating: AnyObject {
+    func generateTitle(body: String, context: NoteContext) async -> String?
+}
+
+@MainActor
+final class NoteTitleGenerator: TitleGenerating {
 
     static let minimumBodyLength = 20
 

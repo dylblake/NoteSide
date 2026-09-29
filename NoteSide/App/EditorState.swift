@@ -9,6 +9,7 @@ import AppKit
 import ApplicationServices
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -29,7 +30,20 @@ final class EditorState {
     @ObservationIgnored let richTextController: RichTextEditorController
     @ObservationIgnored let contextResolver: ContextResolver
     @ObservationIgnored let browserPermissions: BrowserPermissionsState
-    @ObservationIgnored let titleGenerator: NoteTitleGenerator
+    @ObservationIgnored let titleGenerator: any TitleGenerating
+    /// Bumped only when a *generated* title lands in an empty field, so the
+    /// view can ease it in; loading a stored title never bumps it.
+    private(set) var titleRevealToken = 0
+
+    enum TitleGeneration: Equatable {
+        /// Nothing requested yet for this note (the drawer is still opening).
+        case idle
+        case generating
+        /// The generator answered (or had nothing to say).
+        case finished
+    }
+    private(set) var titleGeneration: TitleGeneration = .idle
+    var isGeneratingTitle: Bool { titleGeneration == .generating }
     @ObservationIgnored var isAutoTitleEnabled: () -> Bool
 
     static let intraAppPollingBundleIdentifiers: Set<String> = [
@@ -48,7 +62,7 @@ final class EditorState {
         richTextController: RichTextEditorController,
         contextResolver: ContextResolver,
         browserPermissions: BrowserPermissionsState,
-        titleGenerator: NoteTitleGenerator,
+        titleGenerator: any TitleGenerating,
         isAutoTitleEnabled: @escaping () -> Bool = { true }
     ) {
         self.notesState = notesState
@@ -67,6 +81,8 @@ final class EditorState {
 
     func loadEditorState(for context: NoteContext) {
         cancelAutosave()
+        titleGeneration = .idle
+        richTextController.discardQueuedPassages()
         let existingNote = notesState.note(for: context)
         editorAttributedText = attributedText(for: context)
         editorTitle = existingNote?.title ?? ""
@@ -76,6 +92,8 @@ final class EditorState {
 
     func loadEditorState(for note: ContextNote) {
         cancelAutosave()
+        titleGeneration = .idle
+        richTextController.discardQueuedPassages()
         editorAttributedText = attributedText(for: note)
         editorTitle = note.title ?? ""
         editorErrorMessage = nil
@@ -212,6 +230,33 @@ final class EditorState {
         return NSAttributedString(string: note.body)
     }
 
+    // MARK: - Selection capture
+
+    /// Reads the host app's selected text off the main thread. Returns nil
+    /// when nothing is selected or Accessibility isn't granted.
+    func captureSelectionText(from app: NSRunningApplication?) async -> String? {
+        #if DEBUG
+        // UI tests inject the selection; under XCUITest no other app is
+        // frontmost, so this must not depend on `app`.
+        if let injected = ProcessInfo.processInfo.environment["UITEST_SELECTION_TEXT"], !injected.isEmpty {
+            return SelectionReader.normalized(injected)
+        }
+        #endif
+        guard let app else { return nil }
+        let reader = SelectionReader()
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: reader.selectedText(in: app))
+            }
+        }
+    }
+
+    /// The page the active context points at, for building passage links.
+    var activePageURL: URL? {
+        guard let context = activeContext, context.kind == .url else { return nil }
+        return URL(string: context.secondaryLabel ?? context.identifier)
+    }
+
     // MARK: - Context Resolution
 
     func quickApplicationContext(for app: NSRunningApplication?) -> NoteContext {
@@ -283,10 +328,17 @@ final class EditorState {
         return context
     }
 
-    func resolveInitialQuickNoteContextAsync(from fallbackContext: NoteContext, sourceBundleIdentifier: String?) async {
-        guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
+    /// Fast path: the context resolved before the drawer was shown, so
+    /// the first frame already carries the right note.
+    func applyResolvedContextBeforePresenting(_ context: NoteContext) {
+        activeContext = context
+        loadEditorState(for: context)
+    }
 
-        let context = await resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier)
+    /// Slow path: the context resolved after the drawer opened on the
+    /// cheap app-level fallback. Switch only if nothing has been typed.
+    func applyLateResolvedContext(_ context: NoteContext, fallback fallbackContext: NoteContext) {
+        guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
         guard context.id != fallbackContext.id else { return }
 
         let hasUnsavedEditorText = !editorAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -303,6 +355,11 @@ final class EditorState {
         // longer exists), don't let polling switch the editor to whatever app
         // is currently in front.
         if isViewingOrphanedNote { return }
+
+        // Our own windows (All Notes, Settings, the menu bar popover)
+        // coming to the front is not a context change: the note stays on
+        // whatever the user was working in.
+        if context.kind == .application, context.identifier == Bundle.main.bundleIdentifier { return }
 
         // Same logical note (matching id), but the file was renamed/moved or
         // some display field changed. Refresh the active context and rewrite
@@ -435,8 +492,10 @@ final class EditorState {
     // MARK: - Title Generation
 
     func generateTitleIfNeeded(noteID: UUID, body: String, context: NoteContext) {
+        titleGeneration = .generating
         Task { [weak self] in
             guard let self else { return }
+            defer { self.titleGeneration = .finished }
             if let generated = await self.titleGenerator.generateTitle(body: body, context: context) {
                 guard let idx = self.notesState.notes.firstIndex(where: { $0.id == noteID }) else { return }
                 let existing = self.notesState.notes[idx]
@@ -448,20 +507,35 @@ final class EditorState {
                 if self.isEditorPresented,
                    self.activeContext?.id == context.id,
                    self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    self.editorTitle = generated
+                    self.revealGeneratedTitle(generated)
                 }
             }
         }
     }
 
     func generateTitleFromContext(context: NoteContext) {
+        titleGeneration = .generating
         Task { [weak self] in
             guard let self else { return }
+            defer { self.titleGeneration = .finished }
             if let generated = await self.titleGenerator.generateTitle(body: "", context: context) {
                 // Only apply if the user hasn't typed a title in the meantime
-                guard self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                self.editorTitle = generated
+                guard self.isEditorPresented,
+                      self.editorTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                self.revealGeneratedTitle(generated)
             }
+        }
+    }
+
+    /// Eases a generated title into the empty field instead of snapping
+    /// it in; a plain fade under Reduce Motion.
+    private func revealGeneratedTitle(_ title: String) {
+        let animation: Animation = PanelAnimation.prefersReducedMotion
+            ? .easeOut(duration: 0.2)
+            : .easeOut(duration: 0.35)
+        withAnimation(animation) {
+            editorTitle = title
+            titleRevealToken += 1
         }
     }
 }
