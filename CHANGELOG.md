@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Notes stay attached to the page, not the link
+- Web notes now key on a **canonical page identity**: session tokens (Figma's `t=`), analytics tags (`utm_*`, `fbclid`, …), renamed slugs (Figma, Notion, Google Docs) and share suffixes no longer split one page into several notes or hide the note you already wrote. Hash-routed apps such as Gmail keep their fragment.
+- On first launch after updating, notes that had been split across variants of the same URL are **merged into one** (newest first, separated by a divider). The notes file moves to schema version 2.
+
 ### A native, Liquid Glass interface
 - The note drawer and All Notes are now a single **Liquid Glass** sheet that refracts whatever is behind it, with glass capsules for the formatting toolbar, footer actions and dismiss hint.
 - Every window uses system buttons, semantic fonts and system colours, so the app follows your accent colour, Increase Contrast and light/dark mode exactly like the rest of macOS.
