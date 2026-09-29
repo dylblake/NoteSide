@@ -20,6 +20,9 @@ final class EditorState {
     var isEditorPresented = false
     var isViewingOrphanedNote = false
     var isActiveNotePinned = false
+    /// Text selected in the host app when the drawer opened on a note that
+    /// already had content; the editor offers to insert it.
+    var pendingPassage: Passage?
     private var contextPollingTask: Task<Void, Never>?
     private var autosaveTask: Task<Void, Never>?
     private var isResolvingContext = false
@@ -67,6 +70,8 @@ final class EditorState {
 
     func loadEditorState(for context: NoteContext) {
         cancelAutosave()
+        pendingPassage = nil
+        richTextController.discardQueuedPassages()
         let existingNote = notesState.note(for: context)
         editorAttributedText = attributedText(for: context)
         editorTitle = existingNote?.title ?? ""
@@ -76,6 +81,8 @@ final class EditorState {
 
     func loadEditorState(for note: ContextNote) {
         cancelAutosave()
+        pendingPassage = nil
+        richTextController.discardQueuedPassages()
         editorAttributedText = attributedText(for: note)
         editorTitle = note.title ?? ""
         editorErrorMessage = nil
@@ -212,6 +219,33 @@ final class EditorState {
         return NSAttributedString(string: note.body)
     }
 
+    // MARK: - Selection capture
+
+    /// Reads the host app's selected text off the main thread. Returns nil
+    /// when nothing is selected or Accessibility isn't granted.
+    func captureSelectionText(from app: NSRunningApplication?) async -> String? {
+        #if DEBUG
+        // UI tests inject the selection; under XCUITest no other app is
+        // frontmost, so this must not depend on `app`.
+        if let injected = ProcessInfo.processInfo.environment["UITEST_SELECTION_TEXT"], !injected.isEmpty {
+            return SelectionReader.normalized(injected)
+        }
+        #endif
+        guard let app else { return nil }
+        let reader = SelectionReader()
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: reader.selectedText(in: app))
+            }
+        }
+    }
+
+    /// The page the active context points at, for building passage links.
+    var activePageURL: URL? {
+        guard let context = activeContext, context.kind == .url else { return nil }
+        return URL(string: context.secondaryLabel ?? context.identifier)
+    }
+
     // MARK: - Context Resolution
 
     func quickApplicationContext(for app: NSRunningApplication?) -> NoteContext {
@@ -303,6 +337,11 @@ final class EditorState {
         // longer exists), don't let polling switch the editor to whatever app
         // is currently in front.
         if isViewingOrphanedNote { return }
+
+        // Our own windows (All Notes, Settings, the menu bar popover)
+        // coming to the front is not a context change: the note stays on
+        // whatever the user was working in.
+        if context.kind == .application, context.identifier == Bundle.main.bundleIdentifier { return }
 
         // Same logical note (matching id), but the file was renamed/moved or
         // some display field changed. Refresh the active context and rewrite

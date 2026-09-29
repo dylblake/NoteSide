@@ -41,7 +41,10 @@ final class NoteEditorPanelController {
         self.panel = panel
     }
 
-    func present() {
+    /// `makeKey: false` shows the drawer without taking key status, so the
+    /// host app's window keeps it while a selection is read; call
+    /// `makeKeyIfVisible()` afterwards.
+    func present(makeKey: Bool = true) {
         guard let panel, let screen = targetScreen(preferPanelScreen: false) else { return }
         finalizeInFlightTransition()
         animationSequence += 1
@@ -58,7 +61,9 @@ final class NoteEditorPanelController {
         panel.setFrame(reduceMotion ? finalFrame : collapsedFrame(for: screen), display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
-        panel.makeKey()
+        if makeKey {
+            panel.makeKey()
+        }
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = reduceMotion ? PanelAnimation.reducedMotionFadeDuration : PanelAnimation.presentDuration
@@ -73,6 +78,18 @@ final class NoteEditorPanelController {
                 panel.alphaValue = 1
             }
         })
+    }
+
+    func makeKeyIfVisible() {
+        guard let panel, panel.isVisible else { return }
+        panel.makeKey()
+    }
+
+    /// Hands key status back to the host app so it will honour a posted
+    /// ⌘C; the drawer stays on screen (it never activates NoteSide).
+    func yieldKey(to app: NSRunningApplication?) {
+        guard let app, panel?.isKeyWindow == true else { return }
+        app.activate()
     }
 
     /// Captures the panel's current visual state into an NSImage. Used by

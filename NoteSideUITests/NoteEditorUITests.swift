@@ -253,6 +253,26 @@ final class NoteEditorUITests: XCTestCase {
         XCTAssertTrue(editorText().contains("zoom"), "zoom never changes the text")
     }
 
+    /// A selection in the host app becomes a quoted passage: automatically
+    /// for a new note, and again on demand from the toolbar.
+    func testSelectionBecomesQuotedPassage() throws {
+        app.terminate()
+        app.launchEnvironment["UITEST_SELECTION_TEXT"] = "the quick brown fox"
+        app.launch()
+        let textView = editor
+        XCTAssertTrue(textView.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForEditorText { $0.hasPrefix("\u{201C}the quick brown fox\u{201D}\n") }, "got: \(editorText().debugDescription)")
+
+        // Clicking activates NoteSide; the note must stay put.
+        textView.click()
+        textView.typeKey(.end, modifierFlags: .command)
+        textView.typeText("my thought")
+        XCTAssertTrue(waitForEditorText { $0.contains("my thought") && $0.hasPrefix("\u{201C}") }, "note kept after activation: \(editorText().debugDescription)")
+        button("formatQuote").click()
+        XCTAssertTrue(waitForEditorText { $0.components(separatedBy: "the quick brown fox").count == 3 }, "second quote inserted: \(editorText().debugDescription)")
+        XCTAssertFalse(app.descendants(matching: .any)["pendingPassageChip"].exists)
+    }
+
     func testEscapeSavesNoteAndItAppearsInAllNotes() throws {
         let textView = openEditor()
         textView.typeText("Persisted body text")

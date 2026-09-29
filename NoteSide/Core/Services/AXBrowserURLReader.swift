@@ -54,7 +54,7 @@ nonisolated struct AXBrowserURLReader: Sendable {
     /// Breadth-first search for the outermost AXWebArea. Iframes nest
     /// *inside* the main web area, so first-found is the page itself.
     /// Toolbar and menu subtrees can't contain it and are pruned.
-    private func findWebArea(in root: AXUIElement, maxNodes: Int = 1500) -> AXUIElement? {
+    func findWebArea(in root: AXUIElement, maxNodes: Int = 1500) -> AXUIElement? {
         var queue: [AXUIElement] = [root]
         var visited = 0
 

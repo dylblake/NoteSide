@@ -87,6 +87,8 @@ Two more `DEBUG`-only hooks keep automated runs isolated from real data:
 
 - `UITEST_STORE_DIRECTORY` (launch environment) points the note store at a scratch folder instead of Application Support.
 - Standard `NSArgumentDomain` launch arguments override preferences without writing them, e.g. `-hasCompletedOnboarding YES -autoTitleEnabled NO -editorTextZoom 1`.
+- `UITEST_SELECTION_TEXT` (launch environment) stands in for the host app's selected text so passage capture can be tested without a real selection.
+- `NOTESIDE_TRACE_FILE` (launch environment) appends `DebugTrace.log(...)` lines to that file, for diagnosing flows under XCUITest where the unified log is hard to reach.
 - `NOTESIDE_PANE_WIDTH` (launch environment) forces the drawer / All Notes pane width so layouts can be checked at any screen size on one display. Panel widths are otherwise a fraction of the screen clamped by `PanelLayout` (editor 440–640pt, All Notes 540–960pt).
 
 `NoteEditorUITests` uses both to drive the editor's formatting toolbar, keyboard shortcuts, lists, tables and text size end to end. The formatting engine itself (`RichTextEditorController`) is unit-tested against an offscreen `NSTextView` in `NoteSideTests/RichTextEditorControllerTests.swift`.
@@ -103,6 +105,7 @@ These hooks are compiled out of Release/MAS builds.
 | Indent / outdent list item, next / previous table cell | Tab / ⇧Tab |
 | Insert table | ⌥⌘T |
 | Add / delete table rows and columns | Table button in the toolbar, or right-click inside a cell |
+| Quote the host app's selection as a linked passage | ⇧⌘Q |
 | Bigger / Smaller / Actual size | ⌘+ / ⌘− / ⌘0 |
 
 ## Version

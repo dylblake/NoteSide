@@ -10,7 +10,14 @@ import SwiftUI
 
 @main
 struct SideNoteApp: App {
-    @State private var appState = AppState()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @State private var appState: AppState
+
+    init() {
+        let state = AppState()
+        _appState = State(initialValue: state)
+        AppEnvironment.shared.appState = state
+    }
 
     var body: some Scene {
         MenuBarExtra {

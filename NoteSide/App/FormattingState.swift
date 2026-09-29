@@ -71,6 +71,7 @@ final class FormattingState {
     func insertBulletedList() { richTextController.toggleList(.bulleted) }
     func insertNumberedList() { richTextController.toggleList(.numbered) }
     func insertTable() { richTextController.insertTable() }
+    func quoteSelection() { richTextController.perform(.quoteSelection) }
     func performTableEdit(_ edit: RichTextEditorController.TableEdit) { richTextController.performTableEdit(edit) }
 
     /// Caret's cell and the table's size, or nil outside a table.

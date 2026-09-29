@@ -42,6 +42,11 @@ struct RichTextEditor: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
         textView.defaultParagraphStyle = controller.defaultParagraphStyle
         textView.typingAttributes = controller.defaultTypingAttributes
+        textView.linkTextAttributes = [
+            .foregroundColor: NSColor.controlAccentColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .cursor: NSCursor.pointingHand
+        ]
         textView.setAccessibilityIdentifier("noteEditorTextView")
         textView.setAccessibilityLabel("Note body")
         textView.textStorage?.setAttributedString(controller.normalizedAttributedText(attributedText))
@@ -128,6 +133,13 @@ struct RichTextEditor: NSViewRepresentable {
             return true
         }
 
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            let url = (link as? URL) ?? (link as? String).flatMap { URL(string: $0) }
+            guard let url else { return false }
+            parent.controller.onOpenLink?(url)
+            return true
+        }
+
         func textViewDidChangeSelection(_ notification: Notification) {
             if let textView = notification.object as? NSTextView {
                 parent.controller.sanitizeTypingAttributesAfterSelectionChange(in: textView)
@@ -205,6 +217,7 @@ private final class EditorTextView: NSTextView {
         case ("7", [.command, .shift]): command = .toggleList(.bulleted)
         case ("9", [.command, .shift]): command = .toggleList(.numbered)
         case ("t", [.command, .option]): command = .insertTable
+        case ("q", [.command, .shift]): command = .quoteSelection
         case ("=", [.command]), ("+", [.command]), ("=", [.command, .shift]): command = .zoomIn
         case ("-", [.command]): command = .zoomOut
         case ("0", [.command]): command = .resetZoom

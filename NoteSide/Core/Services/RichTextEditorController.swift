@@ -114,6 +114,7 @@ final class RichTextEditorController {
         case toggleList(ListKind)
         case insertTable
         case table(TableEdit)
+        case quoteSelection
         case zoomIn, zoomOut, resetZoom
     }
 
@@ -171,6 +172,12 @@ final class RichTextEditorController {
 
     weak var textView: NSTextView?
     var onSelectionAttributesChange: ((FormattingState) -> Void)?
+    /// Set by the app: a passage link (text fragment) was clicked.
+    var onOpenLink: ((URL) -> Void)?
+    /// Set by the app: ⇧⌘Q / the toolbar asked to quote the host app's selection.
+    var onQuoteSelectionRequested: (() -> Void)?
+
+    private static let quoteIndent: CGFloat = 16
 
     private(set) var zoom: CGFloat = {
         let stored = UserDefaults.standard.double(forKey: RichTextEditorController.zoomDefaultsKey)
@@ -178,11 +185,27 @@ final class RichTextEditorController {
     }()
 
     private var isRenumbering = false
+    private var queuedPassages: [Passage] = []
 
     // MARK: - Attachment
 
     func attach(_ textView: NSTextView) {
         self.textView = textView
+        guard !queuedPassages.isEmpty else { return }
+        // A passage can arrive before SwiftUI has created the text view
+        // (first launch, slow machine). Insert once the view exists, off the
+        // current update pass.
+        let pending = queuedPassages
+        queuedPassages.removeAll()
+        DispatchQueue.main.async { [weak self] in
+            pending.forEach { self?.insertQuote($0) }
+        }
+    }
+
+    /// Drops passages waiting for a text view; called when the editor
+    /// switches to a different note.
+    func discardQueuedPassages() {
+        queuedPassages.removeAll()
     }
 
     func focus() {
@@ -313,6 +336,7 @@ final class RichTextEditorController {
         case .toggleList(let kind): toggleList(kind)
         case .insertTable: insertTable()
         case .table(let edit): performTableEdit(edit)
+        case .quoteSelection: onQuoteSelectionRequested?()
         case .zoomIn: zoomIn()
         case .zoomOut: zoomOut()
         case .resetZoom: setZoom(1)
@@ -515,14 +539,20 @@ final class RichTextEditorController {
             return true
         }
 
-        // Heading → Body on the next line, when the caret sits at the end.
+        // Heading or quote → Body on the next line, when the caret sits at the end.
         let style = currentTextStyle()
         let atEnd = selection.location >= paragraphEnd(paragraphRange, in: nsString)
-        if style != .body, style != .monospaced, atEnd, tableBlock(at: selection.location) == nil {
+        let leavingQuote = isQuoteParagraph(paragraphRange, storage: storage)
+        if (style != .body && style != .monospaced) || leavingQuote, atEnd, tableBlock(at: selection.location) == nil {
             var attributes = textView.typingAttributes
             attributes[.font] = font(for: .body, italic: false)
+            attributes[.link] = nil
             let paragraphStyle = ((attributes[.paragraphStyle] as? NSParagraphStyle) ?? defaultParagraphStyle).mutableCopy() as! NSMutableParagraphStyle
             paragraphStyle.paragraphSpacingBefore = 0
+            if leavingQuote {
+                paragraphStyle.firstLineHeadIndent = 0
+                paragraphStyle.headIndent = 0
+            }
             attributes[.paragraphStyle] = paragraphStyle
             attributes[.foregroundColor] = NSColor.labelColor
             let newline = NSAttributedString(string: "\n", attributes: attributes)
@@ -660,6 +690,63 @@ final class RichTextEditorController {
         textStorage.endEditing()
         textView.didChangeText()
         textView.setSelectedRange(NSRange(location: max(selectionLocation, 0), length: max(selectionLength, 0)))
+    }
+
+    // MARK: Quotes (passages)
+
+    /// Inserts `“text”` as an indented quote paragraph linked to the
+    /// passage's text-fragment URL, after the caret's paragraph (or as the
+    /// first paragraph of an empty note), and leaves the caret on a fresh
+    /// Body line beneath it.
+    func insertQuote(_ passage: Passage) {
+        guard let textView else {
+            queuedPassages.append(passage)
+            return
+        }
+        let storage = textView.attributedString()
+        let nsString = storage.string as NSString
+        let caret = textView.selectedRange().location
+        let paragraphRange = nsString.paragraphRange(for: NSRange(location: min(caret, nsString.length), length: 0))
+
+        var quoteAttributes = defaultTypingAttributes
+        let style = defaultParagraphStyle.mutableCopy() as! NSMutableParagraphStyle
+        style.firstLineHeadIndent = Self.quoteIndent
+        style.headIndent = Self.quoteIndent
+        style.paragraphSpacingBefore = 4
+        quoteAttributes[.paragraphStyle] = style
+        var linkedAttributes = quoteAttributes
+        if let link = passage.link {
+            linkedAttributes[.link] = link
+        }
+
+        let insertion = NSMutableAttributedString()
+        var insertAt: Int
+        let contentLength = paragraphEnd(paragraphRange, in: nsString) - paragraphRange.location
+        if contentLength == 0 {
+            insertAt = paragraphRange.location
+        } else {
+            insertAt = paragraphEnd(paragraphRange, in: nsString)
+            insertion.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
+        }
+        insertion.append(NSAttributedString(string: "\u{201C}\(passage.text)\u{201D}", attributes: linkedAttributes))
+        insertion.append(NSAttributedString(string: "\n", attributes: quoteAttributes))
+
+        let caretAfter = insertAt + insertion.length
+        replace(NSRange(location: insertAt, length: 0), with: insertion, in: textView, restoring: NSRange(location: caretAfter, length: 0))
+        textView.typingAttributes = defaultTypingAttributes
+        notifySelectionAttributesChange()
+    }
+
+    /// A quote is an indented paragraph that isn't a list item or a cell.
+    private func isQuoteParagraph(_ range: NSRange, storage: NSAttributedString) -> Bool {
+        guard range.length > 0, range.location < storage.length,
+              let style = storage.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle else {
+            return false
+        }
+        return style.headIndent == Self.quoteIndent
+            && style.firstLineHeadIndent == Self.quoteIndent
+            && style.textBlocks.isEmpty
+            && listMarker(inParagraph: range, storage: storage) == nil
     }
 
     // MARK: Tables
@@ -812,6 +899,11 @@ final class RichTextEditorController {
     /// the table/list into the next paragraph typed. Reset to plain body
     /// attributes when the caret sits in an empty trailing paragraph.
     func sanitizeTypingAttributesAfterSelectionChange(in textView: NSTextView) {
+        // Links are only ever created by inserting a passage; typing next
+        // to one must not extend it.
+        if textView.typingAttributes[.link] != nil {
+            textView.typingAttributes[.link] = nil
+        }
         let selection = textView.selectedRange()
         guard selection.length == 0, let storage = textView.textStorage,
               selection.location == storage.length, storage.length > 0 else { return }

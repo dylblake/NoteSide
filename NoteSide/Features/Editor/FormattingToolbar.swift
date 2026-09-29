@@ -44,6 +44,7 @@ struct FormattingToolbar: View {
                 bulletedListToggle
                 numberedListToggle
                 tableControl
+                quoteButton
             }
         }
         .padding(.horizontal, Spacing.xs)
@@ -93,6 +94,13 @@ struct FormattingToolbar: View {
             appState.formatting.insertNumberedList()
         }
         .accessibilityIdentifier("formatNumberedList")
+    }
+
+    private var quoteButton: some View {
+        ToolbarToggle(systemImage: "quote.opening", label: "Quote Selection", shortcut: "⇧⌘Q", isOn: false) {
+            appState.formatting.quoteSelection()
+        }
+        .accessibilityIdentifier("formatQuote")
     }
 
     /// Inserts a table outside one; inside, becomes a menu of row/column edits.
@@ -169,6 +177,11 @@ struct FormattingToolbar: View {
             .keyboardShortcut("9", modifiers: [.command, .shift])
 
             Divider()
+
+            Button("Quote Selection") {
+                appState.formatting.quoteSelection()
+            }
+            .keyboardShortcut("q", modifiers: [.command, .shift])
 
             if appState.formatting.isInTable {
                 Menu("Table") {

@@ -101,6 +101,9 @@ final class AppState {
             onError: { [weak self] msg in self?.editor.editorErrorMessage = msg }
         )
 
+        richTextController.onOpenLink = { [weak self] url in self?.openPassageLink(url) }
+        richTextController.onQuoteSelectionRequested = { [weak self] in self?.quoteCurrentSelection() }
+
         browserPermissions.configure(
             onEditorError: { [weak self] msg in self?.editor.editorErrorMessage = msg },
             onOpenApplication: { [weak self] bundleId in self?.openApplication(bundleIdentifier: bundleId) }
@@ -323,7 +326,10 @@ final class AppState {
         }
     }
 
-    private func presentQuickNoteEditor() {
+    /// `passageText` supplies the selection when it arrived through the
+    /// Services menu; otherwise the host app's selection is read via
+    /// Accessibility while the context resolves.
+    private func presentQuickNoteEditor(passageText: String? = nil) {
         editor.editorErrorMessage = nil
         let frontmostApp = NSWorkspace.shared.frontmostApplication
         let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
@@ -338,15 +344,23 @@ final class AppState {
 
         editor.isEditorPresented = true
         editor.startContextTracking()
-        noteEditorPanelController.present()
+        // Slide in now, but don't take key status until the host app's
+        // selection has been read: Chromium only answers ⌘C while its
+        // window is key.
+        noteEditorPanelController.present(makeKey: false)
 
         Task { [weak self] in
-            // Small hop so the slide-in starts before any context swap
-            // re-renders the panel content.
-            try? await Task.sleep(for: .milliseconds(50))
-            guard let self, self.editor.isEditorPresented else { return }
+            guard let self else { return }
+            let captured = passageText == nil ? await self.editor.captureSelectionText(from: frontmostApp) : nil
+            guard self.editor.isEditorPresented else { return }
+            self.noteEditorPanelController.makeKeyIfVisible()
+            self.richTextController.focus()
+
             await self.editor.resolveInitialQuickNoteContextAsync(from: initialContext, sourceBundleIdentifier: sourceBundleIdentifier)
             self.browserPermissions.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
+            if let text = passageText ?? captured, self.editor.isEditorPresented {
+                self.attachPassage(text: text)
+            }
 
             // Generate the title only after the context has settled so we
             // don't title the note against the transient app-level fallback.
@@ -358,6 +372,95 @@ final class AppState {
                 self.editor.generateTitleFromContext(context: context)
             }
         }
+    }
+
+    // MARK: - Passages
+
+    /// Services menu entry ("Note This in NoteSide"): open the drawer for
+    /// the current context with the sent text as a quoted passage.
+    func captureQuickNote(passageText: String) {
+        if editor.isEditorPresented {
+            attachPassage(text: passageText)
+            return
+        }
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let context = editor.quickApplicationContext(for: frontmostApp)
+        guard canCreateNote(for: context) else {
+            presentLicenseWindow()
+            return
+        }
+        presentQuickNoteEditor(passageText: passageText)
+    }
+
+    /// Toolbar / ⇧⌘Q: quote whatever is selected in the app behind the drawer.
+    func quoteCurrentSelection() {
+        let hostApp = NSWorkspace.shared.frontmostApplication
+        noteEditorPanelController.yieldKey(to: hostApp)
+        Task { [weak self] in
+            guard let self else { return }
+            let text = await self.editor.captureSelectionText(from: hostApp)
+            self.noteEditorPanelController.makeKeyIfVisible()
+            self.richTextController.focus()
+            guard self.editor.isEditorPresented else { return }
+            guard let text else {
+                let name = hostApp?.localizedName ?? "the app in front"
+                self.editor.editorErrorMessage = "Nothing is selected in \(name)."
+                return
+            }
+            self.editor.editorErrorMessage = nil
+            self.insertPassage(Passage(text: text, sourceURL: self.editor.activePageURL))
+        }
+    }
+
+    func insertPendingPassage() {
+        guard let passage = editor.pendingPassage else { return }
+        editor.pendingPassage = nil
+        insertPassage(passage)
+    }
+
+    func dismissPendingPassage() {
+        editor.pendingPassage = nil
+    }
+
+    /// New/empty note: the passage goes straight in. Existing note: offer it.
+    private func attachPassage(text: String) {
+        let passage = Passage(text: text, sourceURL: editor.activePageURL)
+        let isEmpty = editor.currentEditorAttributedTextSnapshot().string
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if isEmpty {
+            insertPassage(passage)
+        } else {
+            editor.pendingPassage = passage
+        }
+    }
+
+    private func insertPassage(_ passage: Passage) {
+        richTextController.insertQuote(passage)
+        editor.editorAttributedText = editor.currentEditorAttributedTextSnapshot()
+        editor.scheduleAutosave()
+    }
+
+    /// A passage link was clicked: reopen in the browser the page was
+    /// captured in, falling back to the default handler.
+    func openPassageLink(_ url: URL) {
+        open(url, preferringApplication: editor.activeContext?.sourceBundleIdentifier)
+    }
+
+    private func open(_ url: URL, preferringApplication bundleIdentifier: String?) {
+        if let bundleIdentifier,
+           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: configuration) { _, _ in }
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Creating a note needs a license once the trial is used up; a
+    /// context that already has a note is always editable.
+    func canCreateNote(for context: NoteContext) -> Bool {
+        isLicensed || !isTrialExhausted || notesState.note(for: context) != nil
     }
 
     func saveAndDismissEditor() {
@@ -812,7 +915,7 @@ final class AppState {
     private func navigate(to context: NoteContext) {
         if let navigationTarget = context.navigationTarget,
            let url = URL(string: navigationTarget) {
-            NSWorkspace.shared.open(url)
+            open(url, preferringApplication: context.kind == .url ? context.sourceBundleIdentifier : nil)
             return
         }
 
@@ -864,7 +967,7 @@ final class AppState {
             return
         }
 
-        NSWorkspace.shared.open(url)
+        open(url, preferringApplication: context.sourceBundleIdentifier)
     }
 
     private func openFileContext(_ context: NoteContext) {
