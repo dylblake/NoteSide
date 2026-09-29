@@ -104,7 +104,7 @@ final class AllNotesPanelController {
 
     private func paneFrame(for screen: NSScreen) -> NSRect {
         let screenFrame = screen.visibleFrame.integral
-        let paneWidth = floor(screenFrame.width * 0.45)
+        let paneWidth = PanelLayout.allNotesPaneWidth(forScreenWidth: screenFrame.width)
         return NSRect(
             x: screenFrame.maxX - paneWidth,
             y: screenFrame.minY,

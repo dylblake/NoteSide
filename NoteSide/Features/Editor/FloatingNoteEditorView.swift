@@ -1,217 +1,25 @@
 import SwiftUI
 
+/// The note drawer: one Liquid Glass sheet holding the title, the context
+/// it's attached to, the formatting toolbar and the editor, with a small
+/// glass footer for pin / delete and the dismiss hint.
 struct FloatingNoteEditorView: View {
     @Environment(AppState.self) private var appState
     @State private var showingDeleteConfirmation = false
-    private let noteCardCornerRadius: CGFloat = 28
 
     var body: some View {
         @Bindable var editor = appState.editor
-        @Bindable var formatting = appState.formatting
-        ZStack(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Title")
-                            .font(.caption.weight(.semibold))
-                            .textCase(.uppercase)
-                            .tracking(0.7)
-                            .foregroundStyle(NoteSideTheme.secondaryText)
 
-                        TextField("Note title", text: $editor.editorTitle)
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(NoteSideTheme.primaryText)
-                            .textFieldStyle(.plain)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 14)
-
-                    Divider()
-                        .padding(.horizontal, 14)
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Current context")
-                            .font(.caption.weight(.semibold))
-                            .textCase(.uppercase)
-                            .tracking(0.7)
-                            .foregroundStyle(NoteSideTheme.secondaryText)
-
-                        Text(appState.editor.activeContext?.displayName ?? "Current Context")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(NoteSideTheme.primaryText)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-
-                        if let secondaryLabel = appState.editor.activeContext?.secondaryLabel, !secondaryLabel.isEmpty {
-                            Text(secondaryLabel)
-                                .font(.subheadline)
-                                .foregroundStyle(NoteSideTheme.secondaryText)
-                                .textSelection(.enabled)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        }
-
-                        if let errorMessage = appState.editor.editorErrorMessage, !errorMessage.isEmpty {
-                            Text(errorMessage)
-                                .font(.footnote)
-                                .foregroundStyle(NoteSideTheme.warning)
-                                .lineLimit(3)
-                        }
-
-                        if appState.editor.isViewingOrphanedNote {
-                            Button {
-                                appState.relinkOrphanedNoteToCurrentContext()
-                            } label: {
-                                Text("Attach to Current Context")
-                                    .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(NoteSideTheme.accent)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Re-attach this note to the app, page, or file currently in front")
-                        }
-                    }
-                    .padding(.horizontal, 18)
-
-                    HStack(spacing: 10) {
-                        Spacer(minLength: 0)
-
-                        Menu {
-                            Button {
-                                appState.formatting.applyHeadingStyle()
-                            } label: {
-                                Text(RichTextEditorController.TextStyle.heading.title)
-                                    .font(.system(size: RichTextEditorController.TextStyle.heading.fontSize, weight: .bold))
-                            }
-
-                            Button {
-                                appState.formatting.applySubheadingStyle()
-                            } label: {
-                                Text(RichTextEditorController.TextStyle.subheading.title)
-                                    .font(.system(size: RichTextEditorController.TextStyle.subheading.fontSize, weight: .semibold))
-                            }
-
-                            Button {
-                                appState.formatting.applyBodyStyle()
-                            } label: {
-                                Text(RichTextEditorController.TextStyle.body.title)
-                                    .font(.system(size: RichTextEditorController.TextStyle.body.fontSize, weight: .regular))
-                            }
-                        } label: {
-                            formattingButtonLabel(appState.formatting.currentEditorTextStyle.title)
-                        }
-
-                        formattingButton("B", isActive: appState.formatting.isEditorBoldActive) {
-                            appState.formatting.toggleBold()
-                        }
-
-                        formattingButton("I", isActive: appState.formatting.isEditorItalicActive) {
-                            appState.formatting.toggleItalic()
-                        }
-
-                        formattingButton("U", isActive: appState.formatting.isEditorUnderlineActive) {
-                            appState.formatting.toggleUnderline()
-                        }
-
-                        formattingButton("•") {
-                            appState.formatting.insertBulletedList()
-                        }
-
-                        formattingButton("1.") {
-                            appState.formatting.insertNumberedList()
-                        }
-                    }
-
-                    RichTextEditor(
-                        attributedText: $editor.editorAttributedText,
-                        controller: appState.richTextController
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-                    DictationIndicatorView(
-                        isDictating: appState.isDictating,
-                        partialText: appState.dictationPartialText,
-                        hotkeyLabel: appState.hotkeys.dictationHotKeyDisplayString
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(.easeInOut(duration: 0.2), value: appState.isDictating)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
-                .frame(maxWidth: .infinity, minHeight: 380, maxHeight: .infinity, alignment: .topLeading)
-                .clipped()
-                .background(
-                    RoundedRectangle(cornerRadius: noteCardCornerRadius, style: .continuous)
-                        .fill(NoteSideTheme.secondaryBackground)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: noteCardCornerRadius, style: .continuous)
-                                .stroke(NoteSideTheme.border.opacity(0.8), lineWidth: 1)
-                        )
-                )
-
-                ZStack {
-                    GeometryReader { geometry in
-                        // Hide the dismiss hint when the panel is too
-                        // narrow (e.g. portrait / vertical displays where
-                        // pane width = screen.width / 3 is small) — the
-                        // text would otherwise overlap the pin/trash
-                        // icons in the right-hand HStack.
-                        if geometry.size.width >= 380 {
-                            HStack {
-                                Spacer()
-                                Text("Press the hotkey again or Escape to dismiss.")
-                                    .font(.footnote)
-                                    .foregroundStyle(NoteSideTheme.secondaryText)
-                                Spacer()
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    }
-
-                    HStack {
-                        Spacer()
-
-                        HStack(spacing: 4) {
-                            IconButton(
-                                systemName: appState.editor.isActiveNotePinned ? "pin.fill" : "pin",
-                                accessibilityLabel: appState.editor.isActiveNotePinned ? "Unpin note" : "Pin note",
-                                tint: appState.editor.isActiveNotePinned ? NoteSideTheme.accent : NoteSideTheme.primaryText
-                            ) {
-                                appState.togglePinForActiveNote()
-                            }
-
-                            IconButton(
-                                systemName: "trash",
-                                accessibilityLabel: "Delete note"
-                            ) {
-                                showingDeleteConfirmation = true
-                            }
-                            .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
-                                DeleteConfirmationPopover(
-                                    onConfirm: {
-                                        showingDeleteConfirmation = false
-                                        appState.deleteActiveNote()
-                                    },
-                                    onCancel: {
-                                        showingDeleteConfirmation = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-                .frame(height: 50)
-                .background(footerRadialBackdrop)
-
-                Spacer(minLength: 0)
-            }
-            .padding(.top, 28)
-            .padding(.leading, 34)
-            .padding(.trailing, 22)
-            .padding(.bottom, 30)
+        VStack(spacing: Spacing.sm) {
+            sheet
+            footer
         }
+        .padding(.top, Spacing.lg)
+        .padding(.leading, Spacing.xl)
+        .padding(.trailing, Spacing.md + Spacing.xxs)
+        .padding(.bottom, Spacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
-        .clipped()
         .onAppear {
             DispatchQueue.main.async {
                 appState.richTextController.focus()
@@ -228,62 +36,161 @@ struct FloatingNoteEditorView: View {
         }
     }
 
-    /// Soft radial blur sitting behind the footer row (pin / trash / hint).
-    /// Strong system blur in the middle, fading out to fully transparent at
-    /// the edges so the effect looks like a spotlight rather than a hard
-    /// rectangle. Uses the system Material as the fill so it picks up the
-    /// `behindWindow` blending automatically (the panel is a transparent
-    /// NSPanel, so the material blurs whatever is on the desktop behind it).
-    private var footerRadialBackdrop: some View {
-        Rectangle()
-            .fill(.thickMaterial)
-            .mask(
-                Canvas { context, size in
-                    // Horizontal fade: transparent at left/right edges, full in the middle
-                    let horizontal = Gradient(stops: [
-                        .init(color: .clear, location: 0.0),
-                        .init(color: .black.opacity(0.6), location: 0.15),
-                        .init(color: .black, location: 0.35),
-                        .init(color: .black, location: 0.65),
-                        .init(color: .black.opacity(0.6), location: 0.85),
-                        .init(color: .clear, location: 1.0)
-                    ])
-                    // Vertical fade: transparent at top, full from ~40% down
-                    let vertical = Gradient(stops: [
-                        .init(color: .clear, location: 0.0),
-                        .init(color: .black, location: 0.4),
-                        .init(color: .black, location: 1.0)
-                    ])
-                    let rect = CGRect(origin: .zero, size: size)
-                    context.drawLayer { ctx in
-                        ctx.fill(Path(rect), with: .linearGradient(horizontal, startPoint: .init(x: 0, y: size.height / 2), endPoint: .init(x: size.width, y: size.height / 2)))
-                    }
-                    context.blendMode = .destinationIn
-                    context.fill(Path(rect), with: .linearGradient(vertical, startPoint: .zero, endPoint: .init(x: 0, y: size.height)))
-                }
-            )
-            .padding(.horizontal, -40)
-            .padding(.vertical, -16)
-            .allowsHitTesting(false)
-    }
+    // MARK: Sheet
 
-    private func formattingButton(_ title: String, isActive: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            formattingButtonLabel(title, isActive: isActive)
+    private var sheet: some View {
+        @Bindable var editor = appState.editor
+
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                TextField("Title", text: $editor.editorTitle, prompt: Text("Title"))
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(NoteSideTheme.primaryText)
+                    .textFieldStyle(.plain)
+                    .accessibilityIdentifier("noteTitleField")
+
+                contextRow
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.top, Spacing.lg)
+            .padding(.bottom, Spacing.md)
+
+            FormattingToolbar()
+                .environment(appState)
+                .padding(.horizontal, Spacing.md)
+                .padding(.bottom, Spacing.sm)
+
+            RichTextEditor(
+                attributedText: $editor.editorAttributedText,
+                controller: appState.richTextController
+            )
+            .padding(.horizontal, Spacing.lg)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            DictationIndicatorView(
+                isDictating: appState.isDictating,
+                partialText: appState.dictationPartialText,
+                hotkeyLabel: appState.hotkeys.dictationHotKeyDisplayString
+            )
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(.easeInOut(duration: 0.2), value: appState.isDictating)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 380, maxHeight: .infinity, alignment: .topLeading)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.panel, style: .continuous))
+        .glassEffect(NoteSideTheme.sheetGlass, in: RoundedRectangle(cornerRadius: CornerRadius.panel, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("noteEditorSheet")
     }
 
-    private func formattingButtonLabel(_ title: String, isActive: Bool = false) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .foregroundStyle(isActive ? Color.white : NoteSideTheme.primaryText)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(isActive ? NoteSideTheme.accent : NoteSideTheme.contentBackground)
-            )
+    private var contextRow: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: contextSymbolName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+
+                Text(appState.editor.activeContext?.displayName ?? "Current Context")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(NoteSideTheme.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .accessibilityIdentifier("noteContextName")
+
+                if appState.editor.isViewingOrphanedNote {
+                    Button("Attach to Current Context") {
+                        appState.relinkOrphanedNoteToCurrentContext()
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("Re-attach this note to the app, page, or file currently in front")
+                }
+            }
+
+            if let secondaryLabel = appState.editor.activeContext?.secondaryLabel, !secondaryLabel.isEmpty {
+                Text(secondaryLabel)
+                    .font(.caption)
+                    .foregroundStyle(NoteSideTheme.tertiaryText)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.leading, 20)
+            }
+
+            if let errorMessage = appState.editor.editorErrorMessage, !errorMessage.isEmpty {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(NoteSideTheme.warning)
+                    .lineLimit(3)
+            }
+        }
+    }
+
+    private var contextSymbolName: String {
+        switch appState.editor.activeContext?.kind {
+        case .url: return "globe"
+        case .file: return "doc"
+        case .application, .none: return "app"
+        }
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack(spacing: Spacing.sm) {
+            ViewThatFits(in: .horizontal) {
+                Text("Press \(appState.hotkeys.hotKeyDisplayString) again or Escape to dismiss")
+                    .lineLimit(1)
+                Text("Escape to dismiss")
+                    .lineLimit(1)
+            }
+            .font(.footnote)
+            .foregroundStyle(NoteSideTheme.secondaryText)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
+            .glassEffect(.regular, in: Capsule(style: .continuous))
+
+            Spacer(minLength: 0)
+
+            GlassEffectContainer(spacing: Spacing.xs) {
+                HStack(spacing: Spacing.xxs) {
+                    IconButton(
+                        systemName: appState.editor.isActiveNotePinned ? "pin.fill" : "pin",
+                        accessibilityLabel: appState.editor.isActiveNotePinned ? "Unpin note" : "Pin note",
+                        tint: appState.editor.isActiveNotePinned ? NoteSideTheme.accent : NoteSideTheme.primaryText,
+                        size: 14,
+                        hitSize: 34
+                    ) {
+                        appState.togglePinForActiveNote()
+                    }
+                    .accessibilityIdentifier("editorPinButton")
+
+                    IconButton(
+                        systemName: "trash",
+                        accessibilityLabel: "Delete note",
+                        size: 14,
+                        hitSize: 34
+                    ) {
+                        showingDeleteConfirmation = true
+                    }
+                    .accessibilityIdentifier("editorDeleteButton")
+                    .popover(isPresented: $showingDeleteConfirmation, arrowEdge: .bottom) {
+                        DeleteConfirmationPopover(
+                            onConfirm: {
+                                showingDeleteConfirmation = false
+                                appState.deleteActiveNote()
+                            },
+                            onCancel: {
+                                showingDeleteConfirmation = false
+                            }
+                        )
+                    }
+                }
+                .padding(Spacing.xxs)
+                .glassEffect(.regular, in: Capsule(style: .continuous))
+            }
+        }
     }
 }
 
@@ -295,7 +202,7 @@ private struct DictationIndicatorView: View {
     @State private var scale: CGFloat = 1.0
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.xs - 2) {
             Image(systemName: "waveform")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isDictating ? NoteSideTheme.accent : NoteSideTheme.quaternaryText)
@@ -323,7 +230,6 @@ private struct DictationIndicatorView: View {
                     .foregroundStyle(NoteSideTheme.quaternaryText)
             }
         }
-        .padding(.bottom, 4)
         .onChange(of: isDictating) { _, active in
             scale = active && !reduceMotion ? 1.4 : 1.0
         }

@@ -43,31 +43,16 @@ struct OnboardingView: View {
     }
 
     private var background: some View {
-        ZStack {
-            Rectangle()
-                .fill(NoteSideTheme.windowBackground)
-
-            Rectangle()
-                .fill(.regularMaterial)
-
-            LinearGradient(
-                colors: [
-                    NoteSideTheme.accent.opacity(0.06),
-                    Color.clear,
-                    NoteSideTheme.warning.opacity(0.04)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        .ignoresSafeArea()
+        NoteSideTheme.windowBackground
+            .ignoresSafeArea()
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("NoteSide")
-                .font(.system(size: 38, weight: .bold, design: .rounded))
+                .font(.largeTitle.weight(.bold))
                 .foregroundStyle(NoteSideTheme.primaryText)
+                .accessibilityAddTraits(.isHeader)
 
             Text("Context-aware notes that stay attached to the app, site, or file you are actually in.")
                 .font(.title3)
@@ -234,16 +219,9 @@ struct OnboardingView: View {
                 }
             }
         }
-        .padding(14)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(NoteSideTheme.secondaryBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(NoteSideTheme.border.opacity(0.75), lineWidth: 1)
-                )
-        )
+        .insetRowSurface()
     }
 
     /// Aggregate over the per-browser rows: red only when a browser is
@@ -325,14 +303,7 @@ struct OnboardingView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(NoteSideTheme.contentBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(NoteSideTheme.border.opacity(0.8), lineWidth: 1)
-                )
-        )
+        .cardSurface(cornerRadius: CornerRadius.sheet)
     }
 
     private func permissionStatusRow(
@@ -364,16 +335,9 @@ struct OnboardingView: View {
                 secondaryButton(buttonTitle, action: action)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(NoteSideTheme.secondaryBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(NoteSideTheme.border.opacity(0.75), lineWidth: 1)
-                )
-        )
+        .insetRowSurface()
     }
 
     private var installedBrowsers: [BrowserDescriptor] {
@@ -420,16 +384,9 @@ struct OnboardingView: View {
                 }
             }
         }
-        .padding(14)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(NoteSideTheme.secondaryBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(NoteSideTheme.border.opacity(0.75), lineWidth: 1)
-                )
-        )
+        .insetRowSurface()
     }
 
     private func browserStatusIcon(for status: BrowserPermissionState) -> some View {
@@ -479,32 +436,14 @@ struct OnboardingView: View {
     }
 
     private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(NoteSideTheme.accent)
-                )
-        }
-        .buttonStyle(.plain)
+        Button(title, action: action)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
     }
 
     private func secondaryButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(NoteSideTheme.primaryText)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(NoteSideTheme.contentBackground)
-                )
-        }
-        .buttonStyle(.plain)
+        Button(title, action: action)
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
     }
 }

@@ -362,7 +362,7 @@ final class NoteEditorPanelController {
 
     private func paneFrame(for screen: NSScreen) -> NSRect {
         let screenFrame = screen.visibleFrame.integral
-        let paneWidth = floor(screenFrame.width / 3)
+        let paneWidth = PanelLayout.editorPaneWidth(forScreenWidth: screenFrame.width)
         return NSRect(
             x: screenFrame.maxX - paneWidth,
             y: screenFrame.minY,

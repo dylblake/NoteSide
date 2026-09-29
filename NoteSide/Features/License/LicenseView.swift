@@ -29,31 +29,16 @@ struct LicenseView: View {
     }
 
     private var background: some View {
-        ZStack {
-            Rectangle()
-                .fill(NoteSideTheme.windowBackground)
-
-            Rectangle()
-                .fill(.regularMaterial)
-
-            LinearGradient(
-                colors: [
-                    NoteSideTheme.accent.opacity(0.06),
-                    Color.clear,
-                    NoteSideTheme.warning.opacity(0.04),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        .ignoresSafeArea()
+        NoteSideTheme.windowBackground
+            .ignoresSafeArea()
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("NoteSide")
-                .font(.system(size: 38, weight: .bold, design: .rounded))
+                .font(.largeTitle.weight(.bold))
                 .foregroundStyle(NoteSideTheme.primaryText)
+                .accessibilityAddTraits(.isHeader)
 
             if isActivated {
                 Text("You're all set.")
@@ -94,32 +79,17 @@ struct LicenseView: View {
                 .foregroundStyle(NoteSideTheme.secondaryText)
                 .multilineTextAlignment(.center)
 
-            Button {
+            Button("Get Started") {
                 appState.dismissLicenseWindow()
-            } label: {
-                Text("Get Started")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(NoteSideTheme.accent)
-                    )
             }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+            .padding(.top, Spacing.xxs)
         }
         .frame(maxWidth: .infinity)
         .padding(28)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(NoteSideTheme.contentBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(NoteSideTheme.border.opacity(0.8), lineWidth: 1)
-                )
-        )
+        .cardSurface(cornerRadius: CornerRadius.sheet)
     }
 
     private var licenseCard: some View {
@@ -130,19 +100,12 @@ struct LicenseView: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 TextField("Paste your license key…", text: $licenseKey)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(NoteSideTheme.primaryText)
-                    .padding(12)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.large)
+                    .font(.system(.body, design: .monospaced))
                     .truncationMode(.middle)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(NoteSideTheme.secondaryBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(NoteSideTheme.border, lineWidth: 1)
-                            )
-                    )
+                    .onSubmit(activate)
+                    .accessibilityIdentifier("licenseKeyField")
                     .onChange(of: licenseKey) { _, newValue in
                         let stripped = newValue
                             .components(separatedBy: .whitespacesAndNewlines)
@@ -162,33 +125,17 @@ struct LicenseView: View {
                 }
 
                 HStack {
-                    Button(action: activate) {
-                        Text("Activate")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(NoteSideTheme.accent)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(licenseKey.isEmpty)
-                    .opacity(licenseKey.isEmpty ? 0.5 : 1)
+                    Button("Activate", action: activate)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(licenseKey.isEmpty)
                 }
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(NoteSideTheme.contentBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(NoteSideTheme.border.opacity(0.8), lineWidth: 1)
-                )
-        )
+        .cardSurface(cornerRadius: CornerRadius.sheet)
     }
 
     private func activate() {

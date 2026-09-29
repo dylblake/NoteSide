@@ -26,3 +26,40 @@ enum PanelAnimation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 }
+
+/// Pane geometry for the edge panels. Widths are a fraction of the screen
+/// but clamped so the drawer is usable on a narrow or portrait display and
+/// doesn't sprawl across an ultra-wide one.
+enum PanelLayout {
+    static let editorMinWidth: CGFloat = 440
+    static let editorMaxWidth: CGFloat = 640
+    static let allNotesMinWidth: CGFloat = 540
+    static let allNotesMaxWidth: CGFloat = 960
+
+    static func editorPaneWidth(forScreenWidth screenWidth: CGFloat) -> CGFloat {
+        if let override = debugPaneWidthOverride { return min(override, screenWidth) }
+        return clamp(floor(screenWidth / 3), min: editorMinWidth, max: editorMaxWidth, screenWidth: screenWidth)
+    }
+
+    static func allNotesPaneWidth(forScreenWidth screenWidth: CGFloat) -> CGFloat {
+        if let override = debugPaneWidthOverride { return min(override, screenWidth) }
+        return clamp(floor(screenWidth * 0.45), min: allNotesMinWidth, max: allNotesMaxWidth, screenWidth: screenWidth)
+    }
+
+    private static func clamp(_ value: CGFloat, min lower: CGFloat, max upper: CGFloat, screenWidth: CGFloat) -> CGFloat {
+        // Never cover more than 85% of the screen, whatever the minimum says.
+        let hardCap = floor(screenWidth * 0.85)
+        return Swift.min(Swift.max(value, Swift.min(lower, hardCap)), Swift.min(upper, hardCap))
+    }
+
+    /// `NOTESIDE_PANE_WIDTH=480` forces a pane width so layouts can be
+    /// checked at any size on one display. Debug builds only.
+    private static var debugPaneWidthOverride: CGFloat? {
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["NOTESIDE_PANE_WIDTH"], let value = Double(raw), value > 0 {
+            return CGFloat(value)
+        }
+        #endif
+        return nil
+    }
+}

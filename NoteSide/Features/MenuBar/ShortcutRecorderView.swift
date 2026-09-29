@@ -29,16 +29,18 @@ final class RecorderNSView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 10
+        layer?.cornerRadius = 6
         layer?.borderWidth = 1
 
-        label.font = .systemFont(ofSize: 11, weight: .medium)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Keyboard shortcut")
+        label.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
         label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 34),
+            heightAnchor.constraint(equalToConstant: 28),
             label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             label.centerYAnchor.constraint(equalTo: centerYAnchor)
@@ -55,7 +57,7 @@ final class RecorderNSView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: NSView.noIntrinsicMetric, height: 34)
+        NSSize(width: NSView.noIntrinsicMetric, height: 28)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -65,7 +67,9 @@ final class RecorderNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        layer?.borderColor = NSColor.controlAccentColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.borderColor = NSColor.controlAccentColor.cgColor
+        }
         label.stringValue = "Type shortcut"
     }
 
@@ -97,8 +101,12 @@ final class RecorderNSView: NSView {
     }
 
     private func applyAppearance() {
-        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
-        layer?.borderColor = NSColor.separatorColor.cgColor
+        // Resolve dynamic colours in this view's appearance so the field
+        // tracks light/dark like a real NSTextField.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+            layer?.borderColor = NSColor.separatorColor.cgColor
+        }
     }
 
     func refresh() {

@@ -68,7 +68,11 @@ final class AppState {
         let browserPerms = BrowserPermissionsState(browserURLProvider: browserURLProvider)
         self.browserPermissions = browserPerms
         hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingDefaultsKey)
-        let initialAutoTitle = UserDefaults.standard.object(forKey: "autoTitleEnabled") as? Bool ?? true
+        // bool(forKey:) also understands the string form that launch
+        // arguments (`-autoTitleEnabled NO`) put in NSArgumentDomain.
+        let initialAutoTitle = UserDefaults.standard.object(forKey: "autoTitleEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "autoTitleEnabled")
         isAutoTitleEnabled = initialAutoTitle
         showsDockIcon = false
         let ns = NotesState(store: store)
@@ -257,8 +261,16 @@ final class AppState {
     #endif
 
     convenience init() {
+        var storeDirectory: URL?
+        #if DEBUG
+        // UI tests point the store at a scratch folder so they never read
+        // or modify the user's real notes. Compiled out of Release/MAS.
+        if let path = ProcessInfo.processInfo.environment["UITEST_STORE_DIRECTORY"], !path.isEmpty {
+            storeDirectory = URL(filePath: path, directoryHint: .isDirectory)
+        }
+        #endif
         self.init(
-            store: NoteStore(),
+            store: NoteStore(directoryOverride: storeDirectory),
             contextResolver: ContextResolver(),
             hotKeyMonitor: GlobalHotKeyMonitor()
         )
