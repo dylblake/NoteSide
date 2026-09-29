@@ -1,17 +1,27 @@
 import XCTest
 @testable import NoteSide
 
-/// The drawer takes key status only once a Chromium host has handled its
-/// ⌘C — and must not wait out the whole read to do it, or it slides in
-/// looking inactive (a non-key window's glass is lighter).
+/// The drawer takes key status only once the host has handed over its
+/// selection (a ⌘C is ignored by an app that isn't key) — and must not wait
+/// out the whole read to do it, or it slides in looking inactive (a non-key
+/// window's glass is lighter).
 final class SelectionReaderHostKeyTests: XCTestCase {
-    func testOnlyChromiumHostsMustStayKey() {
-        XCTAssertTrue(SelectionReader.hostMustStayKey("com.google.Chrome"))
-        XCTAssertTrue(SelectionReader.hostMustStayKey("company.thebrowser.Browser"), "Arc is Chromium")
-        XCTAssertTrue(SelectionReader.hostMustStayKey("com.brave.Browser"))
-        XCTAssertFalse(SelectionReader.hostMustStayKey("com.apple.Safari"))
-        XCTAssertFalse(SelectionReader.hostMustStayKey("com.apple.TextEdit"))
-        XCTAssertFalse(SelectionReader.hostMustStayKey(nil))
+    func testChromiumAndElectronAppsGoStraightToCopy() throws {
+        XCTAssertTrue(SelectionReader.readsThroughCopy(bundleIdentifier: "com.google.Chrome", bundleURL: nil))
+        XCTAssertTrue(SelectionReader.readsThroughCopy(bundleIdentifier: "company.thebrowser.Browser", bundleURL: nil), "Arc is Chromium")
+        XCTAssertFalse(SelectionReader.readsThroughCopy(bundleIdentifier: "com.apple.Safari", bundleURL: nil))
+        XCTAssertFalse(SelectionReader.readsThroughCopy(bundleIdentifier: "com.apple.TextEdit", bundleURL: nil))
+        XCTAssertFalse(SelectionReader.readsThroughCopy(bundleIdentifier: nil, bundleURL: nil))
+
+        // Electron apps are recognised by the framework they ship.
+        let electronApp = FileManager.default.temporaryDirectory.appending(path: "Electron-\(UUID().uuidString).app")
+        defer { try? FileManager.default.removeItem(at: electronApp) }
+        let nativeApp = FileManager.default.temporaryDirectory.appending(path: "Native-\(UUID().uuidString).app")
+        defer { try? FileManager.default.removeItem(at: nativeApp) }
+        try FileManager.default.createDirectory(at: electronApp.appending(path: "Contents/Frameworks/Electron Framework.framework"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: nativeApp.appending(path: "Contents/Frameworks"), withIntermediateDirectories: true)
+        XCTAssertTrue(SelectionReader.readsThroughCopy(bundleIdentifier: "com.tinyspeck.slackmacgap", bundleURL: electronApp))
+        XCTAssertFalse(SelectionReader.readsThroughCopy(bundleIdentifier: "com.openai.chat", bundleURL: nativeApp))
     }
 
     func testHostIsFreedEarlyWhenNothingIsSelected() {

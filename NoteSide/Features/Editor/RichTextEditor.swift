@@ -176,7 +176,7 @@ struct RichTextEditor: NSViewRepresentable {
 
 /// Routes the editor's keyboard shortcuts (mirroring Apple Notes and
 /// TextEdit) to the controller before AppKit's defaults see them.
-private final class EditorTextView: NSTextView {
+final class EditorTextView: NSTextView {
     var onCommand: ((RichTextEditorController.Command) -> Bool)?
     var tableMenuProvider: (() -> NSMenu?)?
     var onTableEdit: ((RichTextEditorController.TableEdit) -> Void)?
@@ -227,7 +227,6 @@ private final class EditorTextView: NSTextView {
         case ("7", [.command, .shift]): command = .toggleList(.bulleted)
         case ("9", [.command, .shift]): command = .toggleList(.numbered)
         case ("t", [.command, .option]): command = .insertTable
-        case ("q", [.command, .shift]): command = .quoteSelection
         case ("=", [.command]), ("+", [.command]), ("=", [.command, .shift]): command = .zoomIn
         case ("-", [.command]): command = .zoomOut
         case ("0", [.command]): command = .resetZoom

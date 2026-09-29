@@ -4,9 +4,9 @@
 
 ### Passages: quote the selection, reopen the exact spot
 - Select text in any app, press the hotkey, and the selection lands in the note as a **quoted passage**. On a web page the quote links to that exact passage, and clicking it reopens the page in the browser it came from, scrolled to and highlighting the text.
-- Every capture on the same page, app or file lands in that context's one note: a second selection is appended beneath the first, never replacing it. **Quote Selection** (⇧⌘Q or the toolbar) grabs the current selection at any time.
+- Every capture on the same page, app or file lands in that context's one note: a second selection is appended beneath the first, never replacing it.
 - **Note This in NoteSide** appears in every app's Services menu, so a selection can be sent over without Accessibility access.
-- Safari and native apps hand the selection over through Accessibility. Chromium browsers (Chrome, Edge, Brave, Arc, Vivaldi) don't expose it that way, so NoteSide briefly copies the selection and then restores whatever was on your clipboard.
+- Works in **any app**: Safari and many native apps hand the selection over through Accessibility; where an app doesn't (Chromium browsers, Electron apps such as Slack or VS Code, and many others), NoteSide briefly copies the selection and then restores whatever was on your clipboard.
 - Clicking a NoteSide window while the drawer is open no longer re-attaches the note to NoteSide itself.
 - With automatic titles on, an empty title shows nothing (no "Title" placeholder waiting to be replaced) unless you're typing in it; the generated title simply fades in when it's ready. Stored titles still appear instantly.
 - **Click outside to close.** A click elsewhere on the same display saves and dismisses the note drawer, and closes All Notes; a click on another display moves the panel there, as before.
@@ -18,6 +18,7 @@
 - **Looks active from its first frame**, rather than in the lighter inactive style until it settles — Chromium browsers get their copy request first, so the drawer can take focus almost at once.
 - **Follows you to another display with the same slide**, instead of jumping into place; All Notes does too.
 - All Notes cards respond to hover and press.
+- The formatting toolbar drops its text-size and quote buttons: text size is ⌘+ / ⌘− / ⌘0, and a selection is quoted when the drawer opens.
 - The drawer's motion is covered by frame-by-frame UI tests, so a change that makes it lag, lurch or flash fails the build.
 
 ### Notes stay attached to the page, not the link

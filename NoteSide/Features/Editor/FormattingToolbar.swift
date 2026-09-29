@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Formatting controls for the note editor: paragraph style, text size,
-/// character traits, lists and tables. Sits on a single glass capsule so
+/// Formatting controls for the note editor: paragraph style, character
+/// traits, lists and tables. (Text size is keyboard-only: ⌘+ / ⌘− / ⌘0.) Sits on a single glass capsule so
 /// it reads as one floating control, and collapses to icon-only when the
 /// pane is narrow.
 struct FormattingToolbar: View {
@@ -26,7 +26,6 @@ struct FormattingToolbar: View {
     private func toolbar(tier: Tier) -> some View {
         HStack(spacing: Spacing.xxs) {
             stylePicker(compact: tier != .full)
-            textSizeMenu
 
             toolbarDivider
 
@@ -44,7 +43,6 @@ struct FormattingToolbar: View {
                 bulletedListToggle
                 numberedListToggle
                 tableControl
-                quoteButton
             }
         }
         .padding(.horizontal, Spacing.xs)
@@ -94,13 +92,6 @@ struct FormattingToolbar: View {
             appState.formatting.insertNumberedList()
         }
         .accessibilityIdentifier("formatNumberedList")
-    }
-
-    private var quoteButton: some View {
-        ToolbarToggle(systemImage: "quote.opening", label: "Quote Selection", shortcut: "⇧⌘Q", isOn: false) {
-            appState.formatting.quoteSelection()
-        }
-        .accessibilityIdentifier("formatQuote")
     }
 
     /// Inserts a table outside one; inside, becomes a menu of row/column edits.
@@ -178,11 +169,6 @@ struct FormattingToolbar: View {
 
             Divider()
 
-            Button("Quote Selection") {
-                appState.formatting.quoteSelection()
-            }
-            .keyboardShortcut("q", modifiers: [.command, .shift])
-
             if appState.formatting.isInTable {
                 Menu("Table") {
                     tableEditItems
@@ -248,47 +234,6 @@ struct FormattingToolbar: View {
         .help("Paragraph style")
         .accessibilityLabel("Paragraph style, \(selection.wrappedValue.title)")
         .accessibilityIdentifier("formatStyleMenu")
-    }
-
-    // MARK: Size
-
-    private var textSizeMenu: some View {
-        Menu {
-            Button("Bigger", action: appState.formatting.zoomIn)
-                .keyboardShortcut("+", modifiers: .command)
-                .disabled(!appState.formatting.canZoomIn)
-            Button("Smaller", action: appState.formatting.zoomOut)
-                .keyboardShortcut("-", modifiers: .command)
-                .disabled(!appState.formatting.canZoomOut)
-            Button("Actual Size", action: appState.formatting.resetZoom)
-                .keyboardShortcut("0", modifiers: .command)
-                .disabled(appState.formatting.zoom == 1)
-
-            Divider()
-
-            ForEach(RichTextEditorController.zoomSteps, id: \.self) { step in
-                Button {
-                    appState.formatting.setZoom(step)
-                } label: {
-                    if abs(step - appState.formatting.zoom) < 0.001 {
-                        Label("\(Int((step * 100).rounded()))%", systemImage: "checkmark")
-                    } else {
-                        Text("\(Int((step * 100).rounded()))%")
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "textformat.size")
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 30, height: 28)
-                .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Text size (\(appState.formatting.zoomPercentLabel))")
-        .accessibilityLabel("Text size, \(appState.formatting.zoomPercentLabel)")
-        .accessibilityIdentifier("formatTextSize")
     }
 
     private var toolbarDivider: some View {

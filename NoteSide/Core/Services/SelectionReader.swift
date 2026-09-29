@@ -1,10 +1,12 @@
 import AppKit
 import ApplicationServices
 
-/// Reads the text currently selected in another app through the
-/// Accessibility API. Native text views answer `AXSelectedText` on the
-/// focused element; browsers answer it on the `AXWebArea`. Secure fields
-/// return nothing, which is the behaviour we want.
+/// Reads the text currently selected in another app. Accessibility first:
+/// native text views answer `AXSelectedText` on the focused element, WebKit
+/// on the `AXWebArea`. Where that has nothing — Chromium and Electron apps
+/// never expose a selection, and plenty of native apps use text views or web
+/// views that don't either — the app is asked to copy it (⌘C) and the
+/// clipboard is put back. Secure fields yield nothing either way.
 ///
 /// Call off the main thread (AX blocks on IPC) and never for our own pid.
 nonisolated struct SelectionReader: Sendable {
@@ -14,18 +16,23 @@ nonisolated struct SelectionReader: Sendable {
     private static let chromiumBundleIdentifiers = Set(
         BrowserURLProvider.supportedBrowsers.filter { $0.scriptFamily == .chromium || $0.scriptFamily == .arc }.map(\.bundleIdentifier)
     )
+    /// ⌘C in Finder copies the selected files, not text.
+    private static let neverCopyFrom: Set<String> = ["com.apple.finder"]
 
-    /// Chromium answers the selection read only through ⌘C, and only while
-    /// its window is key — so the drawer can't take key status until that
-    /// keystroke has been handled. Every other host is read through
-    /// Accessibility and doesn't care.
-    static func hostMustStayKey(_ bundleIdentifier: String?) -> Bool {
-        bundleIdentifier.map(chromiumBundleIdentifiers.contains) ?? false
+    /// Chromium browsers and Electron apps (Slack, VS Code, Discord, Notion…)
+    /// expose no selection through Accessibility, so they go straight to ⌘C
+    /// rather than spend time on reads that always miss.
+    static func readsThroughCopy(bundleIdentifier: String?, bundleURL: URL?) -> Bool {
+        if let bundleIdentifier, chromiumBundleIdentifiers.contains(bundleIdentifier) { return true }
+        guard let bundleURL else { return false }
+        let electron = bundleURL.appending(path: "Contents/Frameworks/Electron Framework.framework")
+        return FileManager.default.fileExists(atPath: electron.path)
     }
 
-    /// `onHostDone` fires once the host no longer needs to stay key (see
-    /// `hostMustStayKey`) — as soon as a Chromium host has handled the ⌘C,
-    /// well before the read itself gives up on an empty selection.
+    /// `onHostDone` fires once the host app no longer needs to stay key: as
+    /// soon as Accessibility has answered, or the host has handled the ⌘C
+    /// (which it only honours while its window is key) — well before a copy
+    /// of an empty selection times out.
     func selectedText(in app: NSRunningApplication, onHostDone: @Sendable () -> Void = {}) -> String? {
         #if DEBUG
         if let injected = ProcessInfo.processInfo.environment["UITEST_SELECTION_TEXT"], !injected.isEmpty {
@@ -41,12 +48,9 @@ nonisolated struct SelectionReader: Sendable {
             return nil
         }
 
-        // Chromium exposes no selection through Accessibility: go straight
-        // to the copy, so the host is free as early as possible.
-        if Self.hostMustStayKey(app.bundleIdentifier) {
+        if Self.readsThroughCopy(bundleIdentifier: app.bundleIdentifier, bundleURL: app.bundleURL) {
             return selectionViaCopy(pid: app.processIdentifier, onHostDone: onHostDone)
         }
-        onHostDone()
 
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
@@ -55,21 +59,25 @@ nonisolated struct SelectionReader: Sendable {
         if let focused = element(kAXFocusedUIElementAttribute, of: appElement),
            let text = string(kAXSelectedTextAttribute, of: focused), !text.isEmpty {
             DebugTrace.log("selection: focused-element AX hit (\(text.count) chars)")
+            onHostDone()
             return Self.normalized(text)
         }
         DebugTrace.log("selection: focused-element AX miss for \(app.bundleIdentifier ?? "?")")
 
-        guard let bundleIdentifier = app.bundleIdentifier, Self.browserBundleIdentifiers.contains(bundleIdentifier) else {
-            return nil
-        }
-
         // WebKit exposes the selection on the web area.
-        if let window = element(kAXFocusedWindowAttribute, of: appElement) ?? element(kAXMainWindowAttribute, of: appElement),
+        if let bundleIdentifier = app.bundleIdentifier, Self.browserBundleIdentifiers.contains(bundleIdentifier),
+           let window = element(kAXFocusedWindowAttribute, of: appElement) ?? element(kAXMainWindowAttribute, of: appElement),
            let webArea = AXBrowserURLReader().findWebArea(in: window),
            let text = string(kAXSelectedTextAttribute, of: webArea), !text.isEmpty {
+            onHostDone()
             return Self.normalized(text)
         }
-        return nil
+
+        guard !Self.neverCopyFrom.contains(app.bundleIdentifier ?? "") else {
+            onHostDone()
+            return nil
+        }
+        return selectionViaCopy(pid: app.processIdentifier, onHostDone: onHostDone)
     }
 
     /// Posts ⌘C to `pid`, waits for the pasteboard to change (≤ 400 ms),
@@ -102,7 +110,9 @@ nonisolated struct SelectionReader: Sendable {
         )
         DebugTrace.log("selection: copy path changed=\(changed)")
         guard changed else { return nil }
-        let text = pasteboard.string(forType: .string)
+        // Files (a file list, a Photos item) aren't a text selection.
+        let copiedFiles = pasteboard.types?.contains(.fileURL) ?? false
+        let text = copiedFiles ? nil : pasteboard.string(forType: .string)
 
         pasteboard.clearContents()
         if !snapshot.isEmpty {

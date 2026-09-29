@@ -80,8 +80,12 @@ final class NoteEditorUITests: XCTestCase {
         let textView = openEditor()
         XCTAssertTrue(app.descendants(matching: .any)["formattingToolbar"].firstMatch.exists)
         for identifier in ["formatBold", "formatItalic", "formatUnderline", "formatStrikethrough",
-                           "formatBulletedList", "formatNumberedList", "formatTable", "formatStyleMenu", "formatTextSize"] {
+                           "formatBulletedList", "formatNumberedList", "formatTable", "formatStyleMenu"] {
             XCTAssertTrue(app.descendants(matching: .any).matching(identifier: identifier).firstMatch.exists, "\(identifier) missing")
+        }
+        // Text size is keyboard-only, and quoting happens on open.
+        for identifier in ["formatTextSize", "formatQuote"] {
+            XCTAssertFalse(app.descendants(matching: .any).matching(identifier: identifier).firstMatch.exists, "\(identifier) should not be in the toolbar")
         }
         XCTAssertTrue(app.textFields["noteTitleField"].firstMatch.exists)
 
@@ -231,34 +235,8 @@ final class NoteEditorUITests: XCTestCase {
         XCTAssertTrue(waitForEditorText { $0.filter { $0 == "\n" }.count == 7 }, "3×2 + exit, got: \(editorText().debugDescription)")
     }
 
-    func testTextSizeMenuZoomsAndResets() throws {
-        let textView = openEditor()
-        textView.typeText("zoom")
-        let size = button("formatTextSize")
-        XCTAssertTrue(size.title.contains("100%"), "size menu shows \(size.title)")
-
-        size.click()
-        let bigger = app.menuItems["Bigger"].firstMatch
-        XCTAssertTrue(bigger.waitForExistence(timeout: 3))
-        bigger.click()
-        var deadline = Date().addingTimeInterval(3)
-        while Date() < deadline, !size.title.contains("110%") {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
-        XCTAssertTrue(size.title.contains("110%"), "size menu shows \(size.title)")
-
-        textView.click()
-        textView.typeKey("0", modifierFlags: .command)
-        deadline = Date().addingTimeInterval(3)
-        while Date() < deadline, !size.title.contains("100%") {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
-        XCTAssertTrue(size.title.contains("100%"), "size menu shows \(size.title)")
-        XCTAssertTrue(editorText().contains("zoom"), "zoom never changes the text")
-    }
-
-    /// A selection in the host app becomes a quoted passage: automatically
-    /// for a new note, and again on demand from the toolbar.
+    /// A selection in the host app becomes a quoted passage when the drawer
+    /// opens.
     func testSelectionBecomesQuotedPassage() throws {
         app.terminate()
         app.launchEnvironment["UITEST_SELECTION_TEXT"] = "the quick brown fox"
@@ -272,8 +250,6 @@ final class NoteEditorUITests: XCTestCase {
         textView.typeKey(.downArrow, modifierFlags: .command)  // end of document: the Body line under the quote
         textView.typeText("my thought")
         XCTAssertTrue(waitForEditorText { $0.contains("my thought") && $0.hasPrefix("\u{201C}") }, "note kept after activation: \(editorText().debugDescription)")
-        button("formatQuote").click()
-        XCTAssertTrue(waitForEditorText { $0.components(separatedBy: "the quick brown fox").count == 3 }, "second quote inserted: \(editorText().debugDescription)")
     }
 
     /// A second capture on the same context appends to the existing note
