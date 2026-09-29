@@ -183,12 +183,13 @@ nonisolated struct ContextResolver: Sendable {
 
     private func webPageContext(for url: URL) -> NoteContext {
         let host = normalizedHost(for: url)
+        let navigationURL = URLCanonicalizer.navigationURL(for: url).absoluteString
         return NoteContext(
             kind: .url,
             identifier: pageIdentifier(for: url),
             displayName: host ?? displayName(for: url),
-            secondaryLabel: url.absoluteString,
-            navigationTarget: url.absoluteString
+            secondaryLabel: navigationURL,
+            navigationTarget: navigationURL
         )
     }
 
@@ -351,19 +352,10 @@ nonisolated struct ContextResolver: Sendable {
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
+    /// Stable identity for a web page: session/tracking parameters and
+    /// renamed slugs must not split one page into several notes.
     private func pageIdentifier(for url: URL) -> String {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return url.absoluteString
-        }
-
-        components.scheme = components.scheme?.lowercased()
-        components.host = normalizedHost(for: url)
-        components.fragment = nil
-
-        let path = components.percentEncodedPath
-        components.percentEncodedPath = path.isEmpty ? "/" : path
-
-        return components.string ?? url.absoluteString
+        URLCanonicalizer.canonicalIdentifier(for: url)
     }
 
     private func editorDocumentURL(for app: NSRunningApplication, bundleIdentifier: String) -> URL? {

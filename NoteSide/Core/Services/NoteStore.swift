@@ -8,7 +8,9 @@ final class NoteStore {
         var notes: [ContextNote]
     }
 
-    private static let currentSchemaVersion = 1
+    /// 1: original envelope. 2: web identities canonicalised (see
+    /// `NoteMigration.canonicalizeWebIdentifiers`).
+    private static let currentSchemaVersion = 2
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -81,8 +83,8 @@ final class NoteStore {
         guard fileManager.fileExists(atPath: fileURL.path) else { return [] }
 
         if let data = try? Data(contentsOf: fileURL),
-           let notes = decodeNotes(from: data) {
-            return notes
+           let decoded = decodeNotes(from: data) {
+            return migrateIfNeeded(decoded)
         }
 
         // The main file exists but couldn't be read or decoded. Quarantine
@@ -91,11 +93,11 @@ final class NoteStore {
         let quarantineURL = quarantineCorruptFile()
 
         if let backupData = try? Data(contentsOf: backupURL),
-           let backupNotes = decodeNotes(from: backupData) {
+           let backupDecoded = decodeNotes(from: backupData) {
             loadRecoveryMessage = recoveryMessageForRestoredBackup(quarantineURL: quarantineURL)
             // Re-establish notes.json from the backup so the next launch
             // doesn't go through recovery again.
-            save(notes: backupNotes)
+            let backupNotes = migrateIfNeeded(backupDecoded, forceSave: true)
             return backupNotes
         }
 
@@ -125,12 +127,38 @@ final class NoteStore {
         }
     }
 
-    private func decodeNotes(from data: Data) -> [ContextNote]? {
+    private struct DecodedNotes {
+        let version: Int
+        let notes: [ContextNote]
+    }
+
+    private func decodeNotes(from data: Data) -> DecodedNotes? {
         if let file = try? decoder.decode(NotesFile.self, from: data) {
-            return file.notes
+            return DecodedNotes(version: file.version, notes: file.notes)
         }
-        // Legacy format: a bare top-level array of notes.
-        return try? decoder.decode([ContextNote].self, from: data)
+        // Legacy format: a bare top-level array of notes (pre-envelope).
+        if let notes = try? decoder.decode([ContextNote].self, from: data) {
+            return DecodedNotes(version: 0, notes: notes)
+        }
+        return nil
+    }
+
+    /// Applies schema migrations in order and persists the result so the
+    /// next launch loads the current version directly.
+    private func migrateIfNeeded(_ decoded: DecodedNotes, forceSave: Bool = false) -> [ContextNote] {
+        var notes = decoded.notes
+        var version = decoded.version
+
+        if version < 2 {
+            notes = NoteMigration.canonicalizeWebIdentifiers(notes)
+            version = 2
+        }
+
+        if version != decoded.version || forceSave {
+            save(notes: notes)
+            flush()
+        }
+        return notes
     }
 
     /// Must only run on writeQueue.
