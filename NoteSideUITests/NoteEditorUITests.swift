@@ -265,7 +265,7 @@ final class NoteEditorUITests: XCTestCase {
 
         // Clicking activates NoteSide; the note must stay put.
         textView.click()
-        textView.typeKey(.end, modifierFlags: .command)
+        textView.typeKey(.downArrow, modifierFlags: .command)  // end of document: the Body line under the quote
         textView.typeText("my thought")
         XCTAssertTrue(waitForEditorText { $0.contains("my thought") && $0.hasPrefix("\u{201C}") }, "note kept after activation: \(editorText().debugDescription)")
         button("formatQuote").click()

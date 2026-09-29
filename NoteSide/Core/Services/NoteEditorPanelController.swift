@@ -8,6 +8,12 @@ final class NoteEditorPanelController {
     private var animationSequence = 0
     private var lastPresentedScreen: NSScreen?
     private var activeGhostWindows: [NSWindow] = []
+    private var clickOutsideMonitor: Any?
+
+    /// Called when the user clicks outside the drawer on the same display
+    /// (a click on another display means "follow me", handled by
+    /// `repositionToActiveScreenIfNeeded`).
+    var onClickOutside: (() -> Void)?
 
     func install(appState: AppState) {
         let rootView = FloatingNoteEditorView()
@@ -64,6 +70,7 @@ final class NoteEditorPanelController {
         if makeKey {
             panel.makeKey()
         }
+        installClickOutsideMonitor()
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = reduceMotion ? PanelAnimation.reducedMotionFadeDuration : PanelAnimation.presentDuration
@@ -78,6 +85,37 @@ final class NoteEditorPanelController {
                 panel.alphaValue = 1
             }
         })
+    }
+
+    /// Global mouse-down monitor: clicks in other apps on the drawer's
+    /// display, outside the drawer, dismiss it. Clicks on another display
+    /// are left alone so the drawer can follow. Mouse monitors need no
+    /// permission (only key monitors do).
+    private func installClickOutsideMonitor() {
+        guard clickOutsideMonitor == nil else { return }
+        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleGlobalMouseDown()
+            }
+        }
+    }
+
+    private func removeClickOutsideMonitor() {
+        if let clickOutsideMonitor {
+            NSEvent.removeMonitor(clickOutsideMonitor)
+        }
+        clickOutsideMonitor = nil
+    }
+
+    private func handleGlobalMouseDown() {
+        guard let panel, panel.isVisible, let panelScreen = panel.screen else { return }
+        let point = NSEvent.mouseLocation
+        guard let clickScreen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }),
+              clickScreen.frame == panelScreen.frame else {
+            return  // another display: follow, don't close
+        }
+        guard !panel.frame.contains(point) else { return }
+        onClickOutside?()
     }
 
     func makeKeyIfVisible() {
@@ -400,6 +438,7 @@ final class NoteEditorPanelController {
     }
 
     func dismiss() {
+        removeClickOutsideMonitor()
         guard let panel, let screen = targetScreen(preferPanelScreen: true), panel.isVisible else {
             panel?.orderOut(nil)
             return

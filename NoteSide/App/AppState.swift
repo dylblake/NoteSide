@@ -351,7 +351,9 @@ final class AppState {
 
         Task { [weak self] in
             guard let self else { return }
+            DebugTrace.log("quickNote frontmost=\(frontmostApp?.bundleIdentifier ?? "nil") passageText=\(passageText != nil)")
             let captured = passageText == nil ? await self.editor.captureSelectionText(from: frontmostApp) : nil
+            DebugTrace.log("quickNote captured=\(captured.map { String($0.prefix(60)) } ?? "nil")")
             guard self.editor.isEditorPresented else { return }
             self.noteEditorPanelController.makeKeyIfVisible()
             self.richTextController.focus()
@@ -394,6 +396,14 @@ final class AppState {
 
     /// Toolbar / ⇧⌘Q: quote whatever is selected in the app behind the drawer.
     func quoteCurrentSelection() {
+        var trusted = AXIsProcessTrusted()
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["UITEST_SELECTION_TEXT"] != nil { trusted = true }
+        #endif
+        guard trusted else {
+            editor.editorErrorMessage = "Quoting a selection needs Accessibility access. Turn it on in Permissions & Setup, or use Services → Note This in NoteSide."
+            return
+        }
         let hostApp = NSWorkspace.shared.frontmostApplication
         noteEditorPanelController.yieldKey(to: hostApp)
         Task { [weak self] in
@@ -427,6 +437,7 @@ final class AppState {
         let passage = Passage(text: text, sourceURL: editor.activePageURL)
         let isEmpty = editor.currentEditorAttributedTextSnapshot().string
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        DebugTrace.log("attachPassage isEmpty=\(isEmpty) link=\(passage.link?.absoluteString ?? "nil") context=\(editor.activeContext?.identifier ?? "nil")")
         if isEmpty {
             insertPassage(passage)
         } else {
@@ -1090,6 +1101,10 @@ final class AppState {
 
         let controller = NoteEditorPanelController()
         controller.install(appState: self)
+        controller.onClickOutside = { [weak self] in
+            guard let self, self.editor.isEditorPresented else { return }
+            self.saveAndDismissEditor()
+        }
         panelController = controller
         return controller
     }

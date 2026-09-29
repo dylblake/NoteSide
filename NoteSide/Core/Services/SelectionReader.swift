@@ -21,6 +21,7 @@ nonisolated struct SelectionReader: Sendable {
 
         guard AXIsProcessTrusted(),
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+            DebugTrace.log("selection: not trusted or own pid (trusted=\(AXIsProcessTrusted()))")
             return nil
         }
 
@@ -30,8 +31,10 @@ nonisolated struct SelectionReader: Sendable {
 
         if let focused = element(kAXFocusedUIElementAttribute, of: appElement),
            let text = string(kAXSelectedTextAttribute, of: focused), !text.isEmpty {
+            DebugTrace.log("selection: focused-element AX hit (\(text.count) chars)")
             return Self.normalized(text)
         }
+        DebugTrace.log("selection: focused-element AX miss for \(app.bundleIdentifier ?? "?")")
 
         guard let bundleIdentifier = app.bundleIdentifier, Self.browserBundleIdentifiers.contains(bundleIdentifier) else {
             return nil
@@ -78,6 +81,7 @@ nonisolated struct SelectionReader: Sendable {
             usleep(20_000)
             if pasteboard.changeCount != changeCountBefore { changed = true; break }
         }
+        DebugTrace.log("selection: copy path changed=\(changed)")
         guard changed else { return nil }
         let text = pasteboard.string(forType: .string)
 

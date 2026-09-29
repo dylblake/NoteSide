@@ -8,6 +8,7 @@
 - **Note This in NoteSide** appears in every app's Services menu, so a selection can be sent over without Accessibility access.
 - Safari and native apps hand the selection over through Accessibility. Chromium browsers (Chrome, Edge, Brave, Arc, Vivaldi) don't expose it that way, so NoteSide briefly copies the selection and then restores whatever was on your clipboard.
 - Clicking a NoteSide window while the drawer is open no longer re-attaches the note to NoteSide itself.
+- **Click outside the drawer to close it.** A click elsewhere on the same display saves and dismisses the note; a click on another display moves the drawer there, as before.
 - Web notes now reopen in the browser they were captured in, not the default browser.
 
 ### Notes stay attached to the page, not the link
