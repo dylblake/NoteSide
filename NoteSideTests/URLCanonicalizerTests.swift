@@ -42,7 +42,69 @@ final class URLCanonicalizerTests: XCTestCase {
     func testYouTubeKeepsVideoDropsTimestampAndShareSuffix() {
         let a = id("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s&si=abcdef&list=PL123")
         XCTAssertEqual(a, "https://youtube.com/watch?v=dQw4w9WgXcQ")
-        XCTAssertEqual(id("https://youtu.be/dQw4w9WgXcQ?si=zzz"), "https://youtu.be/dQw4w9WgXcQ")
+        XCTAssertEqual(id("https://youtu.be/dQw4w9WgXcQ?si=zzz"), a)
+    }
+
+    func testYouTubeShortLinksShortsLiveAndMobileShareOneIdentity() {
+        let watch = id("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        XCTAssertEqual(id("https://youtu.be/dQw4w9WgXcQ?t=90"), watch)
+        XCTAssertEqual(id("https://www.youtube.com/shorts/dQw4w9WgXcQ"), watch)
+        XCTAssertEqual(id("https://www.youtube.com/live/dQw4w9WgXcQ?feature=share"), watch)
+        XCTAssertEqual(id("https://m.youtube.com/watch?v=dQw4w9WgXcQ"), watch)
+        XCTAssertNotEqual(id("https://youtu.be/AAAAAAAAAAA"), watch)
+    }
+
+    func testGoogleDocsAccountSlotDoesNotChangeIdentity() {
+        let plain = id("https://docs.google.com/document/d/1AbC/edit")
+        XCTAssertEqual(id("https://docs.google.com/document/u/1/d/1AbC/edit?tab=t.0"), plain)
+        XCTAssertEqual(plain, "https://docs.google.com/document/d/1AbC")
+        // Before: every doc of account u/1 collapsed onto "/document/u/1".
+        XCTAssertNotEqual(
+            id("https://docs.google.com/document/u/1/d/AAA/edit"),
+            id("https://docs.google.com/document/u/1/d/BBB/edit")
+        )
+        XCTAssertNotEqual(
+            id("https://drive.google.com/drive/u/0/folders/AAA"),
+            id("https://drive.google.com/drive/u/0/folders/BBB")
+        )
+    }
+
+    func testGooglePublishedDocsKeepTheirID() {
+        XCTAssertNotEqual(
+            id("https://docs.google.com/document/d/e/2PACX-AAA/pub"),
+            id("https://docs.google.com/document/d/e/2PACX-BBB/pub")
+        )
+    }
+
+    func testGitHubPullRequestTabsAndRepoCaseShareOneIdentity() {
+        let pr = id("https://github.com/Apple/Swift/pull/42")
+        XCTAssertEqual(id("https://github.com/apple/swift/pull/42/files?diff=split"), pr)
+        XCTAssertEqual(id("https://github.com/apple/swift/pull/42/commits"), pr)
+        XCTAssertEqual(pr, "https://github.com/apple/swift/pull/42")
+        XCTAssertNotEqual(id("https://github.com/apple/swift/pull/43"), pr)
+        XCTAssertEqual(
+            id("https://github.com/apple/swift/issues/7#issuecomment-1"),
+            "https://github.com/apple/swift/issues/7"
+        )
+    }
+
+    func testGitHubFilePathsStayDistinct() {
+        XCTAssertNotEqual(
+            id("https://github.com/apple/swift/blob/main/README.md"),
+            id("https://github.com/apple/swift/blob/main/CHANGELOG.md")
+        )
+    }
+
+    func testLinearIssueSlugAndProjectRenameDoNotChangeIdentity() {
+        XCTAssertEqual(
+            id("https://linear.app/acme/issue/ENG-123/fix-login-bug"),
+            id("https://linear.app/acme/issue/ENG-123/fix-the-login-bug")
+        )
+        XCTAssertEqual(id("https://linear.app/acme/issue/ENG-123"), "https://linear.app/acme/issue/ENG-123")
+        XCTAssertEqual(
+            id("https://linear.app/acme/project/q3-launch-0a1b2c3d4e5f/overview"),
+            id("https://linear.app/acme/project/fall-launch-0a1b2c3d4e5f/issues")
+        )
     }
 
     func testGmailKeepsFragmentOtherHostsDropIt() {

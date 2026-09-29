@@ -133,3 +133,43 @@ struct FigmaTitleParserTests {
         #expect(!FigmaTitleParser.looksLikeAccessibilityHint("Marketing Site"))
     }
 }
+
+struct LinearTitleParserTests {
+
+    @Test func issueKeyFromWindowTitle() {
+        #expect(LinearTitleParser.issueKey(in: "ENG-123 Fix login bug") == "ENG-123")
+        #expect(LinearTitleParser.issueKey(in: "Fix login – DES2-7 – Linear") == "DES2-7")
+        #expect(LinearTitleParser.issueKey(in: "Inbox") == nil)
+        #expect(LinearTitleParser.issueKey(in: "My issues - 2024-05") == nil)
+    }
+
+    @Test func desktopLinkFromWebURL() {
+        #expect(
+            LinearTitleParser.desktopURLString(forWebURL: "https://linear.app/acme/issue/ENG-1")
+                == "linear://acme/issue/ENG-1"
+        )
+        #expect(LinearTitleParser.desktopURLString(forWebURL: "https://example.com/acme") == nil)
+        #expect(LinearTitleParser.desktopURLString(forWebURL: "https://linear.app/") == nil)
+    }
+}
+
+struct TerminalTitleParserTests {
+    let home = "/Users/me"
+
+    @Test func tildePathTitles() {
+        #expect(TerminalTitleParser.directoryPath(in: "~/src/app", homeDirectory: home) == "/Users/me/src/app")
+        #expect(TerminalTitleParser.directoryPath(in: "me@mac: ~/src/app", homeDirectory: home) == "/Users/me/src/app")
+        #expect(TerminalTitleParser.directoryPath(in: "~/src/app (-zsh)", homeDirectory: home) == "/Users/me/src/app")
+        #expect(TerminalTitleParser.directoryPath(in: "~", homeDirectory: home) == "/Users/me")
+    }
+
+    @Test func absolutePathTitles() {
+        #expect(TerminalTitleParser.directoryPath(in: "/opt/homebrew — -zsh", homeDirectory: home) == "/opt/homebrew")
+    }
+
+    @Test func titlesWithoutAPath() {
+        #expect(TerminalTitleParser.directoryPath(in: "app — -zsh — 80×24", homeDirectory: home) == nil)
+        #expect(TerminalTitleParser.directoryPath(in: "vim", homeDirectory: home) == nil)
+        #expect(TerminalTitleParser.directoryPath(in: "/", homeDirectory: home) == nil)
+    }
+}

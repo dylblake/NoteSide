@@ -20,7 +20,21 @@ nonisolated struct ContextResolver: Sendable {
     private let codeBundleIdentifiers: Set<String> = [
         "com.microsoft.VSCode",
         "com.microsoft.VSCodeInsiders",
-        "com.visualstudio.code.oss"
+        "com.visualstudio.code.oss",
+        "com.vscodium",
+        "com.todesktop.230313mzl4w4u92", // Cursor
+        "com.exafunction.windsurf"
+    ]
+    private let linearBundleIdentifier = "com.linear"
+    private let itermBundleIdentifier = "com.googlecode.iterm2"
+    private let terminalBundleIdentifiers: Set<String> = [
+        "com.apple.Terminal",
+        "com.googlecode.iterm2",
+        "com.mitchellh.ghostty",
+        "dev.warp.Warp-Stable",
+        "net.kovidgoyal.kitty",
+        "com.github.wez.wezterm",
+        "org.alacritty"
     ]
 
     func resolveCurrentContext(allowBrowserAutomation: Bool = true) -> NoteContext {
@@ -88,6 +102,15 @@ nonisolated struct ContextResolver: Sendable {
             return figmaContext
         }
 
+        if bundleIdentifier == linearBundleIdentifier,
+           let linearContext = linearContext(for: app) {
+            return linearContext
+        }
+
+        if terminalBundleIdentifiers.contains(bundleIdentifier) {
+            return terminalContext(for: app, bundleIdentifier: bundleIdentifier, appName: appName)
+        }
+
         if let editorDocumentURL = editorDocumentURL(for: app, bundleIdentifier: bundleIdentifier) {
             let rootURL = editorRootURL(for: app, bundleIdentifier: bundleIdentifier, fileURL: editorDocumentURL)
             return fileContext(
@@ -142,7 +165,7 @@ nonisolated struct ContextResolver: Sendable {
         allowBrowserAutomation: Bool
     ) -> NoteContext {
         if let url = axBrowserURLReader.activeURL(for: app) {
-            return webPageContext(for: url, sourceBundleIdentifier: bundleIdentifier)
+            return pageContext(for: url, sourceBundleIdentifier: bundleIdentifier)
         }
 
         if allowBrowserAutomation {
@@ -153,7 +176,7 @@ nonisolated struct ContextResolver: Sendable {
 
             switch attempt.result {
             case .success(_, let url):
-                return webPageContext(for: url, sourceBundleIdentifier: bundleIdentifier)
+                return pageContext(for: url, sourceBundleIdentifier: bundleIdentifier)
             case .noTab:
                 return NoteContext(
                     kind: .application,
@@ -179,6 +202,128 @@ nonisolated struct ContextResolver: Sendable {
             secondaryLabel: grantHint,
             navigationTarget: nil
         )
+    }
+
+    /// A local file open in a browser (a PDF dragged into Chrome) is a
+    /// file, not a web page: it follows renames like any other file and
+    /// shows its name rather than a `file://` URL.
+    private func pageContext(for url: URL, sourceBundleIdentifier: String) -> NoteContext {
+        if url.isFileURL {
+            return fileContext(for: url, sourceBundleIdentifier: sourceBundleIdentifier)
+        }
+        return webPageContext(for: url, sourceBundleIdentifier: sourceBundleIdentifier)
+    }
+
+    /// Linear's desktop app is the web app in a shell, so its web area
+    /// carries the same `linear.app` URL a browser would: notes taken in
+    /// either place land on one issue. The note reopens through the
+    /// `linear://` scheme, which the desktop app handles. Without the
+    /// URL (AX tree not ready), the issue key in the window title
+    /// (`ENG-123 Fix login`) still separates issues.
+    private func linearContext(for app: NSRunningApplication) -> NoteContext? {
+        if let url = axBrowserURLReader.activeURL(for: app),
+           let host = url.host()?.lowercased(),
+           host == "linear.app" || host.hasSuffix(".linear.app") {
+            let context = webPageContext(for: url)
+            let desktopTarget = context.navigationTarget.flatMap(LinearTitleParser.desktopURLString(forWebURL:))
+            return NoteContext(
+                kind: .url,
+                identifier: context.identifier,
+                displayName: context.displayName,
+                secondaryLabel: context.secondaryLabel,
+                navigationTarget: desktopTarget ?? context.navigationTarget
+            )
+        }
+
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        enableElectronAccessibility(on: appElement)
+        let windowTitle = axElementAttribute(kAXFocusedWindowAttribute as CFString, from: appElement)
+            .flatMap { stringAttribute(kAXTitleAttribute as CFString, from: $0) }
+        guard let windowTitle, let issueKey = LinearTitleParser.issueKey(in: windowTitle) else { return nil }
+
+        return NoteContext(
+            kind: .application,
+            identifier: "linear:\(issueKey.lowercased())",
+            displayName: "Linear / \(issueKey)",
+            secondaryLabel: windowTitle,
+            navigationTarget: nil
+        )
+    }
+
+    /// Terminal notes attach to the project the shell is in — the
+    /// enclosing repository when there is one, so `cd src` doesn't start
+    /// a new note — and reopen as a new terminal window there. The
+    /// working directory comes from the window's proxy document
+    /// (Terminal.app, Ghostty), iTerm2's scripting `path` variable, or a
+    /// path in the window title (most shells' default prompt title).
+    private func terminalContext(
+        for app: NSRunningApplication,
+        bundleIdentifier: String,
+        appName: String
+    ) -> NoteContext {
+        let documentDirectory = focusedDocumentURL(for: app)
+            .flatMap { $0.isFileURL ? $0 : nil }
+            .map { isDirectory($0) ? $0 : $0.deletingLastPathComponent() }
+        let directory = documentDirectory
+            ?? (bundleIdentifier == itermBundleIdentifier ? itermSessionDirectoryURL() : nil)
+            ?? terminalTitleDirectoryURL(for: app)
+
+        guard let directory, isDirectory(directory) else {
+            return NoteContext(
+                kind: .application,
+                identifier: bundleIdentifier,
+                displayName: appName,
+                secondaryLabel: "No working directory detected — this note attaches to \(appName) itself.",
+                navigationTarget: nil
+            )
+        }
+
+        let resolved = directory.resolvingSymlinksInPath()
+        return fileContext(
+            for: terminalProjectRoot(for: resolved) ?? resolved,
+            sourceBundleIdentifier: bundleIdentifier
+        )
+    }
+
+    private func itermSessionDirectoryURL() -> URL? {
+        let scriptSource = """
+        tell application id "com.googlecode.iterm2"
+            if (count of windows) is 0 then return ""
+            tell current session of current window
+                return variable named "path"
+            end tell
+        end tell
+        """
+        return executeFilePathScript(scriptSource, cacheKey: "iterm_session_path")
+    }
+
+    private func terminalTitleDirectoryURL(for app: NSRunningApplication) -> URL? {
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        let windowTitle = axElementAttribute(kAXFocusedWindowAttribute as CFString, from: appElement)
+            .flatMap { stringAttribute(kAXTitleAttribute as CFString, from: $0) }
+        guard let windowTitle,
+              let path = TerminalTitleParser.directoryPath(
+                in: windowTitle,
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
+              ) else {
+            return nil
+        }
+        return URL(fileURLWithPath: path)
+    }
+
+    /// Nearest enclosing directory with a project marker, stopping at the
+    /// home folder: a dotfiles repo in `~` must not swallow every project
+    /// beneath it. Nil when the directory isn't inside a project.
+    private func terminalProjectRoot(for directory: URL) -> URL? {
+        // `.path` (unlike path(percentEncoded:)) never ends in a slash.
+        let home = FileManager.default.homeDirectoryForCurrentUser.resolvingSymlinksInPath().path
+        var current = directory.standardizedFileURL
+        while current.path != "/" {
+            if containsProjectMarker(at: current) { return current }
+            if current.path == home { return nil }
+            current.deleteLastPathComponent()
+        }
+        return nil
     }
 
     /// `sourceBundleIdentifier` records the browser the page was captured
@@ -555,27 +700,37 @@ nonisolated struct ContextResolver: Sendable {
         guard fileURL.isFileURL else { return nil }
 
         var currentURL = isDirectory(fileURL) ? fileURL : fileURL.deletingLastPathComponent()
-        let fileManager = FileManager.default
-        let rootMarkers = [
-            ".git",
-            ".hg",
-            ".svn",
-            "package.json",
-            "pnpm-workspace.yaml",
-            "yarn.lock",
-            "Package.swift"
-        ]
 
         while currentURL.path != "/" {
-            if let contents = try? fileManager.contentsOfDirectory(atPath: currentURL.path(percentEncoded: false)) {
-                if contents.contains(where: { rootMarkers.contains($0) || $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") || $0.hasSuffix(".code-workspace") }) {
-                    return currentURL
-                }
+            if containsProjectMarker(at: currentURL) {
+                return currentURL
             }
             currentURL.deleteLastPathComponent()
         }
 
         return fileURL.deletingLastPathComponent()
+    }
+
+    private static let projectRootMarkers: Set<String> = [
+        ".git",
+        ".hg",
+        ".svn",
+        "package.json",
+        "pnpm-workspace.yaml",
+        "yarn.lock",
+        "Package.swift"
+    ]
+
+    private func containsProjectMarker(at directory: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)) else {
+            return false
+        }
+        return contents.contains {
+            Self.projectRootMarkers.contains($0)
+                || $0.hasSuffix(".xcodeproj")
+                || $0.hasSuffix(".xcworkspace")
+                || $0.hasSuffix(".code-workspace")
+        }
     }
 
     private func stableFileSystemIdentifier(for url: URL) -> String? {

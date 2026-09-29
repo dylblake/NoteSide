@@ -8,8 +8,9 @@ NoteSide is a macOS menu bar app for context-aware notes. It lets you attach not
 - Rich text editing modelled on Apple Notes: Title / Heading / Subheading / Body / Monospaced styles, bold, italic, underline, strikethrough, bulleted and numbered lists with nesting, tables, and text zoom
 - Attach notes to:
   - browser pages
-  - files in editors like Xcode and VS Code
-  - app-specific contexts such as Slack channels/DMs and Figma files when detectable
+  - files in editors like Xcode, VS Code and Cursor, and documents in Preview and other PDF readers
+  - the project a terminal is in (Terminal, iTerm2, Ghostty, Warp and others)
+  - app-specific contexts such as Slack channels/DMs, Figma files and Linear issues when detectable
 - View all saved notes in a dedicated notes window
 - Pin important notes to a pinned section
 - Follow macOS light and dark mode automatically

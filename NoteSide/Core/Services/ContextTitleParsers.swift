@@ -343,3 +343,53 @@ nonisolated enum FigmaTitleParser {
         return String(string[matchRange])
     }
 }
+
+/// Linear desktop titles and link rewriting.
+nonisolated enum LinearTitleParser {
+    /// The first issue key (`ENG-123`) in a window title. Team keys are
+    /// uppercase letters and digits starting with a letter.
+    static func issueKey(in title: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: #"\b[A-Z][A-Z0-9]{0,9}-[0-9]+\b"#) else { return nil }
+        let range = NSRange(title.startIndex..<title.endIndex, in: title)
+        guard let match = regex.firstMatch(in: title, range: range),
+              let matchRange = Range(match.range, in: title) else { return nil }
+        return String(title[matchRange])
+    }
+
+    /// `https://linear.app/acme/issue/ENG-1` → `linear://acme/issue/ENG-1`,
+    /// the form the desktop app opens directly.
+    static func desktopURLString(forWebURL string: String) -> String? {
+        guard let components = URLComponents(string: string),
+              let host = components.host?.lowercased(),
+              host == "linear.app" || host.hasSuffix(".linear.app") else { return nil }
+        let path = components.percentEncodedPath.drop(while: { $0 == "/" })
+        guard !path.isEmpty else { return nil }
+        return "linear://" + path
+    }
+}
+
+/// Finds the shell's working directory in a terminal window title.
+/// Default titles carry it in several shapes: `~/src/app` (Ghostty, zsh
+/// and bash prompt titles), `user@host: ~/src/app`, `~/src/app (-zsh)`
+/// (iTerm2) or `app — -zsh — 80×24` (Terminal.app, name only — useless
+/// here, but Terminal.app exposes the directory through AX instead).
+nonisolated enum TerminalTitleParser {
+    static func directoryPath(in title: String, homeDirectory: String) -> String? {
+        var tokens = [title]
+        for separator in [" — ", " – ", " - ", ": ", " (", " | "] {
+            tokens = tokens.flatMap { $0.components(separatedBy: separator) }
+        }
+        for token in tokens {
+            let trimmed = token
+                .trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "()"))
+            if trimmed == "~" { return homeDirectory }
+            if trimmed.hasPrefix("~/") {
+                let home = homeDirectory.hasSuffix("/") ? String(homeDirectory.dropLast()) : homeDirectory
+                return home + trimmed.dropFirst()
+            }
+            if trimmed.hasPrefix("/"), trimmed.count > 1 { return trimmed }
+        }
+        return nil
+    }
+}

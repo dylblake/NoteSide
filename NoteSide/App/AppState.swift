@@ -939,8 +939,11 @@ final class AppState {
     }
 
     private func navigate(to context: NoteContext) {
+        // An app-scheme target (`linear://`) whose app has since been
+        // removed falls through to the context's web URL.
         if let navigationTarget = context.navigationTarget,
-           let url = URL(string: navigationTarget) {
+           let url = URL(string: navigationTarget),
+           NSWorkspace.shared.urlForApplication(toOpen: url) != nil {
             open(url, preferringApplication: context.kind == .url ? context.sourceBundleIdentifier : nil)
             return
         }
@@ -968,6 +971,10 @@ final class AppState {
 
         if context.identifier.hasPrefix("figma:") || context.displayName.hasPrefix("Figma") {
             return "com.figma.Desktop"
+        }
+
+        if context.identifier.hasPrefix("linear:") {
+            return "com.linear"
         }
 
         return nil

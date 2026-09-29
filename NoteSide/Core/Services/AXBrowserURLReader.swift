@@ -42,10 +42,11 @@ nonisolated struct AXBrowserURLReader: Sendable {
             url = nil
         }
 
-        // Only real web pages: internal pages (chrome://newtab,
-        // favorites://) fall through to the caller's fallback handling.
+        // Web pages and local files (a PDF opened in the browser); internal
+        // pages (chrome://newtab, favorites://) fall through to the
+        // caller's fallback handling.
         guard let url, let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else {
+              scheme == "http" || scheme == "https" || scheme == "file" else {
             return nil
         }
         return url
