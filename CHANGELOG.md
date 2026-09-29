@@ -9,7 +9,7 @@
 - Safari and native apps hand the selection over through Accessibility. Chromium browsers (Chrome, Edge, Brave, Arc, Vivaldi) don't expose it that way, so NoteSide briefly copies the selection and then restores whatever was on your clipboard.
 - Clicking a NoteSide window while the drawer is open no longer re-attaches the note to NoteSide itself.
 - **The drawer opens already loaded.** Context, title, content and any selected passage are resolved before the drawer slides in (capped at 200 ms so a busy app can never stall the hotkey), so there is no lighter "loading" state and nothing pops in afterwards.
-- Automatically generated titles ease into the title field instead of snapping in (a plain fade under Reduce Motion); stored titles still appear instantly.
+- With automatic titles on, the title field no longer shows a "Title" placeholder first: it stays blank until the generated title eases in (fade, settle, blur-to-sharp; a plain fade under Reduce Motion). Stored titles still appear instantly.
 - **Click outside to close.** A click elsewhere on the same display saves and dismisses the note drawer, and closes All Notes; a click on another display moves the panel there, as before.
 - Web notes now reopen in the browser they were captured in, not the default browser.
 

@@ -37,6 +37,7 @@ final class EditorStateTitleRevealTests: XCTestCase {
         editor.activeContext = context
         editor.isEditorPresented = true
 
+        XCTAssertEqual(editor.titleGeneration, .idle, "nothing requested yet: no placeholder either")
         editor.generateTitleFromContext(context: context)
         XCTAssertTrue(editor.isGeneratingTitle)
         await waitUntil { editor.titleRevealToken == 1 }
@@ -44,7 +45,20 @@ final class EditorStateTitleRevealTests: XCTestCase {
         XCTAssertEqual(editor.editorTitle, "Stub Title")
         XCTAssertEqual(editor.titleRevealToken, 1)
         await waitUntil { !editor.isGeneratingTitle }
-        XCTAssertFalse(editor.isGeneratingTitle)
+        XCTAssertEqual(editor.titleGeneration, .finished)
+    }
+
+    func testGeneratorWithNothingToSayFinishesSoPlaceholderCanShow() async throws {
+        let generator = StubTitleGenerator()
+        generator.title = nil
+        let (editor, directory) = try makeEditor(generator: generator)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        editor.activeContext = context
+        editor.isEditorPresented = true
+        editor.generateTitleFromContext(context: context)
+        await waitUntil { editor.titleGeneration == .finished }
+        XCTAssertEqual(editor.editorTitle, "")
+        XCTAssertEqual(editor.titleRevealToken, 0)
     }
 
     func testTypedTitleIsKeptAndNotRevealed() async throws {
@@ -69,5 +83,6 @@ final class EditorStateTitleRevealTests: XCTestCase {
         editor.loadEditorState(for: context)
         XCTAssertEqual(editor.editorTitle, "Stored")
         XCTAssertEqual(editor.titleRevealToken, 0)
+        XCTAssertEqual(editor.titleGeneration, .idle)
     }
 }

@@ -34,7 +34,16 @@ final class EditorState {
     /// Bumped only when a *generated* title lands in an empty field, so the
     /// view can ease it in; loading a stored title never bumps it.
     private(set) var titleRevealToken = 0
-    private(set) var isGeneratingTitle = false
+
+    enum TitleGeneration: Equatable {
+        /// Nothing requested yet for this note (the drawer is still opening).
+        case idle
+        case generating
+        /// The generator answered (or had nothing to say).
+        case finished
+    }
+    private(set) var titleGeneration: TitleGeneration = .idle
+    var isGeneratingTitle: Bool { titleGeneration == .generating }
     @ObservationIgnored var isAutoTitleEnabled: () -> Bool
 
     static let intraAppPollingBundleIdentifiers: Set<String> = [
@@ -72,6 +81,7 @@ final class EditorState {
 
     func loadEditorState(for context: NoteContext) {
         cancelAutosave()
+        titleGeneration = .idle
         richTextController.discardQueuedPassages()
         let existingNote = notesState.note(for: context)
         editorAttributedText = attributedText(for: context)
@@ -82,6 +92,7 @@ final class EditorState {
 
     func loadEditorState(for note: ContextNote) {
         cancelAutosave()
+        titleGeneration = .idle
         richTextController.discardQueuedPassages()
         editorAttributedText = attributedText(for: note)
         editorTitle = note.title ?? ""
@@ -481,10 +492,10 @@ final class EditorState {
     // MARK: - Title Generation
 
     func generateTitleIfNeeded(noteID: UUID, body: String, context: NoteContext) {
-        isGeneratingTitle = true
+        titleGeneration = .generating
         Task { [weak self] in
             guard let self else { return }
-            defer { self.isGeneratingTitle = false }
+            defer { self.titleGeneration = .finished }
             if let generated = await self.titleGenerator.generateTitle(body: body, context: context) {
                 guard let idx = self.notesState.notes.firstIndex(where: { $0.id == noteID }) else { return }
                 let existing = self.notesState.notes[idx]
@@ -503,10 +514,10 @@ final class EditorState {
     }
 
     func generateTitleFromContext(context: NoteContext) {
-        isGeneratingTitle = true
+        titleGeneration = .generating
         Task { [weak self] in
             guard let self else { return }
-            defer { self.isGeneratingTitle = false }
+            defer { self.titleGeneration = .finished }
             if let generated = await self.titleGenerator.generateTitle(body: "", context: context) {
                 // Only apply if the user hasn't typed a title in the meantime
                 guard self.isEditorPresented,

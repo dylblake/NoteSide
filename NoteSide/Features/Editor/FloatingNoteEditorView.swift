@@ -44,11 +44,13 @@ struct FloatingNoteEditorView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                // A generated title arriving bumps `titleRevealToken` inside
-                // withAnimation: the empty field fades out and the filled
-                // one fades in, settling down 4pt. Same font and frame, so
-                // nothing around it moves. Stored titles never bump it.
-                TextField("Title", text: $editor.editorTitle, prompt: Text("Title"))
+                // With automatic titles on, the field stays blank until the
+                // generated title lands; "Title" only appears when titling is
+                // off or the generator had nothing. A generated title bumps
+                // `titleRevealToken` inside withAnimation: the blank field
+                // fades out and the filled one eases in (fade, 4pt settle,
+                // blur-to-sharp). Same font and frame, so nothing moves.
+                TextField("Title", text: $editor.editorTitle, prompt: titlePrompt)
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(NoteSideTheme.primaryText)
                     .textFieldStyle(.plain)
@@ -56,7 +58,7 @@ struct FloatingNoteEditorView: View {
                     .id(appState.editor.titleRevealToken)
                     .transition(reduceMotion
                         ? .opacity
-                        : .asymmetric(insertion: .opacity.combined(with: .offset(y: -4)), removal: .opacity))
+                        : .asymmetric(insertion: .opacity.combined(with: .offset(y: -4)).combined(with: .softBlur), removal: .opacity))
 
                 contextRow
             }
@@ -91,6 +93,13 @@ struct FloatingNoteEditorView: View {
         .glassEffect(NoteSideTheme.sheetGlass, in: RoundedRectangle(cornerRadius: CornerRadius.panel, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("noteEditorSheet")
+    }
+
+    private var titlePrompt: Text? {
+        let waitingForGeneratedTitle = appState.isAutoTitleEnabled
+            && appState.editor.titleGeneration != .finished
+            && appState.editor.editorTitle.isEmpty
+        return waitingForGeneratedTitle ? nil : Text("Title")
     }
 
     private var contextRow: some View {
@@ -243,5 +252,20 @@ private struct DictationIndicatorView: View {
         .onChange(of: isDictating) { _, active in
             scale = active && !reduceMotion ? 1.4 : 1.0
         }
+    }
+}
+
+/// A light blur that resolves to sharp as a view appears; paired with a
+/// fade it reads as "settling in" rather than "switching".
+private struct SoftBlurModifier: ViewModifier {
+    let radius: CGFloat
+    func body(content: Content) -> some View {
+        content.blur(radius: radius)
+    }
+}
+
+private extension AnyTransition {
+    static var softBlur: AnyTransition {
+        .modifier(active: SoftBlurModifier(radius: 4), identity: SoftBlurModifier(radius: 0))
     }
 }
