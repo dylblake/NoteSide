@@ -1,6 +1,6 @@
-# NoteSide
+# Remora
 
-NoteSide is a macOS menu bar app for context-aware notes. It lets you attach notes to the app, browser page, or file you are currently in, then reopen that note later from the same context.
+Remora is a macOS menu bar app for context-aware notes. It lets you attach notes to the app, browser page, or file you are currently in, then reopen that note later from the same context.
 
 ## What It Does
 
@@ -30,7 +30,7 @@ NoteSide is a macOS menu bar app for context-aware notes. It lets you attach not
 
 ## Permissions
 
-NoteSide uses macOS permissions for a few features:
+Remora uses macOS permissions for a few features:
 
 - Accessibility
   - required for the global hotkey and app/context detection
@@ -54,29 +54,29 @@ The app prompts for these when needed.
 
 ## Run Locally
 
-1. Open `NoteSide.xcodeproj` in Xcode.
-2. Select the `NoteSide` scheme.
+1. Open `Remora.xcodeproj` in Xcode.
+2. Select the `Remora` scheme.
 3. Build and run on `My Mac`.
 4. Grant Accessibility and browser Automation permissions when prompted.
 
 ## Testing
 
-- Unit tests: `NoteSideTests`
-- UI tests: `NoteSideUITests` (XCUITest — there is no web frontend to drive with Playwright; the UI is native SwiftUI/AppKit)
+- Unit tests: `RemoraTests`
+- UI tests: `RemoraUITests` (XCUITest — there is no web frontend to drive with Playwright; the UI is native SwiftUI/AppKit)
 
 Run from the command line (no need to open Xcode first):
 
 ```sh
-xcodebuild -project NoteSide.xcodeproj -scheme NoteSide -destination 'platform=macOS' test
+xcodebuild -project Remora.xcodeproj -scheme Remora -destination 'platform=macOS' test
 ```
 
 Run a single target:
 
 ```sh
-xcodebuild -project NoteSide.xcodeproj -scheme NoteSide -destination 'platform=macOS' test -only-testing:NoteSideUITests
+xcodebuild -project Remora.xcodeproj -scheme Remora -destination 'platform=macOS' test -only-testing:RemoraUITests
 ```
 
-NoteSide is a menu-bar-only (`LSUIElement`) app with no Dock icon or main window, and SwiftUI's `MenuBarExtra(.window)` popover doesn't reliably expose itself to the accessibility tree under XCUITest. So UI tests don't click the status item to reach app content — in `DEBUG` builds only, `AppState` reads a `UITEST_LAUNCH_ACTION` launch environment variable (`allNotes`, `onboarding`, `info`, `quickNote`, `license`) and opens that window directly on launch:
+Remora is a menu-bar-only (`LSUIElement`) app with no Dock icon or main window, and SwiftUI's `MenuBarExtra(.window)` popover doesn't reliably expose itself to the accessibility tree under XCUITest. So UI tests don't click the status item to reach app content — in `DEBUG` builds only, `AppState` reads a `UITEST_LAUNCH_ACTION` launch environment variable (`allNotes`, `onboarding`, `info`, `quickNote`, `license`) and opens that window directly on launch:
 
 ```swift
 let app = XCUIApplication()
@@ -87,12 +87,12 @@ app.launch()
 Two more `DEBUG`-only hooks keep automated runs isolated from real data:
 
 - `UITEST_STORE_DIRECTORY` (launch environment) points the note store at a scratch folder instead of Application Support.
-- Standard `NSArgumentDomain` launch arguments override preferences without writing them, e.g. `-hasCompletedOnboarding YES -autoTitleEnabled NO -editorTextZoom 1`.
+- Standard `NSArgumentDomain` launch arguments override preferences without writing them, e.g. `-hasCompletedOnboarding YES -autoTitleEnabled NO -editorTextZoom 1`. The UI tests also pass `-trialNotesCreated 0`, so an unlicensed build never hits the free-note limit mid-suite.
 - `UITEST_SELECTION_TEXT` (launch environment) stands in for the host app's selected text so passage capture can be tested without a real selection.
-- `NOTESIDE_TRACE_FILE` (launch environment) appends `DebugTrace.log(...)` lines to that file, for diagnosing flows under XCUITest where the unified log is hard to reach.
-- `NOTESIDE_PANE_WIDTH` (launch environment) forces the drawer / All Notes pane width so layouts can be checked at any screen size on one display. Panel widths are otherwise a fraction of the screen clamped by `PanelLayout` (editor 440–640pt, All Notes 540–960pt).
+- `REMORA_TRACE_FILE` (launch environment) appends `DebugTrace.log(...)` lines to that file, for diagnosing flows under XCUITest where the unified log is hard to reach.
+- `REMORA_PANE_WIDTH` (launch environment) forces the drawer / All Notes pane width so layouts can be checked at any screen size on one display. Panel widths are otherwise a fraction of the screen clamped by `PanelLayout` (editor 440–640pt, All Notes 540–960pt).
 
-`NoteEditorUITests` uses both to drive the editor's formatting toolbar, keyboard shortcuts, lists, tables and text size end to end. The formatting engine itself (`RichTextEditorController`) is unit-tested against an offscreen `NSTextView` in `NoteSideTests/RichTextEditorControllerTests.swift`.
+`NoteEditorUITests` uses both to drive the editor's formatting toolbar, keyboard shortcuts, lists, tables and text size end to end. The formatting engine itself (`RichTextEditorController`) is unit-tested against an offscreen `NSTextView` in `RemoraTests/RichTextEditorControllerTests.swift`.
 
 These hooks are compiled out of Release/MAS builds.
 

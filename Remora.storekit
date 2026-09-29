@@ -1,0 +1,27 @@
+{
+  "identifier" : "A1B2C3D4-0000-4000-8000-REMORASTORE",
+  "nonRenewingSubscriptions" : [ ],
+  "products" : [
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "A1B2C3D4-0001-4000-8000-REMORASTORE",
+      "localizations" : [
+        {
+          "description" : "Unlimited notes, one purchase, yours forever.",
+          "displayName" : "Unlimited Notes",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.dylblake.remora.unlimited",
+      "referenceName" : "Unlimited Notes",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : { },
+  "subscriptionGroups" : [ ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

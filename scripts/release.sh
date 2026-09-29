@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 #
-# scripts/release.sh — build, sign, notarize, staple, and package NoteSide
+# scripts/release.sh — build, sign, notarize, staple, and package Remora
 # for distribution outside the Mac App Store.
 #
 # Prerequisites (one-time):
 #   1. Developer ID Application certificate installed in the login keychain.
 #      Verify with: security find-identity -v -p codesigning
 #   2. Notarization credentials stored under the keychain profile
-#      "noteside-notary". Set up with:
-#        xcrun notarytool store-credentials "noteside-notary" \
+#      "remora-notary". Set up with:
+#        xcrun notarytool store-credentials "remora-notary" \
 #          --apple-id <APPLE_ID> --team-id 57SW9PT7P8 --password <APP_SPECIFIC_PWD>
 #
 # Outputs (under build/):
-#   build/NoteSide.xcarchive   — full archive (debug symbols etc.)
-#   build/export/NoteSide.app  — exported, signed, stapled .app
-#   build/NoteSide.zip         — zip submitted to notarytool
-#   build/NoteSide.dmg         — distributable disk image (signed + notarized)
+#   build/Remora.xcarchive   — full archive (debug symbols etc.)
+#   build/export/Remora.app  — exported, signed, stapled .app
+#   build/Remora.zip         — zip submitted to notarytool
+#   build/Remora.dmg         — distributable disk image (signed + notarized)
 #
 # Usage:
 #   ./scripts/release.sh
@@ -27,20 +27,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-PROJECT="NoteSide.xcodeproj"
-SCHEME="NoteSide"
+PROJECT="Remora.xcodeproj"
+SCHEME="Remora"
 CONFIGURATION="Release"
 TEAM_ID="57SW9PT7P8"
 SIGN_IDENTITY="Developer ID Application: Dylan Evans (${TEAM_ID})"
-KEYCHAIN_PROFILE="noteside-notary"
+KEYCHAIN_PROFILE="remora-notary"
 EXPORT_OPTIONS="exportOptions.plist"
 
 BUILD_DIR="build"
-ARCHIVE_PATH="${BUILD_DIR}/NoteSide.xcarchive"
+ARCHIVE_PATH="${BUILD_DIR}/Remora.xcarchive"
 EXPORT_DIR="${BUILD_DIR}/export"
-APP_PATH="${EXPORT_DIR}/NoteSide.app"
-ZIP_PATH="${BUILD_DIR}/NoteSide.zip"
-DMG_PATH="${BUILD_DIR}/NoteSide.dmg"
+APP_PATH="${EXPORT_DIR}/Remora.app"
+ZIP_PATH="${BUILD_DIR}/Remora.zip"
+DMG_PATH="${BUILD_DIR}/Remora.dmg"
 
 # Color helpers
 if [[ -t 1 ]]; then
@@ -191,13 +191,13 @@ fi
 rm -f "$DMG_PATH"
 
 create-dmg \
-    --volname "NoteSide" \
+    --volname "Remora" \
     --window-pos 200 120 \
     --window-size 540 380 \
     --icon-size 128 \
-    --icon "NoteSide.app" 140 200 \
+    --icon "Remora.app" 140 200 \
     --app-drop-link 400 200 \
-    --hide-extension "NoteSide.app" \
+    --hide-extension "Remora.app" \
     --no-internet-enable \
     --hdiutil-quiet \
     ${DMG_BACKGROUND_ARGS[@]+"${DMG_BACKGROUND_ARGS[@]}"} \

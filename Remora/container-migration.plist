@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Apple's sanctioned first-launch migration for sandboxed builds:
+	     macOS MOVES these paths into the app container the first time
+	     the sandboxed app runs, before any app code executes. Inert for
+	     non-sandboxed builds.
+
+	     Remora is the current storage folder; NoteSide (1.3.x) and
+	     SideNote (pre-1.3) are the app's earlier names, covered so users
+	     moving from either straight to the App Store build keep their
+	     notes (NoteStore then renames the folder in-place inside the
+	     container). -->
+	<key>Move</key>
+	<array>
+		<string>${ApplicationSupport}/Remora</string>
+		<string>${ApplicationSupport}/NoteSide</string>
+		<string>${ApplicationSupport}/SideNote</string>
+	</array>
+</dict>
+</plist>
