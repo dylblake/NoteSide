@@ -419,13 +419,19 @@ nonisolated struct ContextResolver: Sendable {
         let secondaryLabel = [workspace, conversation]
             .compactMap { $0 }
             .joined(separator: " • ")
+        // Identity stays name-based so existing notes keep matching; the
+        // client URL only supplies the ids that let All Notes reopen the
+        // conversation. Saving the note in Slack stores the link.
+        let navigationTarget = axBrowserURLReader.activeURL(for: app)
+            .flatMap(SlackClientURL.location(from:))
+            .map(SlackClientURL.deepLink(for:))
 
         return NoteContext(
             kind: .application,
             identifier: identifier,
             displayName: displayName,
             secondaryLabel: secondaryLabel.isEmpty ? nil : secondaryLabel,
-            navigationTarget: nil
+            navigationTarget: navigationTarget
         )
     }
 
