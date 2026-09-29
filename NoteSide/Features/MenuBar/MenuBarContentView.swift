@@ -3,9 +3,9 @@ import Combine
 import ServiceManagement
 import SwiftUI
 
-/// Menu bar popover. Primary actions and recent notes up top; settings
-/// and hotkeys fold away behind a disclosure so the everyday view stays
-/// short; license and update status sit at the bottom.
+/// Menu bar popover. Primary actions and recent notes up top, settings
+/// and hotkeys always visible beneath them, license and update status at
+/// the bottom.
 struct MenuBarContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
@@ -14,7 +14,6 @@ struct MenuBarContentView: View {
     #endif
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @State private var launchAtLoginNeedsApproval: Bool = false
-    @AppStorage("menuBarShowsSettings") private var showsSettings = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -124,57 +123,55 @@ struct MenuBarContentView: View {
         }
     }
 
+    /// Settings and hotkeys stay visible; the popover is the one place
+    /// to check or change a shortcut, so hiding them costs more than the
+    /// height saves.
     private var settingsSection: some View {
         @Bindable var appState = appState
-        return DisclosureGroup(isExpanded: $showsSettings) {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Toggle("Launch at login", isOn: $launchAtLogin)
-                        .onChange(of: launchAtLogin) { _, newValue in
-                            setLaunchAtLogin(newValue)
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                sectionHeader("Settings")
+
+                Toggle("Launch at login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, newValue in
+                        setLaunchAtLogin(newValue)
+                    }
+
+                Toggle("Generate note titles automatically", isOn: $appState.isAutoTitleEnabled)
+
+                if launchAtLoginNeedsApproval {
+                    HStack(spacing: Spacing.xs - 2) {
+                        Text("Approve NoteSide in System Settings to launch at login.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Open") {
+                            SMAppService.openSystemSettingsLoginItems()
                         }
-
-                    Toggle("Generate note titles automatically", isOn: $appState.isAutoTitleEnabled)
-
-                    if launchAtLoginNeedsApproval {
-                        HStack(spacing: Spacing.xs - 2) {
-                            Text("Approve NoteSide in System Settings to launch at login.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Button("Open") {
-                                SMAppService.openSystemSettingsLoginItems()
-                            }
-                            .buttonStyle(.borderless)
-                            .controlSize(.small)
-                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
                     }
-                }
-                .toggleStyle(.checkbox)
-                .font(.subheadline)
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    sectionHeader("Hotkeys")
-                    hotkeyRow("Quick Note", displayText: appState.hotkeys.hotKeyDisplayString) { shortcut in
-                        appState.hotkeys.setHotKeyShortcut(shortcut)
-                    }
-                    hotkeyRow("All Notes", displayText: appState.hotkeys.allNotesHotKeyDisplayString) { shortcut in
-                        appState.hotkeys.setAllNotesHotKeyShortcut(shortcut)
-                    }
-                    hotkeyRow("Dictation (hold)", displayText: appState.hotkeys.dictationHotKeyDisplayString) { shortcut in
-                        appState.hotkeys.setDictationHotKeyShortcut(shortcut)
-                    }
-                    Text("Click a shortcut, then press the keys you want.")
-                        .font(.caption)
-                        .foregroundStyle(NoteSideTheme.tertiaryText)
                 }
             }
-            .padding(.top, Spacing.xs)
-        } label: {
-            Label("Settings & Hotkeys", systemImage: "gearshape")
-                .font(.subheadline.weight(.medium))
+            .toggleStyle(.checkbox)
+            .font(.subheadline)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                sectionHeader("Hotkeys")
+                hotkeyRow("Quick Note", displayText: appState.hotkeys.hotKeyDisplayString) { shortcut in
+                    appState.hotkeys.setHotKeyShortcut(shortcut)
+                }
+                hotkeyRow("All Notes", displayText: appState.hotkeys.allNotesHotKeyDisplayString) { shortcut in
+                    appState.hotkeys.setAllNotesHotKeyShortcut(shortcut)
+                }
+                hotkeyRow("Dictation (hold)", displayText: appState.hotkeys.dictationHotKeyDisplayString) { shortcut in
+                    appState.hotkeys.setDictationHotKeyShortcut(shortcut)
+                }
+                Text("Click a shortcut, then press the keys you want.")
+                    .font(.caption)
+                    .foregroundStyle(NoteSideTheme.tertiaryText)
+            }
         }
-        .accessibilityIdentifier("menuBarSettingsDisclosure")
     }
 
     @ViewBuilder

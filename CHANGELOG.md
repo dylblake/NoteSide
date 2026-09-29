@@ -8,7 +8,7 @@
 - Note cards are tinted with system colours; the view switcher is a native segmented control.
 - The drawer and All Notes keep a usable width on portrait, laptop and ultra-wide displays; the formatting toolbar folds into an overflow menu when the pane is narrow, and note cards flow into one, two or three columns.
 - **Permissions & Setup** is one row per capability with a status glyph; individual browsers, Finder / Xcode and microphone / speech live behind disclosures that open only when something needs attention.
-- The **menu bar popover** leads with All Notes, New Note and recent notes; settings and hotkeys fold away behind "Settings & Hotkeys".
+- The **menu bar popover** leads with All Notes and New Note (with their shortcuts) and recent notes, with settings and hotkeys beneath.
 - Every screen shares the same 4/8/12/16/24/32/48pt spacing scale and reads correctly in light and dark mode.
 
 ### A real text editor
