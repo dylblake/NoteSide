@@ -18,7 +18,9 @@ struct RichTextEditor: NSViewRepresentable {
         scrollView.borderType = .noBorder
         scrollView.autohidesScrollers = true
 
-        let textView = EditorTextView()
+        // TextKit 1: `NSTextTable` (tables) is only laid out by
+        // NSLayoutManager, and temporary attributes need it too.
+        let textView = EditorTextView(usingTextLayoutManager: false)
         textView.isRichText = true
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -27,30 +29,36 @@ struct RichTextEditor: NSViewRepresentable {
         textView.insertionPointColor = .labelColor
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticLinkDetectionEnabled = false
-        textView.textContainerInset = NSSize(width: 0, height: 4)
+        textView.isContinuousSpellCheckingEnabled = true
+        textView.usesFindBar = true
+        textView.textContainerInset = NSSize(width: 0, height: 6)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
-        textView.defaultParagraphStyle = {
-            let style = NSMutableParagraphStyle()
-            style.lineSpacing = 3
-            style.paragraphSpacing = 8
-            return style
-        }()
-        textView.typingAttributes = [
-            .font: NSFont.systemFont(ofSize: 15),
-            .foregroundColor: NSColor.labelColor,
-            .paragraphStyle: textView.defaultParagraphStyle ?? NSParagraphStyle.default
-        ]
+        textView.defaultParagraphStyle = controller.defaultParagraphStyle
+        textView.typingAttributes = controller.defaultTypingAttributes
+        textView.setAccessibilityIdentifier("noteEditorTextView")
+        textView.setAccessibilityLabel("Note body")
         textView.textStorage?.setAttributedString(controller.normalizedAttributedText(attributedText))
         textView.delegate = context.coordinator
-        textView.onToggleBold = { controller.toggleBold() }
-        textView.onToggleItalic = { controller.toggleItalic() }
-        textView.onToggleUnderline = { controller.toggleUnderline() }
+        textView.onCommand = { [controller] command in controller.perform(command) }
+        textView.tableMenuProvider = { [controller] in
+            guard controller.currentTableCell != nil else { return nil }
+            let menu = NSMenu(title: "Table")
+            for edit in RichTextEditorController.TableEdit.allCases {
+                if edit == .deleteRow { menu.addItem(.separator()) }
+                let item = NSMenuItem(title: edit.title, action: nil, keyEquivalent: "")
+                item.representedObject = edit
+                menu.addItem(item)
+            }
+            return menu
+        }
+        textView.onTableEdit = { [controller] edit in controller.performTableEdit(edit) }
 
         scrollView.documentView = textView
         controller.attach(textView)
@@ -69,6 +77,7 @@ struct RichTextEditor: NSViewRepresentable {
             let savedOrigin = scrollView.contentView.bounds.origin
             let normalized = controller.normalizedAttributedText(attributedText)
             textView.textStorage?.setAttributedString(normalized)
+            textView.typingAttributes = controller.defaultTypingAttributes
             Coordinator.colorTags(in: textView)
             scrollView.contentView.setBoundsOrigin(savedOrigin)
             DispatchQueue.main.async {
@@ -86,8 +95,13 @@ struct RichTextEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            // Keep numbered lists correct after any edit (deleting or
+            // pasting items), then publish the canonical document.
+            parent.controller.renumberLists(around: textView.selectedRange())
             Self.colorTags(in: textView)
-            parent.attributedText = NSAttributedString(attributedString: textView.attributedString())
+            if let canonical = parent.controller.currentAttributedText() {
+                parent.attributedText = canonical
+            }
         }
 
         private static let tagPattern = try! NSRegularExpression(pattern: #"#\w+"#)
@@ -98,7 +112,8 @@ struct RichTextEditor: NSViewRepresentable {
             let fullRange = NSRange(location: 0, length: storage.length)
             let text = storage.string
 
-            // Use temporary attributes (display-only) to avoid layout invalidation
+            // Temporary attributes are display-only: no layout invalidation
+            // and nothing leaks into the persisted document.
             layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
             let matches = tagPattern.matches(in: text, range: fullRange)
             for match in matches {
@@ -108,39 +123,63 @@ struct RichTextEditor: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
             if parent.controller.handleAutoListTrigger(for: affectedCharRange, replacementString: replacementString) {
-                parent.attributedText = NSAttributedString(attributedString: textView.attributedString())
                 return false
             }
-
             return true
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
+            if let textView = notification.object as? NSTextView {
+                parent.controller.sanitizeTypingAttributesAfterSelectionChange(in: textView)
+            }
             parent.controller.notifySelectionAttributesChange()
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            switch commandSelector {
+            case #selector(NSResponder.insertNewline(_:)):
                 return parent.controller.handleReturn()
-            }
-
-            if commandSelector == #selector(NSResponder.insertTab(_:)) {
+            case #selector(NSResponder.insertTab(_:)):
                 return parent.controller.indentSelection()
-            }
-
-            if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+            case #selector(NSResponder.insertBacktab(_:)):
                 return parent.controller.outdentSelection()
+            case #selector(NSResponder.deleteBackward(_:)):
+                return parent.controller.handleDeleteBackward()
+            default:
+                return false
             }
-
-            return false
         }
     }
 }
 
+/// Routes the editor's keyboard shortcuts (mirroring Apple Notes and
+/// TextEdit) to the controller before AppKit's defaults see them.
 private final class EditorTextView: NSTextView {
-    var onToggleBold: (() -> Void)?
-    var onToggleItalic: (() -> Void)?
-    var onToggleUnderline: (() -> Void)?
+    var onCommand: ((RichTextEditorController.Command) -> Bool)?
+    var tableMenuProvider: (() -> NSMenu?)?
+    var onTableEdit: ((RichTextEditorController.TableEdit) -> Void)?
+
+    /// Right-click inside a table adds a "Table" submenu with the same
+    /// row/column edits as the toolbar, like Notes and Pages.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event)
+        guard let tableMenu = tableMenuProvider?() else { return menu }
+        for item in tableMenu.items where !item.isSeparatorItem {
+            item.target = self
+            item.action = #selector(performTableMenuItem(_:))
+        }
+        let container = menu ?? NSMenu()
+        let tableItem = NSMenuItem(title: "Table", action: nil, keyEquivalent: "")
+        tableItem.submenu = tableMenu
+        container.insertItem(.separator(), at: 0)
+        container.insertItem(tableItem, at: 0)
+        return container
+    }
+
+    @objc private func performTableMenuItem(_ sender: NSMenuItem) {
+        guard let edit = sender.representedObject as? RichTextEditorController.TableEdit else { return }
+        onTableEdit?(edit)
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown else {
@@ -152,24 +191,35 @@ private final class EditorTextView: NSTextView {
             return super.performKeyEquivalent(with: event)
         }
 
-        switch characters {
-        case "b":
-            onToggleBold?()
-            return true
-        case "i":
-            onToggleItalic?()
-            return true
-        case "u":
-            onToggleUnderline?()
-            return true
-        case "z" where modifiers == [.command]:
+        let command: RichTextEditorController.Command?
+        switch (characters, modifiers) {
+        case ("b", [.command]): command = .toggleBold
+        case ("i", [.command]): command = .toggleItalic
+        case ("u", [.command]): command = .toggleUnderline
+        case ("x", [.command, .shift]): command = .toggleStrikethrough
+        case ("t", [.command, .shift]): command = .style(.title)
+        case ("h", [.command, .shift]): command = .style(.heading)
+        case ("j", [.command, .shift]): command = .style(.subheading)
+        case ("b", [.command, .shift]): command = .style(.body)
+        case ("m", [.command, .shift]): command = .style(.monospaced)
+        case ("7", [.command, .shift]): command = .toggleList(.bulleted)
+        case ("9", [.command, .shift]): command = .toggleList(.numbered)
+        case ("t", [.command, .option]): command = .insertTable
+        case ("=", [.command]), ("+", [.command]), ("=", [.command, .shift]): command = .zoomIn
+        case ("-", [.command]): command = .zoomOut
+        case ("0", [.command]): command = .resetZoom
+        case ("z", [.command]):
             undoManager?.undo()
             return true
-        case "z" where modifiers == [.command, .shift]:
+        case ("z", [.command, .shift]):
             undoManager?.redo()
             return true
-        default:
-            return super.performKeyEquivalent(with: event)
+        default: command = nil
         }
+
+        if let command, let onCommand, onCommand(command) {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }

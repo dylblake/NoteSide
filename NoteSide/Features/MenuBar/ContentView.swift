@@ -24,28 +24,25 @@ struct ContentView: View {
         AllNotesViewMode(rawValue: viewModeRaw) ?? .grid
     }
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 18, alignment: .top),
-        GridItem(.flexible(), spacing: 18, alignment: .top)
-    ]
-
     var body: some View {
         @Bindable var notes = appState.notesState
         let content = ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
+                HStack(spacing: Spacing.sm) {
                     Text("All Notes")
                         .font(.title2.weight(.bold))
-                    viewModeToggle
+                        .accessibilityAddTraits(.isHeader)
                     Spacer()
                     if !appState.notesState.selectedNoteIDs.isEmpty {
                         bulkActionBar
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
+                    viewModeToggle
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 18)
-                .padding(.bottom, 14)
-                .animation(.easeInOut(duration: 0.15), value: appState.notesState.selectedNoteIDs.isEmpty)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, Spacing.lg)
+                .padding(.bottom, Spacing.sm)
+                .animation(PanelAnimation.prefersReducedMotion ? nil : .easeOut(duration: 0.18), value: appState.notesState.selectedNoteIDs.isEmpty)
 
                 TagSearchField(
                     text: $notes.searchText,
@@ -58,8 +55,8 @@ struct ContentView: View {
                         }
                     }
                 )
-                .padding(.horizontal, 18)
-                .padding(.bottom, 10)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.bottom, Spacing.sm)
 
                 ScrollView {
                     Color.clear
@@ -71,7 +68,7 @@ struct ContentView: View {
                     } else if appState.notesState.filteredNotes.isEmpty && !appState.notesState.searchText.isEmpty {
                         noResultsView
                     } else {
-                        LazyVStack(alignment: .leading, spacing: 28) {
+                        LazyVStack(alignment: .leading, spacing: Spacing.xl) {
                             ForEach(appState.notesState.noteSections) { section in
                                 if !section.groups.isEmpty {
                                     switch viewMode {
@@ -85,8 +82,8 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 18)
-                        .padding(.bottom, 18)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.bottom, Spacing.lg)
                     }
                 }
             }
@@ -222,84 +219,45 @@ struct ContentView: View {
     }
 
     private var viewModeToggle: some View {
-        HStack(spacing: 2) {
-            viewModeButton(
-                mode: .list,
-                systemImage: "line.3.horizontal",
-                help: "List view"
-            )
-            viewModeButton(
-                mode: .grid,
-                systemImage: "square.grid.2x2",
-                help: "Grid view"
-            )
+        Picker("View", selection: $viewModeRaw) {
+            Image(systemName: "list.bullet")
+                .accessibilityLabel("List view")
+                .tag(AllNotesViewMode.list.rawValue)
+            Image(systemName: "square.grid.2x2")
+                .accessibilityLabel("Grid view")
+                .tag(AllNotesViewMode.grid.rawValue)
         }
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Color.secondary.opacity(0.12))
-        )
-    }
-
-    private func viewModeButton(mode: AllNotesViewMode, systemImage: String, help: String) -> some View {
-        let isActive = viewMode == mode
-        return Button {
-            viewModeRaw = mode.rawValue
-        } label: {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isActive ? Color.white : NoteSideTheme.secondaryText)
-                .frame(width: 30, height: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(isActive ? NoteSideTheme.accent : Color.clear)
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.borderless)
-        .help(help)
-        .accessibilityLabel(help)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
+        .fixedSize()
+        .help("Switch between list and grid")
+        .accessibilityIdentifier("allNotesViewModePicker")
     }
 
     private var bulkActionBar: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Spacing.xs) {
             Text("\(appState.notesState.selectedNoteIDs.count) selected")
-                .font(.subheadline)
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
+                .padding(.leading, Spacing.xs)
 
-            Button {
+            Button("Clear") {
                 appState.notesState.clearSelection()
-            } label: {
-                Text("Clear")
-                    .font(.subheadline)
             }
             .buttonStyle(.borderless)
+            .controlSize(.small)
 
-            Button {
+            IconButton(systemName: "pin", accessibilityLabel: "Pin or unpin selected notes", size: 13, hitSize: 30) {
                 appState.togglePinForSelectedNotes()
-            } label: {
-                Image(systemName: "pin")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
-            .help("Pin or unpin selected")
-            .accessibilityLabel("Pin or unpin selected notes")
 
-            Button(role: .destructive) {
+            IconButton(systemName: "trash", accessibilityLabel: "Delete selected notes", size: 13, hitSize: 30) {
                 showingBulkDeleteConfirmation = true
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
-            .help("Delete selected")
-            .accessibilityLabel("Delete selected notes")
             .popover(isPresented: $showingBulkDeleteConfirmation, arrowEdge: .bottom) {
                 DeleteConfirmationPopover(
+                    title: "Delete \(appState.notesState.selectedNoteIDs.count) notes?",
                     onConfirm: {
                         showingBulkDeleteConfirmation = false
                         appState.notesState.deleteSelectedNotes()
@@ -310,6 +268,9 @@ struct ContentView: View {
                 )
             }
         }
+        .padding(.horizontal, Spacing.xxs)
+        .padding(.vertical, Spacing.xxs)
+        .glassEffect(.regular, in: Capsule(style: .continuous))
     }
 
 }
@@ -345,9 +306,9 @@ private struct NoteGroupTile: View {
 
     let group: NoteSectionGroup
 
+    // Adaptive so a narrow pane gets one column and a wide one three.
     private let columns = [
-        GridItem(.flexible(), spacing: 18, alignment: .top),
-        GridItem(.flexible(), spacing: 18, alignment: .top)
+        GridItem(.adaptive(minimum: 230, maximum: 420), spacing: Spacing.md, alignment: .top)
     ]
 
     var body: some View {
@@ -367,7 +328,7 @@ private struct NoteGroupTile: View {
                     .textSelection(.enabled)
             }
 
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: Spacing.md) {
                 ForEach(group.notes) { note in
                     NoteTile(note: note)
                         .environment(appState)
@@ -398,7 +359,7 @@ private struct NoteTile: View {
             headerRow
 
             if !note.body.isEmpty {
-                Text(note.body)
+                Text(NoteCardStyle.preview(for: note))
                     .font(.body)
                     .foregroundStyle(.primary)
                     .lineLimit(3)
@@ -459,10 +420,10 @@ private struct NoteTile: View {
     }
 
     private var tileBackground: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
+        RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
             .fill(NoteSideTheme.tintedTileFill(for: tileColor))
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                     .stroke(
                         isKeyboardFocused ? NoteSideTheme.accent : NoteSideTheme.tintedTileStroke(for: tileColor),
                         lineWidth: isKeyboardFocused ? 2 : 1
@@ -480,12 +441,20 @@ private enum NoteCardStyle {
     static func tint(for note: ContextNote) -> Color {
         switch note.context.kind {
         case .application:
-            return Color(red: 0.32, green: 0.56, blue: 0.92)
+            return NoteSideTheme.applicationTint
         case .url:
-            return Color(red: 0.18, green: 0.68, blue: 0.47)
+            return NoteSideTheme.urlTint
         case .file:
-            return Color(red: 0.88, green: 0.58, blue: 0.18)
+            return NoteSideTheme.fileTint
         }
+    }
+
+    /// Plain-text preview: list markers keep their glyph but lose the
+    /// layout tab, and table cells collapse onto one line.
+    static func preview(for note: ContextNote) -> String {
+        note.body
+            .replacingOccurrences(of: "\t", with: " ")
+            .replacingOccurrences(of: "\n", with: "  ")
     }
 
     /// Bold top line. Shows the note's custom title if set, otherwise
@@ -674,25 +643,23 @@ private struct NoteListRow: View {
                             .textSelection(.enabled)
                     }
                 }
-                .frame(width: 220, alignment: .leading)
-
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .fixedSize()
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
 
-            NotePinButton(note: note)
-                .environment(appState)
+                NotePinButton(note: note)
+                    .environment(appState)
 
-            NoteDeleteButton(note: note)
-                .environment(appState)
+                NoteDeleteButton(note: note)
+                    .environment(appState)
             }
 
             if !note.body.isEmpty {
-                Text(note.body)
+                Text(NoteCardStyle.preview(for: note))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -709,10 +676,10 @@ private struct NoteListRow: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.control + 2, style: .continuous)
                 .fill(NoteSideTheme.tintedTileFill(for: tint))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.control + 2, style: .continuous)
                         .stroke(
                             isKeyboardFocused ? NoteSideTheme.accent : NoteSideTheme.tintedTileStroke(for: tint),
                             lineWidth: isKeyboardFocused ? 2 : 1
@@ -771,24 +738,31 @@ private struct TagSearchField: View {
                 }
                 shouldPlaceCursor = true
             } label: {
-                Text("#")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                Image(systemName: "number")
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(text.hasPrefix("#") ? NoteSideTheme.accent : NoteSideTheme.secondaryText)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 24, height: 22)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(text.hasPrefix("#") ? NoteSideTheme.accent.opacity(0.15) : Color.primary.opacity(0.06))
+                            .fill(text.hasPrefix("#") ? NoteSideTheme.accent.opacity(0.15) : Color.clear)
                     )
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Search by tag")
             .accessibilityLabel("Search by tag")
         }
-        .padding(8)
+        .padding(.horizontal, Spacing.xs + 2)
+        .padding(.vertical, Spacing.xs - 1)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
+            RoundedRectangle(cornerRadius: CornerRadius.control, style: .continuous)
+                .fill(NoteSideTheme.secondaryBackground.opacity(0.6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.control, style: .continuous)
+                        .stroke(NoteSideTheme.border.opacity(0.6), lineWidth: 1)
+                )
         )
+        .accessibilityIdentifier("allNotesSearchField")
     }
 }
 

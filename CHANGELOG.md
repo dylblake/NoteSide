@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### A native, Liquid Glass interface
+- The note drawer and All Notes are now a single **Liquid Glass** sheet that refracts whatever is behind it, with glass capsules for the formatting toolbar, footer actions and dismiss hint.
+- Every window uses system buttons, semantic fonts and system colours, so the app follows your accent colour, Increase Contrast and light/dark mode exactly like the rest of macOS.
+- Note cards are tinted with system colours; the view switcher is a native segmented control.
+- The drawer and All Notes keep a usable width on portrait, laptop and ultra-wide displays; the formatting toolbar folds into an overflow menu when the pane is narrow, and note cards flow into one, two or three columns.
+
+### A real text editor
+- **Paragraph styles** like Apple Notes — Title, Heading, Subheading, Body and Monospaced — from the toolbar or ⇧⌘T / ⇧⌘H / ⇧⌘J / ⇧⌘B / ⇧⌘M. Return after a heading drops back to Body.
+- **Lists that behave**: wrapped lines align under the text, Tab / ⇧Tab nest items (1. → a. → i.), numbering is recomputed after every edit, Return on an empty item ends the list, Delete after the marker removes it, and `- `, `* ` or `1. ` starts a list as you type.
+- **Tables** (⌥⌘T): Tab moves between cells and adds a row at the end; the toolbar's table button (or a right-click inside a cell) adds or deletes rows and columns, or removes the table. Tables are saved with the note.
+- **Strikethrough** (⇧⌘X) alongside bold, italic and underline.
+- **Text size** with ⌘+ / ⌘− / ⌘0 or the Aa menu — the whole note scales while headings keep their proportions, and the setting is remembered.
+- Reopened notes now render in the system font again instead of falling back to Helvetica Neue.
+
 ## 1.3.1
 
 The biggest update yet — a rebuilt first-run experience, a free trial so you can try before you buy, instant context detection, and a long list of reliability and polish fixes.

@@ -31,10 +31,13 @@ struct MenuBarContentView: View {
                     appState.showInfoWindow()
                 } label: {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.title3)
                         .foregroundStyle(NoteSideTheme.secondaryText)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
+                .help("About NoteSide")
                 .accessibilityLabel("About NoteSide")
             }
 
@@ -210,7 +213,7 @@ struct MenuBarContentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(16)
+        .padding(Spacing.md)
         .frame(width: 360)
         .onAppear { refreshLaunchAtLoginState() }
     }

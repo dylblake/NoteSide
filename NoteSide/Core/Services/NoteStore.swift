@@ -38,8 +38,19 @@ final class NoteStore {
     /// recovery action was taken. The app surfaces this to the user once.
     private(set) var loadRecoveryMessage: String?
 
-    init(fileManager: FileManager = .default) {
+    /// `directoryOverride` bypasses Application Support entirely — used by
+    /// the UI-test launch hook so automated runs never touch real notes.
+    init(fileManager: FileManager = .default, directoryOverride: URL? = nil) {
         self.fileManager = fileManager
+
+        if let directoryOverride {
+            directory = directoryOverride
+            try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            fileURL = directory.appending(path: "notes.json")
+            backupURL = directory.appending(path: "notes.json.bak")
+            return
+        }
+
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(filePath: NSTemporaryDirectory())
 

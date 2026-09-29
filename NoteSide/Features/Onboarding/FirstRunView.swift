@@ -58,20 +58,8 @@ struct FirstRunView: View {
     }
 
     private var background: some View {
-        ZStack {
-            Rectangle().fill(NoteSideTheme.windowBackground)
-            Rectangle().fill(.regularMaterial)
-            LinearGradient(
-                colors: [
-                    NoteSideTheme.accent.opacity(0.06),
-                    Color.clear,
-                    NoteSideTheme.warning.opacity(0.04)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        .ignoresSafeArea()
+        NoteSideTheme.windowBackground
+            .ignoresSafeArea()
     }
 
     // MARK: - Step 1: the hotkey
@@ -86,17 +74,19 @@ struct FirstRunView: View {
             HStack {
                 Spacer()
                 Text(appState.hotkeys.hotKeyDisplayString)
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 16)
+                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                    .padding(.horizontal, Spacing.lg + Spacing.xxs)
+                    .padding(.vertical, Spacing.md)
                     .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                             .fill(NoteSideTheme.contentBackground)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                                     .stroke(didOpenDrawer ? NoteSideTheme.success : NoteSideTheme.border, lineWidth: didOpenDrawer ? 2 : 1)
                             )
                     )
+                    .animation(.easeOut(duration: 0.2), value: didOpenDrawer)
+                    .accessibilityLabel("Quick note shortcut \(appState.hotkeys.hotKeyDisplayString)")
                 Spacer()
             }
 
@@ -224,13 +214,13 @@ struct FirstRunView: View {
 
             browserActionButtons(for: browser.bundleIdentifier, state: state, prominentConnect: true)
         }
-        .padding(18)
+        .padding(Spacing.md + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                 .fill(NoteSideTheme.contentBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                         .stroke(state == .granted ? NoteSideTheme.success.opacity(0.5) : NoteSideTheme.border.opacity(0.8), lineWidth: 1)
                 )
         )
@@ -250,11 +240,12 @@ struct FirstRunView: View {
         if state == .granted {
             EmptyView()
         } else if appState.browserPermissions.isRequestPending(for: bundleIdentifier) {
-            Text("Connecting…")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(NoteSideTheme.secondaryText)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+            HStack(spacing: Spacing.xs - 2) {
+                ProgressView().controlSize(.small)
+                Text("Connecting…")
+                    .font(.subheadline)
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+            }
         } else {
             HStack(spacing: 8) {
                 if state == .undetermined {
@@ -413,16 +404,9 @@ struct FirstRunView: View {
                 wizardButton(buttonTitle, prominent: false, action: action)
             }
         }
-        .padding(14)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(NoteSideTheme.secondaryBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(NoteSideTheme.border.opacity(0.7), lineWidth: 1)
-                )
-        )
+        .insetRowSurface()
     }
 
     // MARK: - Shared pieces
@@ -436,8 +420,9 @@ struct FirstRunView: View {
                 .foregroundStyle(NoteSideTheme.secondaryText)
 
             Text(title)
-                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .font(.title.weight(.bold))
                 .foregroundStyle(NoteSideTheme.primaryText)
+                .accessibilityAddTraits(.isHeader)
 
             Text(subtitle)
                 .font(.subheadline)
@@ -479,18 +464,16 @@ struct FirstRunView: View {
         }
     }
 
+    @ViewBuilder
     private func wizardButton(_ title: String, prominent: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: prominent ? .semibold : .medium, design: .rounded))
-                .foregroundStyle(prominent ? Color.white : NoteSideTheme.primaryText)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(prominent ? AnyShapeStyle(NoteSideTheme.accent) : AnyShapeStyle(NoteSideTheme.contentBackground))
-                )
+        if prominent {
+            Button(title, action: action)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+        } else {
+            Button(title, action: action)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
         }
-        .buttonStyle(.plain)
     }
 }

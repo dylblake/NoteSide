@@ -1,15 +1,13 @@
 import SwiftUI
 
 /// Icon-only button with a hover highlight. Uses standard Button
-/// semantics — fires on mouse-up and carries a VoiceOver role and label —
-/// unlike the raw NSView it replaced, which was invisible to
-/// accessibility and acted on mouse-down.
+/// semantics — fires on mouse-up and carries a VoiceOver role and label.
 struct IconButton: View {
     let systemName: String
     let accessibilityLabel: String
     var tint: Color = NoteSideTheme.primaryText
     var size: CGFloat = 16
-    var hitSize: CGFloat = 50
+    var hitSize: CGFloat = 44
     let action: () -> Void
 
     @State private var isHovered = false
@@ -21,10 +19,10 @@ struct IconButton: View {
                 .foregroundStyle(tint)
                 .frame(width: hitSize, height: hitSize)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    Circle()
                         .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
                 )
-                .contentShape(Rectangle())
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }

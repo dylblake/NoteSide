@@ -37,6 +37,22 @@ nonisolated struct ContextResolver: Sendable {
         let bundleIdentifier = app.bundleIdentifier ?? "unknown"
         let appName = app.localizedName ?? "Unknown App"
 
+        // Never walk our own accessibility tree. This runs on a background
+        // queue, and AppKit serves in-process AX queries synchronously on
+        // that thread while the main thread may be answering an AX client
+        // (VoiceOver, XCUITest) — the two deadlock on HIServices' lock.
+        // Happens whenever a NoteSide window is frontmost with the drawer
+        // open, e.g. pressing the hotkey from the first-run wizard.
+        if app.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+            return NoteContext(
+                kind: .application,
+                identifier: bundleIdentifier,
+                displayName: appName,
+                secondaryLabel: nil,
+                navigationTarget: nil
+            )
+        }
+
         if bundleIdentifier == "com.apple.finder", let finderURL = currentFinderContextURL() {
             // Route Finder selections through fileContext(...) so they pick
             // up a stable inode-based fileSystemIdentifier. Without it, a

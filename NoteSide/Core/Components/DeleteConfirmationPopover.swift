@@ -1,53 +1,36 @@
 import SwiftUI
 
+/// Inline delete confirmation. The popover already supplies the system
+/// material and shadow, so the content is just text and native buttons.
 struct DeleteConfirmationPopover: View {
+    var title = "Delete this note?"
+    var message = "This can't be undone."
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            Text("Are you sure?")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(.headline)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
 
-            HStack(spacing: 10) {
-                Button {
-                    onCancel()
-                } label: {
-                    Text("Cancel")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.primary.opacity(0.08))
-                        )
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    onConfirm()
-                } label: {
-                    Text("Delete")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.red)
-                        )
-                }
-                .buttonStyle(.plain)
+            HStack(spacing: Spacing.xs) {
+                Spacer(minLength: 0)
+                Button("Cancel", role: .cancel, action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Delete", role: .destructive, action: onConfirm)
+                    .buttonStyle(.borderedProminent)
+                    .tint(NoteSideTheme.danger)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("confirmDeleteButton")
             }
         }
-        .padding(14)
-        .frame(width: 180)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-                .shadow(color: Color.black.opacity(0.2), radius: 12, x: 0, y: 4)
-        )
+        .controlSize(.regular)
+        .padding(Spacing.md)
+        .frame(width: 240)
     }
 }

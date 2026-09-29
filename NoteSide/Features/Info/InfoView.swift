@@ -22,31 +22,16 @@ struct InfoView: View {
     }
 
     private var background: some View {
-        ZStack {
-            Rectangle()
-                .fill(NoteSideTheme.windowBackground)
-
-            Rectangle()
-                .fill(.regularMaterial)
-
-            LinearGradient(
-                colors: [
-                    NoteSideTheme.accent.opacity(0.05),
-                    Color.clear,
-                    NoteSideTheme.warning.opacity(0.03)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        .ignoresSafeArea()
+        NoteSideTheme.windowBackground
+            .ignoresSafeArea()
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("NoteSide")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .font(.largeTitle.weight(.bold))
                 .foregroundStyle(NoteSideTheme.primaryText)
+                .accessibilityAddTraits(.isHeader)
 
             Text("Context-aware notes for the app, page, or file you are in.")
                 .font(.subheadline)
@@ -92,14 +77,7 @@ struct InfoView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(NoteSideTheme.contentBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(NoteSideTheme.border.opacity(0.8), lineWidth: 1)
-                )
-        )
+        .cardSurface(cornerRadius: CornerRadius.sheet)
     }
 
     private func bullet(_ text: String) -> some View {

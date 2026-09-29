@@ -34,27 +34,16 @@ private struct PurchaseContent: View {
     }
 
     private var background: some View {
-        ZStack {
-            Rectangle().fill(NoteSideTheme.windowBackground)
-            Rectangle().fill(.regularMaterial)
-            LinearGradient(
-                colors: [
-                    NoteSideTheme.accent.opacity(0.06),
-                    Color.clear,
-                    NoteSideTheme.warning.opacity(0.04)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        .ignoresSafeArea()
+        NoteSideTheme.windowBackground
+            .ignoresSafeArea()
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("NoteSide")
-                .font(.system(size: 38, weight: .bold, design: .rounded))
+                .font(.largeTitle.weight(.bold))
                 .foregroundStyle(NoteSideTheme.primaryText)
+                .accessibilityAddTraits(.isHeader)
 
             if store.isUnlocked {
                 Text("You're all set.")
@@ -95,18 +84,13 @@ private struct PurchaseContent: View {
                 .foregroundStyle(NoteSideTheme.secondaryText)
                 .multilineTextAlignment(.center)
 
-            Button {
+            Button("Get Started") {
                 appState.dismissLicenseWindow()
-            } label: {
-                Text("Get Started")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 10)
-                    .background(Capsule(style: .continuous).fill(NoteSideTheme.accent))
             }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+            .padding(.top, Spacing.xxs)
         }
         .frame(maxWidth: .infinity)
         .padding(28)
@@ -137,19 +121,16 @@ private struct PurchaseContent: View {
                 Button {
                     Task { await store.purchaseUnlimited() }
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.xs) {
                         if store.isWorking {
                             ProgressView().controlSize(.small)
                         }
                         Text(purchaseButtonTitle)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
                     }
-                    .foregroundStyle(Color.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Capsule(style: .continuous).fill(NoteSideTheme.accent))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
                 .disabled(store.isWorking)
 
                 Button("Restore Purchases") {
@@ -173,10 +154,10 @@ private struct PurchaseContent: View {
     }
 
     private var card: some View {
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
+        RoundedRectangle(cornerRadius: CornerRadius.sheet, style: .continuous)
             .fill(NoteSideTheme.contentBackground)
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.sheet, style: .continuous)
                     .stroke(NoteSideTheme.border.opacity(0.8), lineWidth: 1)
             )
     }

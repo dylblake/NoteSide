@@ -5,6 +5,7 @@ NoteSide is a macOS menu bar app for context-aware notes. It lets you attach not
 ## What It Does
 
 - Open a floating note with a global hotkey
+- Rich text editing modelled on Apple Notes: Title / Heading / Subheading / Body / Monospaced styles, bold, italic, underline, strikethrough, bulleted and numbered lists with nesting, tables, and text zoom
 - Attach notes to:
   - browser pages
   - files in editors like Xcode and VS Code
@@ -82,7 +83,27 @@ app.launchEnvironment["UITEST_LAUNCH_ACTION"] = "allNotes"
 app.launch()
 ```
 
-This hook is compiled out of Release/MAS builds.
+Two more `DEBUG`-only hooks keep automated runs isolated from real data:
+
+- `UITEST_STORE_DIRECTORY` (launch environment) points the note store at a scratch folder instead of Application Support.
+- Standard `NSArgumentDomain` launch arguments override preferences without writing them, e.g. `-hasCompletedOnboarding YES -autoTitleEnabled NO -editorTextZoom 1`.
+- `NOTESIDE_PANE_WIDTH` (launch environment) forces the drawer / All Notes pane width so layouts can be checked at any screen size on one display. Panel widths are otherwise a fraction of the screen clamped by `PanelLayout` (editor 440–640pt, All Notes 540–960pt).
+
+`NoteEditorUITests` uses both to drive the editor's formatting toolbar, keyboard shortcuts, lists, tables and text size end to end. The formatting engine itself (`RichTextEditorController`) is unit-tested against an offscreen `NSTextView` in `NoteSideTests/RichTextEditorControllerTests.swift`.
+
+These hooks are compiled out of Release/MAS builds.
+
+### Editor keyboard shortcuts
+
+| Action | Shortcut |
+|---|---|
+| Title / Heading / Subheading / Body / Monospaced | ⇧⌘T / ⇧⌘H / ⇧⌘J / ⇧⌘B / ⇧⌘M |
+| Bold / Italic / Underline / Strikethrough | ⌘B / ⌘I / ⌘U / ⇧⌘X |
+| Bulleted list / Numbered list | ⇧⌘7 / ⇧⌘9 |
+| Indent / outdent list item, next / previous table cell | Tab / ⇧Tab |
+| Insert table | ⌥⌘T |
+| Add / delete table rows and columns | Table button in the toolbar, or right-click inside a cell |
+| Bigger / Smaller / Actual size | ⌘+ / ⌘− / ⌘0 |
 
 ## Version
 
