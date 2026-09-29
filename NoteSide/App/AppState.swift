@@ -46,6 +46,8 @@ final class AppState {
     private var infoWindowController: InfoWindowController?
     private var licenseWindowController: LicenseWindowController?
     private var cancellables: Set<AnyCancellable> = []
+    /// The last app other than NoteSide to come to the front.
+    private var lastExternalApp: NSRunningApplication?
     private var isAllNotesPanelVisible = false
     private var isOnboardingWindowVisible = false
     private var isFirstRunWindowVisible = false
@@ -89,6 +91,13 @@ final class AppState {
             browserPermissions: browserPerms,
             titleGenerator: titleGen
         )
+
+        // Launched from the Dock or Spotlight, NoteSide isn't in front yet:
+        // whatever is becomes the app a note opened from the menu bar is for.
+        if let frontmost = NSWorkspace.shared.frontmostApplication,
+           frontmost.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            lastExternalApp = frontmost
+        }
 
         // Wire the closure after all stored properties are initialized so
         // we can safely capture [weak self].
@@ -158,8 +167,13 @@ final class AppState {
 
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
+            .sink { [weak self] notification in
                 guard let self else { return }
+
+                if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+                    self.lastExternalApp = app
+                }
 
                 Task { [weak self] in
                     guard let self else { return }
@@ -331,9 +345,8 @@ final class AppState {
     /// context isn't knowable synchronously (AppleScript/AX), so when the
     /// cheap app-level lookup misses we resolve first, then decide.
     private func presentQuickNoteEditorOrLicenseWall() {
-        let frontmostApp = NSWorkspace.shared.frontmostApplication
-        let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
-        let fallbackContext = editor.quickApplicationContext(for: frontmostApp)
+        let sourceApp = noteSourceApp()
+        let fallbackContext = editor.quickApplicationContext(for: sourceApp)
 
         if notesState.note(for: fallbackContext) != nil {
             presentQuickNoteEditor()
@@ -342,7 +355,7 @@ final class AppState {
 
         Task { [weak self] in
             guard let self else { return }
-            let context = await self.editor.resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier)
+            let context = await self.editor.resolveCurrentContextAsync(for: sourceApp)
             guard !self.editor.isEditorPresented else { return }
             if self.notesState.note(for: context) != nil {
                 self.presentQuickNoteEditor(resolvedContext: context)
@@ -361,21 +374,24 @@ final class AppState {
     /// already has it.
     private func presentQuickNoteEditor(passageText: String? = nil, resolvedContext: NoteContext? = nil) {
         editor.editorErrorMessage = nil
-        let frontmostApp = NSWorkspace.shared.frontmostApplication
-        let sourceBundleIdentifier = frontmostApp?.bundleIdentifier
-        let initialContext = resolvedContext ?? editor.quickApplicationContext(for: frontmostApp)
+        let sourceApp = noteSourceApp()
+        let sourceBundleIdentifier = sourceApp?.bundleIdentifier
+        let initialContext = resolvedContext ?? editor.quickApplicationContext(for: sourceApp)
+        // A selection is only live in the app in front; the app behind
+        // NoteSide would ignore the ⌘C.
+        let sourceIsFrontmost = sourceApp?.processIdentifier == NSWorkspace.shared.frontmostApplication?.processIdentifier
 
         // Start both reads before the drawer takes anything from the host.
         let editorState = editor
         let contextTask: Task<NoteContext, Never>? = resolvedContext == nil
-            ? Task { @MainActor in await editorState.resolveCurrentContextAsync(preferredBundleIdentifier: sourceBundleIdentifier) }
+            ? Task { @MainActor in await editorState.resolveCurrentContextAsync(for: sourceApp) }
             : nil
         let panelController = noteEditorPanelController
         let richText = richTextController
         // Starts now, before the drawer does anything, so a Chromium host
         // gets its ⌘C straight away.
-        let selectionRead: SelectionRead? = passageText == nil
-            ? EditorState.startSelectionRead(from: frontmostApp) {
+        let selectionRead: SelectionRead? = passageText == nil && sourceIsFrontmost
+            ? EditorState.startSelectionRead(from: sourceApp) {
                 // The host has handled its ⌘C: take key so typing lands here.
                 guard editorState.isEditorPresented else { return }
                 panelController.makeKeyIfVisible()
@@ -431,6 +447,17 @@ final class AppState {
 
     // MARK: - Passages
 
+    /// The app a new note is for. When NoteSide itself is in front (its
+    /// menu bar item, All Notes or Settings was just used, or it was just
+    /// launched), the note is still for the app the user was working in,
+    /// not for NoteSide.
+    private func noteSourceApp() -> NSRunningApplication? {
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        guard frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier else { return frontmost }
+        if let lastExternalApp, !lastExternalApp.isTerminated { return lastExternalApp }
+        return frontmost
+    }
+
     /// Services menu entry ("Note This in NoteSide"): open the drawer for
     /// the current context with the sent text as a quoted passage.
     func captureQuickNote(passageText: String) {
@@ -438,8 +465,7 @@ final class AppState {
             attachPassage(text: passageText)
             return
         }
-        let frontmostApp = NSWorkspace.shared.frontmostApplication
-        let context = editor.quickApplicationContext(for: frontmostApp)
+        let context = editor.quickApplicationContext(for: noteSourceApp())
         guard canCreateNote(for: context) else {
             presentLicenseWindow()
             return
