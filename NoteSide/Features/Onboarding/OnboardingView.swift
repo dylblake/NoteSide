@@ -220,7 +220,11 @@ struct OnboardingView: View {
 
             Spacer(minLength: 12)
 
-            if status == .undetermined {
+            if appState.browserPermissions.isRequestPending(for: target.bundleIdentifier) {
+                Text("Requesting…")
+                    .font(.footnote)
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+            } else if status == .undetermined {
                 secondaryButton("Request Access") {
                     appState.browserPermissions.requestAppAutomationAccess(for: target)
                 }
@@ -400,11 +404,15 @@ struct OnboardingView: View {
 
             Spacer(minLength: 12)
 
-            if status == .undetermined {
+            if appState.browserPermissions.isRequestPending(for: bundleIdentifier) {
+                Text("Connecting…")
+                    .font(.footnote)
+                    .foregroundStyle(NoteSideTheme.secondaryText)
+            } else if status == .undetermined {
                 secondaryButton("Request Access") {
                     appState.browserPermissions.requestAutomationAccess(for: bundleIdentifier)
                 }
-            } else if status == .notGranted {
+            } else if status != .granted {
                 // macOS won't re-prompt after a denial — the only path
                 // back is the Automation pane in System Settings.
                 secondaryButton("Open Settings") {

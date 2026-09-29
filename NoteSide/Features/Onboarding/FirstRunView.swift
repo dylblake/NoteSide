@@ -1,18 +1,28 @@
 import AppKit
 import SwiftUI
 
-/// Three-step first-run wizard. The full permissions dashboard
+/// Guided first-run wizard. The full permissions dashboard
 /// (OnboardingView, "Permissions & Setup") remains the returning-user
-/// surface; this is the guided path to the first note:
-///   1. Press the hotkey and feel the drawer (plus shortcut conflicts)
-///   2. Connect the default browser (the core value for most users)
-///   3. Optional extras and the trial expectation
+/// surface; this is the guided path to the first note.
+///
+/// Direct build (3 steps): hotkey → connect browser (per-browser
+/// Automation) → optional extras.
+///
+/// MAS build (2 steps): hotkey → permissions. Browsers there are read
+/// through Accessibility, the same grant that unlocks Slack/Figma/editor
+/// context and dictation — so a dedicated browser step would just ask for
+/// the same permission twice. The single permissions step leads with
+/// Accessibility and names browser pages among what it unlocks.
 struct FirstRunView: View {
     @Environment(AppState.self) private var appState
     @State private var step = 0
     @State private var didOpenDrawer = false
 
+    #if MAS_BUILD
+    private static let stepCount = 2
+    #else
     private static let stepCount = 3
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -20,8 +30,12 @@ struct FirstRunView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     switch step {
                     case 0: hotkeyStep
+                    #if MAS_BUILD
+                    default: extrasStep
+                    #else
                     case 1: browserStep
                     default: extrasStep
+                    #endif
                     }
                 }
                 .padding(28)
@@ -128,7 +142,9 @@ struct FirstRunView: View {
         }
     }
 
-    // MARK: - Step 2: the browser
+    // MARK: - Step 2: the browser (direct build only — MAS reads browsers
+    // through Accessibility, handled in the permissions step)
+    #if !MAS_BUILD
 
     private var featuredBrowser: BrowserDescriptor? {
         if let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://www.example.com")!),
@@ -154,14 +170,6 @@ struct FirstRunView: View {
 
     private var browserStep: some View {
         VStack(alignment: .leading, spacing: 18) {
-            #if MAS_BUILD
-            stepHeader(
-                title: "Connect your browser",
-                subtitle: "This is where NoteSide shines: notes attach to the exact page you're on and reappear when you come back. One Accessibility permission covers Safari, Chrome, and every supported browser."
-            )
-
-            accessibilityBrowserCard
-            #else
             stepHeader(
                 title: "Connect your browser",
                 subtitle: "This is where NoteSide shines: notes attach to the exact page you're on and reappear when you come back. macOS asks for permission once per browser."
@@ -189,54 +197,11 @@ struct FirstRunView: View {
                 }
             }
 
-            #endif
-
             Text("You can skip this — notes still attach to the browser app itself, just not to individual pages.")
                 .font(.caption)
                 .foregroundStyle(NoteSideTheme.tertiaryText)
         }
     }
-
-    #if MAS_BUILD
-    private var accessibilityBrowserCard: some View {
-        let granted = appState.isAccessibilityTrusted
-
-        return HStack(alignment: .center, spacing: 14) {
-            Image(systemName: granted ? "checkmark.circle.fill" : "globe")
-                .font(.system(size: 28))
-                .foregroundStyle(granted ? NoteSideTheme.success : NoteSideTheme.accent)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("All Browsers")
-                    .font(.headline)
-                Text(granted
-                    ? "Connected. Open any page and press \(appState.hotkeys.hotKeyDisplayString)."
-                    : "Uses macOS Accessibility to read the current page. Click Connect, enable NoteSide in System Settings, then come back — this updates on its own.")
-                    .font(.subheadline)
-                    .foregroundStyle(NoteSideTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 12)
-
-            if !granted {
-                wizardButton("Connect", prominent: true) {
-                    appState.openAccessibilitySettings()
-                }
-            }
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(NoteSideTheme.contentBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(granted ? NoteSideTheme.success.opacity(0.5) : NoteSideTheme.border.opacity(0.8), lineWidth: 1)
-                )
-        )
-    }
-    #endif
 
     private func featuredBrowserCard(_ browser: BrowserDescriptor) -> some View {
         let state = appState.browserPermissions.browserPermissionStates[browser.bundleIdentifier] ?? .undetermined
@@ -257,15 +222,7 @@ struct FirstRunView: View {
 
             Spacer(minLength: 12)
 
-            if state == .notGranted {
-                wizardButton("Open Settings", prominent: false) {
-                    appState.browserPermissions.openAutomationSettings()
-                }
-            } else if state != .granted {
-                wizardButton("Connect", prominent: true) {
-                    appState.browserPermissions.requestAutomationAccess(for: browser.bundleIdentifier)
-                }
-            }
+            browserActionButtons(for: browser.bundleIdentifier, state: state, prominentConnect: true)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -277,6 +234,39 @@ struct FirstRunView: View {
                         .stroke(state == .granted ? NoteSideTheme.success.opacity(0.5) : NoteSideTheme.border.opacity(0.8), lineWidth: 1)
                 )
         )
+    }
+
+    /// Connect / Open Settings / "Connecting…" cluster shared by the featured
+    /// card and the compact rows. A granted browser shows nothing; a pending
+    /// request shows a disabled "Connecting…" so the click is never invisible;
+    /// every other state always offers Open Settings as a working escape hatch,
+    /// plus Connect while the browser has never been asked (.undetermined).
+    @ViewBuilder
+    private func browserActionButtons(
+        for bundleIdentifier: String,
+        state: BrowserPermissionState,
+        prominentConnect: Bool
+    ) -> some View {
+        if state == .granted {
+            EmptyView()
+        } else if appState.browserPermissions.isRequestPending(for: bundleIdentifier) {
+            Text("Connecting…")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(NoteSideTheme.secondaryText)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+        } else {
+            HStack(spacing: 8) {
+                if state == .undetermined {
+                    wizardButton("Connect", prominent: prominentConnect) {
+                        appState.browserPermissions.requestAutomationAccess(for: bundleIdentifier)
+                    }
+                }
+                wizardButton("Open Settings", prominent: false) {
+                    appState.browserPermissions.openAutomationSettings()
+                }
+            }
+        }
     }
 
     private func featuredBrowserDetail(for state: BrowserPermissionState) -> String {
@@ -302,33 +292,34 @@ struct FirstRunView: View {
 
             Spacer()
 
-            if state == .notGranted {
-                wizardButton("Open Settings", prominent: false) {
-                    appState.browserPermissions.openAutomationSettings()
-                }
-            } else if state != .granted {
-                wizardButton("Connect", prominent: false) {
-                    appState.browserPermissions.requestAutomationAccess(for: browser.bundleIdentifier)
-                }
-            }
+            browserActionButtons(for: browser.bundleIdentifier, state: state, prominentConnect: false)
         }
     }
 
-    // MARK: - Step 3: extras
+    #endif
+
+    // MARK: - Final step: permissions (MAS) / optional extras (direct)
 
     private var extrasStep: some View {
         VStack(alignment: .leading, spacing: 16) {
+            #if MAS_BUILD
+            stepHeader(
+                title: "Enable Accessibility",
+                subtitle: "One permission unlocks it all — reading the current browser page, plus context inside Slack, Figma, and code editors. Dictation and Finder/Xcode below are optional."
+            )
+            #else
             stepHeader(
                 title: "Optional extras",
                 subtitle: "Everything here can wait — grant these when you need them, from the menu bar icon → Permissions & Setup."
             )
+            #endif
 
             extraRow(
                 icon: "figure.wave",
                 granted: appState.isAccessibilityTrusted,
                 title: "Accessibility",
-                detail: "Detects context inside Slack, Figma, and code editors, and powers dictation's hold-to-release. After enabling it in System Settings, come back — this updates on its own.",
-                buttonTitle: appState.isAccessibilityTrusted ? nil : "Request Access",
+                detail: accessibilityRowDetail,
+                buttonTitle: appState.isAccessibilityTrusted ? nil : "Enable",
                 action: appState.isAccessibilityTrusted ? nil : { appState.openAccessibilitySettings() }
             )
 
@@ -371,6 +362,24 @@ struct FirstRunView: View {
         "You're on the free trial — your first \(AppState.trialNoteLimit) notes are on us. Unlocking unlimited notes is a one-time purchase, and everything you write stays yours either way."
         #else
         "You're on the free trial — your first \(AppState.trialNoteLimit) notes are on us. Everything you write stays yours either way; a license just unlocks unlimited new notes."
+        #endif
+    }
+
+    /// Accessibility row copy. On MAS it leads with browser pages (that
+    /// grant is how browsers are read there) and notes the "＋ add NoteSide"
+    /// fallback in case the row isn't auto-listed in System Settings.
+    private var accessibilityRowDetail: String {
+        if appState.isAccessibilityTrusted {
+            #if MAS_BUILD
+            return "Enabled. NoteSide reads the current browser page and detects Slack, Figma, and editor context."
+            #else
+            return "Enabled. NoteSide detects context inside Slack, Figma, and code editors, and powers dictation's hold-to-release."
+            #endif
+        }
+        #if MAS_BUILD
+        return "Reads the current browser page and detects Slack, Figma, and editor context. Click Enable, then turn NoteSide on in System Settings — if it isn't listed, use the ＋ button to add it. This updates on its own."
+        #else
+        return "Detects context inside Slack, Figma, and code editors, and powers dictation's hold-to-release. Click Enable, then turn NoteSide on in System Settings — if it isn't listed, use the ＋ button to add it. This updates on its own."
         #endif
     }
 

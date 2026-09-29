@@ -452,6 +452,11 @@ final class NoteEditorPanelController {
     /// if the frontmost app is one whose AX-reported window is unreliable
     /// for screen detection (Finder, see below).
     private func frontmostAppFocusedWindowScreen() -> NSScreen? {
+        // Cross-process AX queries below block on IPC when the app isn't
+        // trusted — indefinitely under the App Sandbox — and this runs on
+        // the main thread during panel repositioning. Bail before any AX
+        // call if we're untrusted; the caller falls back to cursor location.
+        guard AXIsProcessTrusted() else { return nil }
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
 
         // Finder owns the desktop, which is exposed via AX as a window that

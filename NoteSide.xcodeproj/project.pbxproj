@@ -40,6 +40,11 @@
 			path = NoteSideTests;
 			sourceTree = "<group>";
 		};
+		AA1000022F7F007C00991A77 /* NoteSideUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NoteSideUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,6 +77,7 @@
 			children = (
 				FEAE36E42F7F007C00991A77 /* NoteSide */,
 				AA1000012F7F007C00991A77 /* NoteSideTests */,
+				AA1000022F7F007C00991A77 /* NoteSideUITests */,
 				FEAE36E32F7F007C00991A77 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -147,6 +153,9 @@
 			);
 			dependencies = (
 				FEAE36FB2F7F007C00991A77 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA1000022F7F007C00991A77 /* NoteSideUITests */,
 			);
 			name = NoteSideUITests;
 			packageProductDependencies = (
@@ -662,7 +671,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "side-note";
+				TEST_TARGET_NAME = NoteSide;
 			};
 			name = Debug;
 		};
@@ -682,7 +691,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "side-note";
+				TEST_TARGET_NAME = NoteSide;
 			};
 			name = Release;
 		};
@@ -702,7 +711,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "side-note";
+				TEST_TARGET_NAME = NoteSide;
 			};
 			name = "Release-MAS";
 		};
