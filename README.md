@@ -113,8 +113,8 @@ These hooks are compiled out of Release/MAS builds.
 ## Version
 
 <!-- VERSION_BLOCK_START -->
-- Version: `1.3.1`
-- Build: `17`
+- Version: `2.0.0`
+- Build: `18`
 <!-- VERSION_BLOCK_END -->
 
 ## Notes
