@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Guided first-run wizard. The full permissions dashboard
-/// (OnboardingView, "Permissions & Setup") remains the returning-user
+/// (OnboardingView, "Setup") remains the returning-user
 /// surface; this is the guided path to the first note.
 ///
 /// Direct build (3 steps): hotkey → connect browser (per-browser
@@ -168,7 +168,7 @@ struct FirstRunView: View {
             if let browser = featuredBrowser {
                 featuredBrowserCard(browser)
             } else {
-                Text("No supported browser found. Remora works with Safari, Chrome, Edge, Brave, Arc, and Vivaldi — install one and grant access later from Permissions & Setup.")
+                Text("No supported browser found. Remora works with Safari, Chrome, Edge, Brave, Arc, and Vivaldi — install one and grant access later from Setup.")
                     .font(.subheadline)
                     .foregroundStyle(RemoraTheme.secondaryText)
             }
@@ -301,7 +301,7 @@ struct FirstRunView: View {
             #else
             stepHeader(
                 title: "Optional extras",
-                subtitle: "Everything here can wait — grant these when you need them, from the menu bar icon → Permissions & Setup."
+                subtitle: "Everything here can wait — grant these when you need them, from the menu bar icon → Setup."
             )
             #endif
 
@@ -329,7 +329,7 @@ struct FirstRunView: View {
                 showsStatusIcon: false,
                 title: "Finder & Xcode",
                 detail: "Attach notes to folders and source files. Uses the same one-time Automation permission as browsers.",
-                buttonTitle: "Permissions & Setup",
+                buttonTitle: "Open Setup",
                 action: { appState.showOnboarding() }
             )
 
@@ -413,11 +413,7 @@ struct FirstRunView: View {
 
     private func stepHeader(title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("Welcome to Remora")
-                .font(.caption.weight(.semibold))
-                .textCase(.uppercase)
-                .tracking(0.7)
-                .foregroundStyle(RemoraTheme.secondaryText)
+            SectionHeader(title: "Welcome to Remora")
 
             Text(title)
                 .font(.title.weight(.bold))

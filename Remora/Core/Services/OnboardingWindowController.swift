@@ -21,7 +21,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         window.contentViewController = hostingController
-        window.title = "Permissions & Setup"
+        window.title = "Setup"
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: defaultFrame.width, height: defaultFrame.height)
         window.setContentSize(defaultFrame.size)

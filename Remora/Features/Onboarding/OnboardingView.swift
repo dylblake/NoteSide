@@ -33,7 +33,7 @@ private enum PermissionRowStatus {
     }
 }
 
-/// Permissions & Setup. A short "how it works" card, then one permission
+/// The Setup window. A short "how it works" card, then one permission
 /// row per capability. Each row shows its state at a glance; the per-app
 /// detail (individual browsers, Finder / Xcode, microphone + speech) is
 /// tucked behind a disclosure that opens itself only when something needs
@@ -364,7 +364,7 @@ struct OnboardingView: View {
 
     private var completionFooter: some View {
         HStack(alignment: .firstTextBaseline, spacing: Spacing.md) {
-            Text("Reopen this window anytime from the menu bar icon → Permissions & Setup.")
+            Text("Reopen this window anytime from the menu bar icon → Setup.")
                 .font(.footnote)
                 .foregroundStyle(RemoraTheme.tertiaryText)
                 .fixedSize(horizontal: false, vertical: true)
