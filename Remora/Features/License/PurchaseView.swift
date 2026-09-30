@@ -30,79 +30,36 @@ private struct PurchaseContent: View {
             .padding(Spacing.xl)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(background)
     }
 
-    private var background: some View {
-        RemoraTheme.windowBackground
-            .ignoresSafeArea()
-    }
-
+    @ViewBuilder
     private var header: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Remora")
-                .font(.largeTitle.weight(.bold))
-                .foregroundStyle(RemoraTheme.primaryText)
-                .accessibilityAddTraits(.isHeader)
-
-            if store.isUnlocked {
-                Text("You're all set.")
-                    .font(.title3)
-                    .foregroundStyle(RemoraTheme.secondaryText)
-            } else if appState.isTrialExhausted {
-                Text("Your \(AppState.trialNoteLimit)-note free trial is complete.")
-                    .font(.title3)
-                    .foregroundStyle(RemoraTheme.secondaryText)
-
-                Text("Your existing notes stay fully available. Unlocking is a one-time purchase — no subscription.")
-                    .font(.subheadline)
-                    .foregroundStyle(RemoraTheme.tertiaryText)
-            } else {
-                Text("Unlock unlimited notes.")
-                    .font(.title3)
-                    .foregroundStyle(RemoraTheme.secondaryText)
-
-                Text("You're on the free trial (\(appState.trialNotesUsed) of \(AppState.trialNoteLimit) notes used). Unlocking is a one-time purchase — no subscription.")
-                    .font(.subheadline)
-                    .foregroundStyle(RemoraTheme.tertiaryText)
-            }
+        if store.isUnlocked {
+            PageHeader(title: "You're all set.")
+        } else if appState.isTrialExhausted {
+            PageHeader(
+                title: "Your \(AppState.trialNoteLimit)-note free trial is complete.",
+                subtitle: "Your existing notes stay fully available. Unlocking is a one-time purchase — no subscription."
+            )
+        } else {
+            PageHeader(
+                title: "Unlock unlimited notes.",
+                subtitle: "You're on the free trial (\(appState.trialNotesUsed) of \(AppState.trialNoteLimit) notes used). Unlocking is a one-time purchase — no subscription."
+            )
         }
     }
 
     private var successCard: some View {
-        VStack(spacing: Spacing.md) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(RemoraTheme.success)
-
-            Text("Unlimited Notes Unlocked")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(RemoraTheme.primaryText)
-
-            Text("Thank you for supporting Remora. Use \(appState.hotkeys.hotKeyDisplayString) to keep taking notes.")
-                .font(.subheadline)
-                .foregroundStyle(RemoraTheme.secondaryText)
-                .multilineTextAlignment(.center)
-
-            Button("Get Started") {
-                appState.dismissLicenseWindow()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
-            .padding(.top, Spacing.xxs)
+        LicenseSuccessCard(
+            title: "Unlimited Notes Unlocked",
+            message: "Thank you for supporting Remora. Use \(appState.hotkeys.hotKeyDisplayString) to keep taking notes."
+        ) {
+            appState.dismissLicenseWindow()
         }
-        .frame(maxWidth: .infinity)
-        .padding(Spacing.xl)
-        .background(card)
     }
 
     private var purchaseCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Label("Unlimited Notes", systemImage: "infinity")
-                .font(.headline)
-                .foregroundStyle(RemoraTheme.primaryText)
-
+        TitledCard(title: "Unlimited Notes", systemImage: "infinity") {
             Text("Everything in the trial, without the five-note limit. One purchase, yours forever, across all your Macs signed into the same Apple Account.")
                 .font(.subheadline)
                 .foregroundStyle(RemoraTheme.secondaryText)
@@ -128,7 +85,7 @@ private struct PurchaseContent: View {
                         Text(purchaseButtonTitle)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
                 .disabled(store.isWorking)
@@ -141,9 +98,6 @@ private struct PurchaseContent: View {
                 .disabled(store.isWorking)
             }
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(card)
     }
 
     private var purchaseButtonTitle: String {
@@ -151,15 +105,6 @@ private struct PurchaseContent: View {
             return "Unlock Unlimited Notes — \(product.displayPrice)"
         }
         return "Unlock Unlimited Notes"
-    }
-
-    private var card: some View {
-        RoundedRectangle(cornerRadius: CornerRadius.sheet, style: .continuous)
-            .fill(RemoraTheme.contentBackground)
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.sheet, style: .continuous)
-                    .stroke(RemoraTheme.border.opacity(0.8), lineWidth: 1)
-            )
     }
 }
 #endif

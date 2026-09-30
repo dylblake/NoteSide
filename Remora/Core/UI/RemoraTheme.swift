@@ -37,6 +37,12 @@ enum RemoraTheme {
         contentBackground.opacity(prominence)
     }
 
+    /// Card and inset-row fills for content that sits on `sheetGlass`
+    /// (the About / Setup / License windows): translucent so the glass
+    /// still reads through, opaque enough that body text stays legible.
+    static let glassCardFill = cardBackground(prominence: 0.55)
+    static let glassInsetRowFill = secondaryBackground.opacity(0.5)
+
     static func tintedTileFill(for tint: Color) -> Color {
         tint.opacity(0.12)
     }
@@ -72,6 +78,8 @@ struct CardSurface: ViewModifier {
     var cornerRadius: CGFloat = CornerRadius.card
     var fill: Color = RemoraTheme.contentBackground
     var strokeOpacity: Double = 0.8
+    /// Overrides the hairline colour (e.g. a success tint once granted).
+    var strokeColor: Color? = nil
 
     func body(content: Content) -> some View {
         content
@@ -80,7 +88,7 @@ struct CardSurface: ViewModifier {
                     .fill(fill)
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(RemoraTheme.border.opacity(strokeOpacity), lineWidth: 1)
+                            .stroke(strokeColor ?? RemoraTheme.border.opacity(strokeOpacity), lineWidth: 1)
                     )
             )
     }
@@ -91,13 +99,17 @@ extension View {
     func cardSurface(
         cornerRadius: CGFloat = CornerRadius.card,
         fill: Color = RemoraTheme.contentBackground,
-        strokeOpacity: Double = 0.8
+        strokeOpacity: Double = 0.8,
+        strokeColor: Color? = nil
     ) -> some View {
-        modifier(CardSurface(cornerRadius: cornerRadius, fill: fill, strokeOpacity: strokeOpacity))
+        modifier(CardSurface(cornerRadius: cornerRadius, fill: fill, strokeOpacity: strokeOpacity, strokeColor: strokeColor))
     }
 
     /// Nested inset row inside a card: a slightly recessed surface.
-    func insetRowSurface(cornerRadius: CGFloat = CornerRadius.card) -> some View {
-        modifier(CardSurface(cornerRadius: cornerRadius, fill: RemoraTheme.secondaryBackground, strokeOpacity: 0.7))
+    func insetRowSurface(
+        cornerRadius: CGFloat = CornerRadius.card,
+        fill: Color = RemoraTheme.secondaryBackground
+    ) -> some View {
+        modifier(CardSurface(cornerRadius: cornerRadius, fill: fill, strokeOpacity: 0.7))
     }
 }

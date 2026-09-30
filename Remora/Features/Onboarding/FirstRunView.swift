@@ -48,18 +48,14 @@ struct FirstRunView: View {
                 .padding(.horizontal, Spacing.xl)
                 .padding(.vertical, Spacing.md)
         }
-        .frame(width: 620, height: 560)
-        .background(background)
+        // +28 over the old content height: with `.fullSizeContentView` the
+        // frame includes the (transparent) title bar strip.
+        .frame(width: 620, height: 588)
         .onChange(of: appState.editor.isEditorPresented) { _, isPresented in
             if isPresented {
                 didOpenDrawer = true
             }
         }
-    }
-
-    private var background: some View {
-        RemoraTheme.windowBackground
-            .ignoresSafeArea()
     }
 
     // MARK: - Step 1: the hotkey
@@ -79,7 +75,7 @@ struct FirstRunView: View {
                     .padding(.vertical, Spacing.md)
                     .background(
                         RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                            .fill(RemoraTheme.contentBackground)
+                            .fill(RemoraTheme.glassCardFill)
                             .overlay(
                                 RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                                     .stroke(didOpenDrawer ? RemoraTheme.success : RemoraTheme.border, lineWidth: didOpenDrawer ? 2 : 1)
@@ -216,13 +212,10 @@ struct FirstRunView: View {
         }
         .padding(Spacing.md + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .fill(RemoraTheme.contentBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                        .stroke(state == .granted ? RemoraTheme.success.opacity(0.5) : RemoraTheme.border.opacity(0.8), lineWidth: 1)
-                )
+        .cardSurface(
+            cornerRadius: CornerRadius.card,
+            fill: RemoraTheme.glassCardFill,
+            strokeColor: state == .granted ? RemoraTheme.success.opacity(0.5) : nil
         )
     }
 
@@ -240,12 +233,7 @@ struct FirstRunView: View {
         if state == .granted {
             EmptyView()
         } else if appState.browserPermissions.isRequestPending(for: bundleIdentifier) {
-            HStack(spacing: Spacing.xs - 2) {
-                ProgressView().controlSize(.small)
-                Text("Connecting…")
-                    .font(.subheadline)
-                    .foregroundStyle(RemoraTheme.secondaryText)
-            }
+            PendingLabel(text: "Connecting…")
         } else {
             HStack(spacing: Spacing.xs) {
                 if state == .undetermined {
@@ -406,7 +394,7 @@ struct FirstRunView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .insetRowSurface()
+        .insetRowSurface(fill: RemoraTheme.glassInsetRowFill)
     }
 
     // MARK: - Shared pieces
@@ -464,11 +452,11 @@ struct FirstRunView: View {
     private func wizardButton(_ title: String, prominent: Bool, action: @escaping () -> Void) -> some View {
         if prominent {
             Button(title, action: action)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .controlSize(.large)
         } else {
             Button(title, action: action)
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .controlSize(.regular)
         }
     }
