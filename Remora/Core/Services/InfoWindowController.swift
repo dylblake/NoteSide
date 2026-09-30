@@ -31,7 +31,6 @@ final class InfoWindowController: NSObject, NSWindowDelegate {
 
     func present() {
         guard let window else { return }
-        appState?.setInfoWindowVisible(true)
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
@@ -48,7 +47,6 @@ final class InfoWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        appState?.setInfoWindowVisible(false)
     }
 
     private func targetScreen() -> NSScreen? {
