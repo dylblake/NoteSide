@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### The note and All Notes are one stack
+- **All Notes slides out from under the note.** With the note drawer open, the All Notes shortcut, or the new button at the left of the drawer's footer, slides the list out to the left of the note, tucked beneath it. Both stay usable side by side; the same control slides it back under. On a display too narrow for the pair, the list replaces the note as before.
+- **Picking a note swaps it into the open drawer.** The list goes back under, the drawer shows the picked note at once, and its page or file comes forward. What you had typed in the previous note is saved first.
+- The note shortcut, Escape in either, or a click outside closes the note and the list together.
+- Deleting a note from the list while it is open in the drawer empties the drawer, rather than saving the note back when the drawer closes.
+
+### The drawer opens where the pointer is
+- **The note drawer opens on the display the pointer is on**, as All Notes already did. When the app you're typing in has its window on another display, Remora brings the window under the pointer forward first, so the note is for what you're looking at and the drawer opens beside it. On the same display, the app you're typing in keeps the note. Needs Accessibility; without it the drawer opens on the pointer's display for the app in front.
+
 ## 2.0.2
 
 ### The trial limit holds everywhere

@@ -48,6 +48,14 @@ final class AppleScriptExecutor: @unchecked Sendable {
 
     /// Must only run on `queue`.
     private func run(key: String, source: String) -> (descriptor: NSAppleEventDescriptor?, error: NSDictionary?) {
+        #if DEBUG
+        // `REMORA_DISABLE_APPLE_EVENTS` answers every script as "not
+        // permitted" without sending anything, so a scratch build driven
+        // on a Mac in use can't put a consent prompt on the screen.
+        if ProcessInfo.processInfo.environment["REMORA_DISABLE_APPLE_EVENTS"] != nil {
+            return (nil, [NSAppleScript.errorNumber: -1743])
+        }
+        #endif
         let script: NSAppleScript
         if let cached = scripts[key] {
             script = cached

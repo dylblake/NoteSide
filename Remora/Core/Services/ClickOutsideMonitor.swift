@@ -9,7 +9,13 @@ import AppKit
 final class ClickOutsideMonitor {
     private var monitor: Any?
 
-    func start(watching panel: NSPanel, onClickOutside: @escaping @MainActor () -> Void) {
+    /// `alsoInside` names further frames that count as the panel, so one
+    /// monitor can speak for a stack (the note and the list beside it).
+    func start(
+        watching panel: NSPanel,
+        alsoInside: @escaping @MainActor () -> [NSRect] = { [] },
+        onClickOutside: @escaping @MainActor () -> Void
+    ) {
         guard monitor == nil else { return }
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak panel] _ in
             Task { @MainActor in
@@ -20,6 +26,7 @@ final class ClickOutsideMonitor {
                     return
                 }
                 guard !panel.frame.contains(point) else { return }
+                guard !alsoInside().contains(where: { $0.contains(point) }) else { return }
                 onClickOutside()
             }
         }

@@ -14,6 +14,19 @@ final class NoteEditorPanelController {
     /// `repositionToActiveScreenIfNeeded`).
     var onClickOutside: (() -> Void)?
 
+    var window: NSWindow? { panel }
+
+    /// Frames that count as part of the drawer for the click-outside
+    /// check: All Notes while it sits beside the note.
+    var stackFrames: (() -> [NSRect])?
+
+    /// The drawer's frame and its display's usable area while it is on
+    /// screen: what All Notes anchors itself to when it opens beside it.
+    var stackAnchor: (frame: NSRect, visibleFrame: NSRect)? {
+        guard let panel, panel.isVisible, let screen = panel.screen else { return nil }
+        return (panel.frame, screen.visibleFrame.integral)
+    }
+
     func install(appState: AppState) {
         let rootView = FloatingNoteEditorView()
             .environment(appState)
@@ -48,9 +61,10 @@ final class NoteEditorPanelController {
 
     /// `makeKey: false` is the rare slow path: a Chromium selection read is
     /// still in flight and needs the host window to stay key; the caller
-    /// calls `makeKeyIfVisible()` when it lands.
-    func present(makeKey: Bool = true) {
-        guard let panel, let screen = targetScreen(preferPanelScreen: false) else { return }
+    /// calls `makeKeyIfVisible()` when it lands. `screen` names the display
+    /// when the caller has already chosen it.
+    func present(makeKey: Bool = true, on screen: NSScreen? = nil) {
+        guard let panel, let screen = screen ?? targetScreen(preferPanelScreen: false) else { return }
         animationSequence += 1
         let sequence = animationSequence
         lastPresentedScreen = screen
@@ -94,7 +108,10 @@ final class NoteEditorPanelController {
         if makeKey {
             panel.makeKey()
         }
-        clickOutsideMonitor.start(watching: panel) { [weak self] in self?.onClickOutside?() }
+        clickOutsideMonitor.start(
+            watching: panel,
+            alsoInside: { [weak self] in self?.stackFrames?() ?? [] }
+        ) { [weak self] in self?.onClickOutside?() }
         if !reduceMotion {
             // Commit the window, held off-screen, before the slide's clock
             // starts: putting it up (on another display especially) can take
@@ -161,12 +178,14 @@ final class NoteEditorPanelController {
     /// and slides in on the new one exactly as it opens — the same slide and
     /// timing, never a jump into place. (Snapshot "ghost" windows can't
     /// carry Liquid Glass, which is drawn from what's behind the window.)
-    func repositionToActiveScreenIfNeeded() {
+    /// Returns whether the drawer is moving.
+    @discardableResult
+    func repositionToActiveScreenIfNeeded() -> Bool {
         guard let panel, panel.isVisible,
               let target = targetScreen(preferPanelScreen: false),
               let current = panel.screen,
               // NSScreen instances aren't reference-stable; compare frames.
-              current.frame != target.frame else { return }
+              current.frame != target.frame else { return false }
         PanelMotionTrace.mark("move", panel: panel)
         let wasKey = panel.isKeyWindow
         animationSequence += 1
@@ -193,6 +212,7 @@ final class NoteEditorPanelController {
             }
             self.present(makeKey: wasKey)
         }
+        return true
     }
 
     #if DEBUG
@@ -274,12 +294,12 @@ final class NoteEditorPanelController {
             return panelScreen
         }
 
-        // Prefer the screen the frontmost app's focused window actually lives
-        // on. When the user opens a note from All Notes, the cursor stays
-        // over the (now-dismissed) All Notes window while the navigated app
+        // Prefer the display the frontmost app's front window is on. When
+        // the user opens a note from All Notes, the cursor stays over the
+        // (now-dismissed) All Notes window while the navigated app
         // activates on whatever screen its window is on; using the cursor
         // would put the panel on the wrong display.
-        if let appWindowScreen = frontmostAppFocusedWindowScreen() {
+        if let appWindowScreen = frontmostAppWindowScreen() {
             return appWindowScreen
         }
 
@@ -303,70 +323,18 @@ final class NoteEditorPanelController {
         return NSScreen.main ?? NSScreen.screens.first
     }
 
-    /// Asks the Accessibility API for the frontmost app's focused window
-    /// rect, then maps the window's center to whichever NSScreen contains
-    /// that point. Returns nil if AX can't reach the target (no permission,
-    /// non-AX app, no focused window, missing position/size attributes) or
-    /// if the frontmost app is one whose AX-reported window is unreliable
-    /// for screen detection (Finder, see below).
-    private func frontmostAppFocusedWindowScreen() -> NSScreen? {
-        // Cross-process AX queries below block on IPC when the app isn't
-        // trusted — indefinitely under the App Sandbox — and this runs on
-        // the main thread during panel repositioning. Bail before any AX
-        // call if we're untrusted; the caller falls back to cursor location.
-        guard AXIsProcessTrusted() else { return nil }
-        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
-
-        // Finder owns the desktop, which is exposed via AX as a window that
-        // spans every display. Its center lands somewhere in the middle of
-        // the workspace and doesn't reflect which screen the user is
-        // actually looking at, so a click on Finder/the desktop on screen 2
-        // would otherwise route the panel to screen 1. Skip AX entirely for
-        // Finder and let the caller fall back to cursor location, which
-        // correctly reflects the click.
-        if app.bundleIdentifier == "com.apple.finder" {
-            return nil
-        }
-
-        let appElement = AXUIElementCreateApplication(app.processIdentifier)
-
-        // Wake up Electron/Chromium AX trees so position queries succeed for
-        // Slack, VSCode, Figma, etc.
-        AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
-
-        var focusedWindowRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWindowRef) == .success,
-              let focusedWindowRef
-        else {
-            return nil
-        }
-        let focusedWindow = focusedWindowRef as! AXUIElement
-
-        var positionRef: CFTypeRef?
-        var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(focusedWindow, kAXPositionAttribute as CFString, &positionRef) == .success,
-              AXUIElementCopyAttributeValue(focusedWindow, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let positionRef, let sizeRef
-        else {
-            return nil
-        }
-
-        var position = CGPoint.zero
-        var size = CGSize.zero
-        guard AXValueGetValue(positionRef as! AXValue, .cgPoint, &position),
-              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size)
-        else {
-            return nil
-        }
-
-        // AX coordinates: top-left origin of the primary screen, Y down.
-        // Cocoa coordinates: bottom-left origin of the primary screen, Y up.
-        // Convert the window's center point and find the screen that contains it.
-        let centerAX = CGPoint(x: position.x + size.width / 2, y: position.y + size.height / 2)
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        let centerCocoa = CGPoint(x: centerAX.x, y: primaryHeight - centerAX.y)
-
-        return NSScreen.screens.first { NSMouseInRect(centerCocoa, $0.frame, false) }
+    /// The display holding the front app's front window, from the window
+    /// server's on-screen list: no permission, no cross-process call, and
+    /// the desktop is left out so Finder can't mislead it. Nil when the
+    /// front app has no ordinary window on screen (or is Remora itself).
+    private func frontmostAppWindowScreen() -> NSScreen? {
+        let decision = PointerWindowLocator.decide(
+            windows: PointerWindowLocator.onScreenWindows(),
+            pointer: .zero,
+            frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            ownPID: ProcessInfo.processInfo.processIdentifier
+        )
+        guard let window = decision.frontmostWindow else { return nil }
+        return PointerWindowLocator.screen(containing: CGPoint(x: window.bounds.midX, y: window.bounds.midY))
     }
 }

@@ -173,6 +173,33 @@ final class PanelMotionUITests: XCTestCase {
         assertMonotonic(Array(window[turn...]), increasing: true)
     }
 
+    // MARK: The stack
+
+    /// All Notes comes out from under the open drawer and goes back under
+    /// it with the same slide the drawer uses, and the drawer itself
+    /// never moves while it does.
+    func testAllNotesSlidesOutFromUnderTheDrawerWithoutMovingIt() throws {
+        toggle()
+        _ = try waitForEvents(["presented"])
+
+        toggleAllNotes()
+        let revealed = try waitForEvents(["listPresented"], panel: "list")
+        let reveal = try XCTUnwrap(revealed.last { $0.event == "listPresent" })
+        try assertNaturalSlide(in: revealed, from: "listPresent", to: "listPresented", startOffset: reveal.width, endOffset: 0)
+        let firstVisible = try XCTUnwrap(revealed.first { $0.event == "frame" && $0.t > reveal.t && $0.offset < reveal.width - 0.5 })
+        XCTAssertTrue(firstVisible.key, "the list was on screen before it was key, so it looked inactive")
+
+        toggleAllNotes()
+        let retracted = try waitForEvents(["listPresented", "listDismissed"], panel: "list")
+        let retract = try XCTUnwrap(retracted.last { $0.event == "listDismiss" })
+        try assertNaturalSlide(in: retracted, from: "listDismiss", to: "listDismissed", startOffset: 0, endOffset: retract.width)
+
+        for sample in readTrace() where sample.event == "frame" && sample.t >= reveal.t {
+            XCTAssertEqual(sample.offset, 0, accuracy: 0.5, "the drawer moved while the list slid beside it")
+            XCTAssertTrue(sample.visible, "the drawer left while the list slid beside it")
+        }
+    }
+
     // MARK: Checks
 
     /// One uninterrupted slide between two trace events.
@@ -263,6 +290,15 @@ final class PanelMotionUITests: XCTestCase {
         )
     }
 
+    private func toggleAllNotes() {
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("com.remora.uitest.toggleAllNotes"),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+    }
+
     private func moveToOtherDisplay() {
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name("com.remora.uitest.moveDrawerToOtherScreen"),
@@ -272,10 +308,13 @@ final class PanelMotionUITests: XCTestCase {
         )
     }
 
-    private func readTrace() -> [Sample] {
+    /// One panel's track of the trace: the drawer's unless asked for the
+    /// list's. The two are recorded side by side and must not be mixed.
+    private func readTrace(panel: String = "note") -> [Sample] {
         guard let text = try? String(contentsOf: traceURL, encoding: .utf8) else { return [] }
         return text.split(separator: "\n").compactMap { line in
             guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  (object["panel"] as? String ?? "note") == panel,
                   let t = object["t"] as? Double,
                   let event = object["event"] as? String else { return nil }
             return Sample(
@@ -291,14 +330,18 @@ final class PanelMotionUITests: XCTestCase {
         }
     }
 
-    /// Waits until the trace's completion events (`presented` / `dismissed`)
-    /// match `events`, in order.
-    private func waitForEvents(_ events: [String], timeout: TimeInterval = 5) throws -> [Sample] {
+    /// Waits until the trace's completion events (`presented` / `dismissed`,
+    /// or the list's `listPresented` / `listDismissed`) match `events`, in
+    /// order.
+    private func waitForEvents(_ events: [String], panel: String = "note", timeout: TimeInterval = 5) throws -> [Sample] {
+        let completionNames: Set<String> = panel == "note"
+            ? ["presented", "dismissed"]
+            : ["listPresented", "listDismissed"]
         let deadline = Date().addingTimeInterval(timeout)
         var trace: [Sample] = []
         while Date() < deadline {
-            trace = readTrace()
-            let completions = trace.map(\.event).filter { $0 == "presented" || $0 == "dismissed" }
+            trace = readTrace(panel: panel)
+            let completions = trace.map(\.event).filter { completionNames.contains($0) }
             if completions == events { return trace }
             Thread.sleep(forTimeInterval: 0.02)
         }
