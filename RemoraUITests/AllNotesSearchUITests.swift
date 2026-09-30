@@ -25,6 +25,7 @@ final class AllNotesSearchUITests: XCTestCase {
         app.launchEnvironment["UITEST_LAUNCH_ACTION"] = "allNotes"
         app.launchEnvironment["UITEST_STORE_DIRECTORY"] = storeDirectory.path
         app.launchEnvironment["REMORA_PANE_WIDTH"] = "640"
+        app.launchEnvironment["REMORA_DISABLE_FAVICONS"] = "1"
         app.launchArguments += [
             "-hasCompletedOnboarding", "YES",
             "-trialNotesCreated", "0",

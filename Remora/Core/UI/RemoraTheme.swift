@@ -25,12 +25,6 @@ enum RemoraTheme {
     static let tag = Color(nsColor: tagNSColor)
     static let tagNSColor: NSColor = .systemYellow
 
-    /// Per-context tints for note cards. System colours so they adapt to
-    /// the appearance and accessibility settings like everything else.
-    static let applicationTint = Color(nsColor: .systemBlue)
-    static let urlTint = Color(nsColor: .systemGreen)
-    static let fileTint = Color(nsColor: .systemOrange)
-
     /// Liquid Glass for the large floating sheets. A faint window-colour
     /// tint keeps body text legible over busy desktops while the glass
     /// still refracts what's behind the panel.
@@ -47,14 +41,6 @@ enum RemoraTheme {
     /// still reads through, opaque enough that body text stays legible.
     static let glassCardFill = cardBackground(prominence: 0.55)
     static let glassInsetRowFill = secondaryBackground.opacity(0.5)
-
-    static func tintedTileFill(for tint: Color) -> Color {
-        tint.opacity(0.12)
-    }
-
-    static func tintedTileStroke(for tint: Color) -> Color {
-        tint.opacity(0.18)
-    }
 }
 
 /// Point-based spacing rhythm shared by every screen (4/8/12/16/24/32/48).

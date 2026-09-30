@@ -6,6 +6,9 @@ final class NoteStore {
     private struct NotesFile: Codable {
         var version: Int
         var notes: [ContextNote]
+        /// IDs of the To-Do (pinned) notes in the user's manual order.
+        /// Optional so files written before the To-Do list still decode.
+        var todoOrder: [UUID]?
     }
 
     /// 1: original envelope. 2: web identities canonicalised (see
@@ -33,12 +36,16 @@ final class NoteStore {
     // and flush() are called from the main thread, writePendingToDisk from
     // the queue's own work items, so unsynchronized access would race.
     private var pendingNotes: [ContextNote]?
+    private var pendingTodoOrder: [UUID] = []
     private var debounceWorkItem: DispatchWorkItem?
     private let writeQueue = DispatchQueue(label: "com.remora.notestore.write")
 
     /// Set during loadNotes() when the notes file was unreadable and a
     /// recovery action was taken. The app surfaces this to the user once.
     private(set) var loadRecoveryMessage: String?
+
+    /// The To-Do order stored alongside the notes, set by `loadNotes()`.
+    private(set) var loadedTodoOrder: [UUID] = []
 
     /// `directoryOverride` bypasses Application Support entirely — used by
     /// the UI-test launch hook so automated runs never touch real notes.
@@ -108,10 +115,11 @@ final class NoteStore {
         return []
     }
 
-    func save(notes: [ContextNote]) {
+    func save(notes: [ContextNote], todoOrder: [UUID]) {
         writeQueue.async { [weak self] in
             guard let self else { return }
             self.pendingNotes = notes
+            self.pendingTodoOrder = todoOrder
             self.debounceWorkItem?.cancel()
 
             let workItem = DispatchWorkItem { [weak self] in
@@ -133,15 +141,16 @@ final class NoteStore {
     private struct DecodedNotes {
         let version: Int
         let notes: [ContextNote]
+        let todoOrder: [UUID]
     }
 
     private func decodeNotes(from data: Data) -> DecodedNotes? {
         if let file = try? decoder.decode(NotesFile.self, from: data) {
-            return DecodedNotes(version: file.version, notes: file.notes)
+            return DecodedNotes(version: file.version, notes: file.notes, todoOrder: file.todoOrder ?? [])
         }
         // Legacy format: a bare top-level array of notes (pre-envelope).
         if let notes = try? decoder.decode([ContextNote].self, from: data) {
-            return DecodedNotes(version: 0, notes: notes)
+            return DecodedNotes(version: 0, notes: notes, todoOrder: [])
         }
         return nil
     }
@@ -151,6 +160,7 @@ final class NoteStore {
     private func migrateIfNeeded(_ decoded: DecodedNotes, forceSave: Bool = false) -> [ContextNote] {
         var notes = decoded.notes
         var version = decoded.version
+        loadedTodoOrder = decoded.todoOrder
 
         // 2: first canonicalisation. 3: Google account slots, GitHub PR
         // tabs, Linear slugs and YouTube aliases. The pass is idempotent,
@@ -161,7 +171,7 @@ final class NoteStore {
         }
 
         if version != decoded.version || forceSave {
-            save(notes: notes)
+            save(notes: notes, todoOrder: decoded.todoOrder)
             flush()
         }
         return notes
@@ -171,7 +181,7 @@ final class NoteStore {
     private func writePendingToDisk() {
         guard let notes = pendingNotes else { return }
         pendingNotes = nil
-        let file = NotesFile(version: Self.currentSchemaVersion, notes: notes)
+        let file = NotesFile(version: Self.currentSchemaVersion, notes: notes, todoOrder: pendingTodoOrder)
         guard let data = try? encoder.encode(file) else { return }
 
         // Keep the previous good copy as a backup before overwriting, so a

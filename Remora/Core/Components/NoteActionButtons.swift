@@ -38,8 +38,8 @@ struct NotePinButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .help(note.isPinned ? "Unpin" : "Pin")
-        .accessibilityLabel(note.isPinned ? "Unpin note" : "Pin note")
+        .help(note.isPinned ? "Remove from To-Do" : "Add to To-Do")
+        .accessibilityLabel(note.isPinned ? "Remove from To-Do" : "Add to To-Do")
     }
 }
 

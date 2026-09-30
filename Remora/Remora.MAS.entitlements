@@ -10,6 +10,10 @@
 	<true/>
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
+	<!-- Outgoing connections only, to download the icon of a website a
+	     note is attached to (FaviconStore). Nothing about the note is sent. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
 	<!-- Browsers are read via Accessibility (AXBrowserURLReader), so no
 	     browser Apple Events exceptions are needed. Finder folder context,
 	     Xcode document paths and iTerm2's working directory still use Apple Events; justification

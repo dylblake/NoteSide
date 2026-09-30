@@ -116,9 +116,15 @@ struct FloatingNoteEditorView: View {
     private var contextRow: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
             HStack(spacing: Spacing.xs) {
-                Image(systemName: contextSymbolName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(RemoraTheme.secondaryText)
+                // The same marker the note carries in All Notes.
+                if let context = appState.editor.activeContext {
+                    NoteContextIcon(context: context, size: Self.contextIconSize)
+                } else {
+                    Image(systemName: "app.dashed")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(RemoraTheme.secondaryText)
+                        .frame(width: Self.contextIconSize, height: Self.contextIconSize)
+                }
 
                 Text(appState.editor.activeContext?.displayName ?? "Current Context")
                     .font(.subheadline.weight(.medium))
@@ -144,7 +150,7 @@ struct FloatingNoteEditorView: View {
                     .textSelection(.enabled)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .padding(.leading, 20)
+                    .padding(.leading, Self.contextIconSize + Spacing.xs)
             }
 
             if let errorMessage = appState.editor.editorErrorMessage, !errorMessage.isEmpty {
@@ -157,13 +163,7 @@ struct FloatingNoteEditorView: View {
         }
     }
 
-    private var contextSymbolName: String {
-        switch appState.editor.activeContext?.kind {
-        case .url: return "globe"
-        case .file: return "doc"
-        case .application, .none: return "app"
-        }
-    }
+    private static let contextIconSize: CGFloat = 16
 
     // MARK: Footer
 
@@ -187,7 +187,7 @@ struct FloatingNoteEditorView: View {
                 HStack(spacing: Spacing.xxs) {
                     IconButton(
                         systemName: appState.editor.isActiveNotePinned ? "pin.fill" : "pin",
-                        accessibilityLabel: appState.editor.isActiveNotePinned ? "Unpin note" : "Pin note",
+                        accessibilityLabel: appState.editor.isActiveNotePinned ? "Remove from To-Do" : "Add to To-Do",
                         tint: appState.editor.isActiveNotePinned ? RemoraTheme.accent : RemoraTheme.primaryText,
                         size: 14,
                         hitSize: 34

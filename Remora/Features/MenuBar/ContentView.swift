@@ -8,11 +8,6 @@
 import AppKit
 import SwiftUI
 
-private enum AllNotesViewMode: String {
-    case grid
-    case list
-}
-
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var showingBulkDeleteConfirmation = false
@@ -21,12 +16,6 @@ struct ContentView: View {
     /// suggestions, typing) must win over the list shortcuts below.
     @State private var isSearchFieldFocused = false
     @FocusState private var isListFocused: Bool
-    @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
-
-    private var viewMode: AllNotesViewMode {
-        AllNotesViewMode(rawValue: viewModeRaw) ?? .grid
-    }
-
     var body: some View {
         @Bindable var notes = appState.notesState
         let content = ScrollViewReader { proxy in
@@ -40,7 +29,6 @@ struct ContentView: View {
                         bulkActionBar
                             .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
-                    viewModeToggle
                 }
                 .padding(.horizontal, Spacing.lg)
                 .padding(.top, Spacing.lg)
@@ -81,13 +69,14 @@ struct ContentView: View {
                     } else {
                         LazyVStack(alignment: .leading, spacing: Spacing.xl) {
                             ForEach(appState.notesState.noteSections) { section in
-                                if !section.groups.isEmpty {
-                                    switch viewMode {
-                                    case .grid:
-                                        NoteTileSection(section: section)
-                                                .environment(appState)
-                                    case .list:
-                                        NoteListSection(section: section)
+                                if !section.notes.isEmpty {
+                                    if section.id == NoteSectionBuilder.todoSectionID {
+                                        TodoListSection(section: section)
+                                            .environment(appState)
+                                    } else {
+                                        // "Notes" only needs saying when
+                                        // the To-Do list sits above it.
+                                        NoteGridSection(section: section, showsHeading: hasTodoNotes)
                                             .environment(appState)
                                     }
                                 }
@@ -133,7 +122,11 @@ struct ContentView: View {
     /// Notes in on-screen order (sections top to bottom, groups, then
     /// notes) so arrow keys walk the list the way it reads.
     private var orderedVisibleNotes: [ContextNote] {
-        appState.notesState.noteSections.flatMap { $0.groups.flatMap(\.notes) }
+        appState.notesState.noteSections.flatMap(\.notes)
+    }
+
+    private var hasTodoNotes: Bool {
+        appState.notesState.noteSections.contains { $0.id == NoteSectionBuilder.todoSectionID && !$0.notes.isEmpty }
     }
 
     private func unlessSearching(_ action: () -> KeyPress.Result) -> KeyPress.Result {
@@ -235,23 +228,6 @@ struct ContentView: View {
         .padding(.top, Spacing.xxl)
     }
 
-    private var viewModeToggle: some View {
-        Picker("View", selection: $viewModeRaw) {
-            Image(systemName: "list.bullet")
-                .accessibilityLabel("List view")
-                .tag(AllNotesViewMode.list.rawValue)
-            Image(systemName: "square.grid.2x2")
-                .accessibilityLabel("Grid view")
-                .tag(AllNotesViewMode.grid.rawValue)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .controlSize(.small)
-        .fixedSize()
-        .help("Switch between list and grid")
-        .accessibilityIdentifier("allNotesViewModePicker")
-    }
-
     private var bulkActionBar: some View {
         HStack(spacing: Spacing.xs) {
             Text("\(appState.notesState.selectedNoteIDs.count) selected")
@@ -265,7 +241,7 @@ struct ContentView: View {
             .buttonStyle(.borderless)
             .controlSize(.small)
 
-            IconButton(systemName: "pin", accessibilityLabel: "Pin or unpin selected notes", size: 13, hitSize: 30) {
+            IconButton(systemName: "pin", accessibilityLabel: "Add or remove selected notes from To-Do", size: 13, hitSize: 30) {
                 appState.togglePinForSelectedNotes()
             }
 
@@ -292,185 +268,485 @@ struct ContentView: View {
 
 }
 
-private struct NoteTileSection: View {
+/// Pinned notes as a compact, hand-ordered list above the tiles: one line
+/// each, dragged into whatever order the user wants to tackle them in.
+private struct TodoListSection: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let section: NoteSection
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text(section.title)
-                .font(.title2.weight(.bold))
-
-            if let helperText = section.helperText, !helperText.isEmpty {
-                Text(helperText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                ForEach(section.groups) { group in
-                    NoteGroupTile(group: group)
-                        .environment(appState)
-                }
-            }
-        }
+    private struct Drag {
+        let noteID: UUID
+        let fromIndex: Int
+        var translation: CGFloat = 0
+        /// False until the pointer travels far enough to mean a drag;
+        /// a press released before that is a click.
+        var isReordering = false
     }
-}
 
-private struct NoteGroupTile: View {
-    @Environment(AppState.self) private var appState
+    @State private var drag: Drag?
+    /// Stays on the last dragged row so it settles above its neighbours.
+    @State private var liftedNoteID: UUID?
 
-    let group: NoteSectionGroup
+    private static let rowHeight: CGFloat = 34
+    private static let dragThreshold: CGFloat = 4
 
-    // Adaptive so a narrow pane gets one column and a wide one three.
-    private let columns = [
-        GridItem(.adaptive(minimum: 230, maximum: 420), spacing: Spacing.md, alignment: .top)
-    ]
+    private var settle: Animation? {
+        reduceMotion ? nil : .timingCurve(0.23, 1, 0.32, 1, duration: 0.22)
+    }
 
     var body: some View {
+        let notes = section.notes
+
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            if !group.title.isEmpty {
-                Text(group.title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+            CountedSectionHeading(title: section.title, count: notes.count)
 
-            if let subtitle = group.subtitle, !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-
-            LazyVGrid(columns: columns, alignment: .leading, spacing: Spacing.md) {
-                ForEach(group.notes) { note in
-                    NoteTile(note: note)
-                        .environment(appState)
-                        .id(note.id)
+            VStack(spacing: 0) {
+                ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
+                    let isDragged = drag?.noteID == note.id && drag?.isReordering == true
+                    TodoRow(
+                        note: note,
+                        isPressed: drag?.noteID == note.id && drag?.isReordering == false,
+                        isDragged: isDragged,
+                        canMoveUp: index > 0,
+                        canMoveDown: index < notes.count - 1,
+                        onMove: { delta in move(note, by: delta, in: notes) },
+                        reorderGesture: reorderGesture(for: note, at: index, in: notes)
+                    )
+                    .environment(appState)
+                    .frame(height: Self.rowHeight)
+                    .offset(y: offset(for: note, at: index, count: notes.count))
+                    .zIndex(liftedNoteID == note.id ? 1 : 0)
+                    // The dragged row tracks the pointer exactly; the rows
+                    // it passes ease out of its way.
+                    .animation(isDragged ? nil : settle, value: targetIndex(count: notes.count))
+                    .id(note.id)
                 }
             }
+            .padding(Spacing.xxs)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                    .fill(RemoraTheme.secondaryBackground.opacity(0.6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                            .stroke(RemoraTheme.border.opacity(0.6), lineWidth: 1)
+                    )
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("todoList")
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: Drag to reorder
+
+    /// Slot the dragged row would land in if released now.
+    private func targetIndex(count: Int) -> Int? {
+        guard let drag, drag.isReordering else { return nil }
+        let steps = Int((drag.translation / Self.rowHeight).rounded())
+        return min(max(drag.fromIndex + steps, 0), count - 1)
+    }
+
+    private func offset(for note: ContextNote, at index: Int, count: Int) -> CGFloat {
+        guard let drag, let target = targetIndex(count: count) else { return 0 }
+
+        if note.id == drag.noteID {
+            // Held inside the list: it can't be dropped anywhere else.
+            let lowest = -CGFloat(drag.fromIndex) * Self.rowHeight
+            let highest = CGFloat(count - 1 - drag.fromIndex) * Self.rowHeight
+            return min(max(drag.translation, lowest), highest)
+        }
+        if drag.fromIndex < target, index > drag.fromIndex, index <= target {
+            return -Self.rowHeight
+        }
+        if target < drag.fromIndex, index >= target, index < drag.fromIndex {
+            return Self.rowHeight
+        }
+        return 0
+    }
+
+    /// Global coordinates: the row moves under the pointer while it is
+    /// dragged, so a local translation would feed back on itself.
+    private func reorderGesture(for note: ContextNote, at index: Int, in notes: [ContextNote]) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { value in
+                var current = drag ?? Drag(noteID: note.id, fromIndex: index)
+                guard current.noteID == note.id else { return }
+                current.translation = value.translation.height
+                if !current.isReordering,
+                   notes.count > 1,
+                   abs(value.translation.height) > Self.dragThreshold {
+                    current.isReordering = true
+                    liftedNoteID = note.id
+                }
+                drag = current
+            }
+            .onEnded { value in
+                guard let finished = drag, finished.noteID == note.id else { return }
+
+                guard finished.isReordering else {
+                    drag = nil
+                    // Released where it was pressed: a click.
+                    if abs(value.translation.width) <= Self.dragThreshold {
+                        appState.open(note)
+                    }
+                    return
+                }
+
+                let target = targetIndex(count: notes.count) ?? finished.fromIndex
+                var ids = notes.map(\.id)
+                ids.move(fromOffsets: IndexSet(integer: finished.fromIndex), toOffset: target > finished.fromIndex ? target + 1 : target)
+                // One transaction: the rows' new slots and the cleared
+                // offsets cancel out, so only the dropped row travels.
+                withAnimation(settle) {
+                    appState.notesState.reorderTodo(visibleOrder: ids)
+                    drag = nil
+                }
+            }
+    }
+
+    /// VoiceOver's Move Up / Move Down.
+    private func move(_ note: ContextNote, by delta: Int, in notes: [ContextNote]) {
+        var ids = notes.map(\.id)
+        guard let index = ids.firstIndex(of: note.id), ids.indices.contains(index + delta) else { return }
+        ids.swapAt(index, index + delta)
+        withAnimation(settle) {
+            appState.notesState.reorderTodo(visibleOrder: ids)
+        }
     }
 }
 
-private struct NoteTile: View {
+/// One To-Do line: where the note lives, its title, and a faint first
+/// line. The pin (shown on hover) takes it back off the list.
+private struct TodoRow<ReorderGesture: Gesture>: View {
     @Environment(AppState.self) private var appState
 
     let note: ContextNote
+    let isPressed: Bool
+    let isDragged: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMove: (Int) -> Void
+    let reorderGesture: ReorderGesture
+
+    @State private var isHovered = false
+
+    private static var cornerRadius: CGFloat { CornerRadius.card - Spacing.xxs }
 
     var body: some View {
-        HStack(alignment: .center, spacing: Spacing.sm) {
-            NoteSelectionCheckbox(noteID: note.id)
-                .environment(appState)
+        let title = NoteCardStyle.primaryTitle(for: note)
+        let preview = NoteCardStyle.firstLinePreview(for: note)
 
-            cardContent
-        }
-    }
+        HStack(spacing: 0) {
+            HStack(spacing: Spacing.xs) {
+                NoteContextIcon(context: note.context, size: 18)
 
-    private var cardContent: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            headerRow
-
-            if !note.body.isEmpty {
-                Text(NoteCardStyle.preview(for: note))
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if !note.tags.isEmpty {
-                NoteTagPills(tags: note.tags)
-            }
-
-            Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tileBackground)
-        .pressableCard(cornerRadius: CornerRadius.card) {
-            appState.open(note)
-        }
-    }
-
-    private var headerRow: some View {
-        HStack(alignment: .top, spacing: Spacing.xs) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(primaryTitle)
-                    .font(.headline)
+                Text(title)
+                    .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .layoutPriority(1)
 
-                if let subtitle = secondarySubtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if !preview.isEmpty {
+                    Text(preview)
+                        .font(.body)
+                        .foregroundStyle(RemoraTheme.tertiaryText)
                         .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
+                        .truncationMode(.tail)
                 }
+
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, Spacing.xs)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(reorderGesture)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(preview.isEmpty ? title : "\(title), \(preview)")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { appState.open(note) }
+            .accessibilityActions {
+                if canMoveUp { Button("Move Up") { onMove(-1) } }
+                if canMoveDown { Button("Move Down") { onMove(1) } }
+            }
+            .accessibilityIdentifier("todoRow")
 
             NotePinButton(note: note)
                 .environment(appState)
-
-            NoteDeleteButton(note: note)
-                .environment(appState)
+                .opacity(isHovered || isKeyboardFocused ? 1 : 0)
+                .padding(.trailing, Spacing.xxs)
+        }
+        .background(rowBackground)
+        .scaleEffect(isDragged ? 1.01 : 1)
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open") { appState.open(note) }
+            Button("Remove from To-Do") { appState.togglePin(note) }
         }
     }
-
-    private var tileColor: Color { NoteCardStyle.tint(for: note) }
 
     private var isKeyboardFocused: Bool {
         appState.notesState.keyboardFocusedNoteID == note.id
     }
 
+    private var isSelected: Bool {
+        appState.notesState.selectedNoteIDs.contains(note.id)
+    }
+
+    private var rowBackground: some View {
+        RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+            .fill(fill)
+            .overlay(
+                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                    .stroke(
+                        isKeyboardFocused ? RemoraTheme.accent : isDragged ? RemoraTheme.border : Color.clear,
+                        lineWidth: isKeyboardFocused ? 2 : 1
+                    )
+            )
+            .shadow(color: .black.opacity(isDragged ? 0.18 : 0), radius: 8, y: 3)
+    }
+
+    private var fill: Color {
+        if isDragged { return RemoraTheme.contentBackground }
+        if isSelected { return RemoraTheme.accent.opacity(0.15) }
+        if isPressed { return Color.primary.opacity(0.08) }
+        if isHovered { return Color.primary.opacity(0.04) }
+        return .clear
+    }
+}
+
+/// A section title with how many notes it holds, e.g. "To-Do 3".
+private struct CountedSectionHeading: View {
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+            Text(title)
+                .font(.title2.weight(.bold))
+            Text("\(count)")
+                .font(.title3.weight(.medium))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(count) \(count == 1 ? "note" : "notes")")
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Every unpinned note in one grid, newest first. Nothing is grouped: the
+/// icon and source line on each tile say where a note lives, so tiles
+/// from different places share rows and fill the pane's width.
+private struct NoteGridSection: View {
+    @Environment(AppState.self) private var appState
+
+    let section: NoteSection
+    let showsHeading: Bool
+
+    // Adaptive so a narrow pane gets two columns and a wide one three.
+    private let columns = [
+        GridItem(.adaptive(minimum: 210), spacing: Spacing.sm, alignment: .top)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            if showsHeading {
+                CountedSectionHeading(title: section.title, count: section.notes.count)
+            }
+
+            LazyVGrid(columns: columns, alignment: .leading, spacing: Spacing.sm) {
+                ForEach(section.notes) { note in
+                    NoteTile(note: note)
+                        .environment(appState)
+                        .id(note.id)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("notesGrid")
+        }
+    }
+}
+
+/// One note in the grid. Read top to bottom: where it lives, what it is
+/// called, how it starts, then tags and date. Every tile is the same
+/// height, and the actions stay out of sight until the pointer or the
+/// keyboard is on the tile.
+private struct NoteTile: View {
+    @Environment(AppState.self) private var appState
+
+    let note: ContextNote
+
+    @State private var isHovered = false
+
+    private static let headerHeight: CGFloat = 26
+    private static let footerHeight: CGFloat = 22
+    private static let checkboxWidth: CGFloat = 22
+    /// Pin (26) + delete (26) + checkbox.
+    private static let actionsWidth: CGFloat = 52 + checkboxWidth
+
+    var body: some View {
+        let text = NoteCardStyle.tileText(for: note)
+
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            sourceLine
+
+            Text(text.title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            // An empty Text reserves nothing; a space keeps tiles level.
+            Text(text.preview.isEmpty ? " " : text.preview)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(3, reservesSpace: true)
+                .multilineTextAlignment(.leading)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            footer
+        }
+        .padding(Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tileBackground)
+        .pressableCard(cornerRadius: CornerRadius.card) {
+            appState.open(note)
+        }
+        .onHover { isHovered = $0 }
+        .help(NoteCardStyle.returnCaveat(for: note) ?? "")
+        .accessibilityIdentifier("noteTile")
+    }
+
+    /// The marker: the context's icon and its name. The actions lie over
+    /// its trailing end, and the name gives way to them when they show.
+    private var sourceLine: some View {
+        HStack(spacing: Spacing.xs) {
+            NoteContextIcon(context: note.context, size: 18)
+
+            Text(NoteCardStyle.sourceLabel(for: note))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.trailing, reservedActionsWidth)
+        .frame(height: Self.headerHeight)
+        .overlay(alignment: .trailing) { actions }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 0) {
+            Group {
+                NotePinButton(note: note)
+                    .environment(appState)
+
+                NoteDeleteButton(note: note)
+                    .environment(appState)
+            }
+            .opacity(showsActions ? 1 : 0)
+
+            // Trailing, so it stays put when it is the only one showing.
+            NoteSelectionCheckbox(noteID: note.id)
+                .environment(appState)
+                .opacity(showsActions || isSelecting ? 1 : 0)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: Spacing.xs) {
+            if !note.tags.isEmpty {
+                NoteTagPills(tags: note.tags, limit: 2)
+            }
+
+            Spacer(minLength: 0)
+
+            Text(NoteCardStyle.dateLabel(for: note.updatedAt))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .frame(height: Self.footerHeight)
+    }
+
+    private var showsActions: Bool { isHovered || isKeyboardFocused }
+
+    /// Once anything is selected, every tile offers its checkbox.
+    private var isSelecting: Bool { !appState.notesState.selectedNoteIDs.isEmpty }
+
+    private var reservedActionsWidth: CGFloat {
+        if showsActions { return Self.actionsWidth }
+        return isSelecting ? Self.checkboxWidth : 0
+    }
+
+    private var isSelected: Bool {
+        appState.notesState.selectedNoteIDs.contains(note.id)
+    }
+
+    private var isKeyboardFocused: Bool {
+        appState.notesState.keyboardFocusedNoteID == note.id
+    }
+
+    /// Neutral on purpose: the icon carries the note's identity, and the
+    /// accent colour is kept for focus and selection.
     private var tileBackground: some View {
         RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-            .fill(RemoraTheme.tintedTileFill(for: tileColor))
+            .fill(RemoraTheme.glassCardFill)
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                    .fill(RemoraTheme.accent.opacity(isSelected ? 0.12 : 0))
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                     .stroke(
-                        isKeyboardFocused ? RemoraTheme.accent : RemoraTheme.tintedTileStroke(for: tileColor),
+                        isKeyboardFocused ? RemoraTheme.accent : RemoraTheme.border.opacity(0.8),
                         lineWidth: isKeyboardFocused ? 2 : 1
                     )
             )
     }
-
-    private var primaryTitle: String { NoteCardStyle.primaryTitle(for: note) }
-    private var secondarySubtitle: String? { NoteCardStyle.secondarySubtitle(for: note) }
 }
 
-/// Shared visual + label helpers used by both the grid card and the list row
+/// Shared visual + label helpers used by both the tile and the To-Do row
 /// renderings of a note in the All Notes window.
 private enum NoteCardStyle {
-    static func tint(for note: ContextNote) -> Color {
-        switch note.context.kind {
-        case .application:
-            return RemoraTheme.applicationTint
-        case .url:
-            return RemoraTheme.urlTint
-        case .file:
-            return RemoraTheme.fileTint
-        }
-    }
-
     /// Plain-text preview: list markers keep their glyph but lose the
     /// layout tab, and table cells collapse onto one line.
-    static func preview(for note: ContextNote) -> String {
-        note.body
+    static func preview(of body: some StringProtocol) -> String {
+        body
             .replacingOccurrences(of: "\t", with: " ")
             .replacingOccurrences(of: "\n", with: "  ")
+    }
+
+    /// A tile's headline and preview. A note without a title of its own
+    /// would be headed by its context's name, which the source line just
+    /// above already shows; its first line heads it instead and the
+    /// preview carries on from there.
+    static func tileText(for note: ContextNote) -> (title: String, preview: String) {
+        let title = primaryTitle(for: note)
+        guard title == sourceLabel(for: note) else {
+            return (title, preview(of: note.body))
+        }
+
+        let firstLine = firstLinePreview(for: note)
+        guard !firstLine.isEmpty else { return (title, "") }
+        let fromFirstLine = note.body.drop(while: { $0.isWhitespace })
+        let afterFirstLine = fromFirstLine.drop(while: { !$0.isNewline })
+        return (firstLine, preview(of: afterFirstLine.drop(while: { $0.isWhitespace })))
+    }
+
+    /// The first line with anything on it, for the one-line To-Do rows.
+    static func firstLinePreview(for note: ContextNote) -> String {
+        let line = note.body
+            .split(whereSeparator: \.isNewline)
+            .lazy
+            .map { $0.replacingOccurrences(of: "\t", with: " ").trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        return line ?? ""
     }
 
     /// Bold top line. Shows the note's custom title if set, otherwise
@@ -482,33 +758,56 @@ private enum NoteCardStyle {
         return contextDerivedTitle(for: note)
     }
 
-    /// Caption line under the title. When a note has an explicit title,
-    /// the context-derived name becomes the subtitle. Otherwise falls back
-    /// to source location (project root, host, or app sub-context).
-    static func secondarySubtitle(for note: ContextNote) -> String? {
-        if let title = note.title, !title.isEmpty {
-            return contextDerivedTitle(for: note)
-        }
+    /// The short name beside the icon, chosen to add to the title rather
+    /// than repeat it: the site for a page, the app (and channel, file or
+    /// issue within it) for an app note, and for a file either its name
+    /// (when the note has its own title) or the project it belongs to.
+    static func sourceLabel(for note: ContextNote) -> String {
+        let context = note.context
+        let hasOwnTitle = !(note.title ?? "").isEmpty
 
-        switch note.context.kind {
-        case .file:
-            return note.context.sourceRootPath ?? note.context.secondaryLabel
+        switch context.kind {
         case .url:
-            guard let secondaryLabel = note.context.secondaryLabel,
-                  !secondaryLabel.isEmpty else {
-                return nil
-            }
-            if let url = URL(string: secondaryLabel),
-               let host = url.host(),
-               !host.isEmpty {
-                return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-            }
-            return secondaryLabel
+            return context.siteHost ?? context.displayName
         case .application:
-            let components = note.context.displayName.components(separatedBy: " / ")
-            guard components.count > 1 else { return nil }
-            return components.dropFirst().joined(separator: " / ")
+            let parts = context.displayName.components(separatedBy: " / ")
+            if hasOwnTitle || parts.count == 1 {
+                return parts.joined(separator: " · ")
+            }
+            return parts.dropFirst().joined(separator: " · ")
+        case .file:
+            if hasOwnTitle { return context.displayName }
+            if let root = context.sourceRootPath { return shortenedPath(root) }
+            return editorName(for: context.sourceBundleIdentifier) ?? "File"
         }
+    }
+
+    /// Tooltip for app notes that can only reopen the app, not the place
+    /// inside it the note was written.
+    static func returnCaveat(for note: ContextNote) -> String? {
+        let context = note.context
+        guard context.kind == .application,
+              context.navigationTarget == nil,
+              context.identifier.contains(":") else {
+            return nil
+        }
+        let app = context.displayName.components(separatedBy: " / ").first ?? context.displayName
+        return "Opens \(app). It can't return to the exact place this note was written."
+    }
+
+    /// "Sep 29", with the year once it isn't this one.
+    static func dateLabel(for date: Date) -> String {
+        let sameYear = Calendar.current.isDate(date, equalTo: .now, toGranularity: .year)
+        return date.formatted(sameYear
+            ? .dateTime.month(.abbreviated).day()
+            : .dateTime.month(.abbreviated).day().year())
+    }
+
+    /// Last two folders of a path: enough to recognise a project.
+    private static func shortenedPath(_ path: String) -> String {
+        let components = path.split(separator: "/").map(String.init)
+        guard !components.isEmpty else { return path }
+        return components.suffix(2).joined(separator: "/")
     }
 
     /// The original context-based title (file name, page title, app name).
@@ -557,158 +856,6 @@ private enum NoteCardStyle {
             }
             return name
         }
-    }
-}
-
-private struct NoteListSection: View {
-    @Environment(AppState.self) private var appState
-
-    let section: NoteSection
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text(section.title)
-                .font(.title2.weight(.bold))
-
-            if let helperText = section.helperText, !helperText.isEmpty {
-                Text(helperText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                ForEach(section.groups) { group in
-                    NoteListGroup(group: group)
-                        .environment(appState)
-                }
-            }
-        }
-    }
-}
-
-private struct NoteListGroup: View {
-    @Environment(AppState.self) private var appState
-
-    let group: NoteSectionGroup
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            if !group.title.isEmpty {
-                Text(group.title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            if let subtitle = group.subtitle, !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-
-            VStack(spacing: Spacing.xs) {
-                ForEach(group.notes) { note in
-                    NoteListRow(note: note)
-                        .environment(appState)
-                        .id(note.id)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-}
-
-private struct NoteListRow: View {
-    @Environment(AppState.self) private var appState
-
-    let note: ContextNote
-
-    private var tint: Color { NoteCardStyle.tint(for: note) }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: Spacing.sm) {
-            NoteSelectionCheckbox(noteID: note.id)
-                .environment(appState)
-
-            rowContent
-        }
-    }
-
-    private var rowContent: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack(alignment: .center, spacing: Spacing.sm) {
-                Circle()
-                    .fill(tint)
-                    .frame(width: 8, height: 8)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(NoteCardStyle.primaryTitle(for: note))
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    if let subtitle = NoteCardStyle.secondarySubtitle(for: note), !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .fixedSize()
-
-                NotePinButton(note: note)
-                    .environment(appState)
-
-                NoteDeleteButton(note: note)
-                    .environment(appState)
-            }
-
-            if !note.body.isEmpty {
-                Text(NoteCardStyle.preview(for: note))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .padding(.leading, Spacing.lg)
-            }
-
-            if !note.tags.isEmpty {
-                NoteTagPills(tags: note.tags, limit: 3)
-                    .padding(.leading, Spacing.lg)
-            }
-        }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.control + 2, style: .continuous)
-                .fill(RemoraTheme.tintedTileFill(for: tint))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.control + 2, style: .continuous)
-                        .stroke(
-                            isKeyboardFocused ? RemoraTheme.accent : RemoraTheme.tintedTileStroke(for: tint),
-                            lineWidth: isKeyboardFocused ? 2 : 1
-                        )
-                )
-        )
-        .pressableCard(cornerRadius: CornerRadius.control + 2) {
-            appState.open(note)
-        }
-    }
-
-    private var isKeyboardFocused: Bool {
-        appState.notesState.keyboardFocusedNoteID == note.id
     }
 }
 
@@ -772,26 +919,6 @@ private struct TagSearchField: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
             }
-
-            Button {
-                if !text.hasPrefix("#") {
-                    text = "#"
-                }
-                shouldPlaceCursor = true
-            } label: {
-                Image(systemName: "number")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(text.hasPrefix("#") ? RemoraTheme.accent : RemoraTheme.secondaryText)
-                    .frame(width: 24, height: 22)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(text.hasPrefix("#") ? RemoraTheme.accent.opacity(0.15) : Color.clear)
-                    )
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Search by tag")
-            .accessibilityLabel("Search by tag")
         }
         .padding(.horizontal, Spacing.xs + 2)
         .padding(.vertical, Spacing.xs - 1)
@@ -1096,6 +1223,7 @@ private struct NoteTagPills: View {
                 Text("#\(tag)")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(RemoraTheme.tag)
+                    .lineLimit(1)
                     .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, Spacing.xxs)
                     .background(
