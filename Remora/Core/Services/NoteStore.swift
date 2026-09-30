@@ -32,6 +32,11 @@ final class NoteStore {
     private let fileURL: URL
     private let backupURL: URL
 
+    /// True for a store on a scratch folder (tests, UI-test launches).
+    /// Anything counted against such a store stays out of the real
+    /// preferences.
+    let usesScratchDirectory: Bool
+
     // pendingNotes and debounceWorkItem are confined to writeQueue: save()
     // and flush() are called from the main thread, writePendingToDisk from
     // the queue's own work items, so unsynchronized access would race.
@@ -51,6 +56,7 @@ final class NoteStore {
     /// the UI-test launch hook so automated runs never touch real notes.
     init(fileManager: FileManager = .default, directoryOverride: URL? = nil) {
         self.fileManager = fileManager
+        usesScratchDirectory = directoryOverride != nil
 
         if let directoryOverride {
             directory = directoryOverride

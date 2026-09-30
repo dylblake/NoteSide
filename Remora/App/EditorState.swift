@@ -48,6 +48,11 @@ final class EditorState {
     private(set) var titleGeneration: TitleGeneration = .idle
     var isGeneratingTitle: Bool { titleGeneration == .generating }
     @ObservationIgnored var isAutoTitleEnabled: () -> Bool
+    /// Whether the editor may move onto this context: false when it has
+    /// no note yet and the free trial is used up. Set by AppState; the
+    /// open drawer must not become a way round the trial by following
+    /// the user to a page or file that would be a new note.
+    @ObservationIgnored var canCreateNote: (NoteContext) -> Bool = { _ in true }
 
     static let intraAppPollingBundleIdentifiers: Set<String> = [
         "com.apple.finder",
@@ -356,6 +361,7 @@ final class EditorState {
     func applyLateResolvedContext(_ context: NoteContext, fallback fallbackContext: NoteContext) {
         guard isEditorPresented, activeContext?.id == fallbackContext.id else { return }
         guard context.id != fallbackContext.id else { return }
+        guard canCreateNote(context) else { return }
 
         let hasUnsavedEditorText = !editorAttributedText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard !hasUnsavedEditorText else { return }
@@ -389,6 +395,10 @@ final class EditorState {
             }
             return
         }
+
+        // Past the trial, stay on the note that's open rather than follow
+        // the user into a context that would start a new one.
+        guard canCreateNote(context) else { return }
 
         persistCurrentEditorContent()
         activeContext = context

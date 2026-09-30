@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### The trial limit holds everywhere
+- **A sixth note needs a license, wherever it is.** Once the five free notes are used up, a new page, file or channel asks for a license even when the app around it already has a note of its own. Before, a note attached to a browser or editor itself let the drawer open there and start a new note on any page or file in it.
+- With the trial used up, an open drawer stays on its note instead of following you onto a page or file that would be a new one. Notes you already have still open and follow as before.
+
 ## 2.0.1
 
 ### A one-page start

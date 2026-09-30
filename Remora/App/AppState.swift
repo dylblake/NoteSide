@@ -115,6 +115,10 @@ final class AppState {
             onAutomationGranted: { [weak self] in self?.bringSetupWindowsToFront(activate: true) }
         )
 
+        editor.canCreateNote = { [weak self] context in
+            self?.canCreateNote(for: context) ?? true
+        }
+
         dictationHotKeyMonitor.onRelease = { [weak self] in
             self?.stopDictation()
         }
@@ -344,24 +348,25 @@ final class AppState {
     }
 
     /// Trial-exhausted path: opens the editor when the current context
-    /// already has a note, otherwise shows the license window. The full
-    /// context isn't knowable synchronously (AppleScript/AX), so when the
-    /// cheap app-level lookup misses we resolve first, then decide.
-    private func presentQuickNoteEditorOrLicenseWall(readsSelection: Bool = true) {
+    /// already has a note, otherwise shows the license window. The
+    /// decision needs the real context (the page, file or channel), which
+    /// isn't knowable synchronously, so this always resolves first. The
+    /// app-level context is no shortcut: a note attached to the browser
+    /// itself would otherwise open the drawer on every page in it, and
+    /// the drawer would then settle on the page as a new note.
+    private func presentQuickNoteEditorOrLicenseWall(passageText: String? = nil, readsSelection: Bool = true) {
         let sourceApp = noteSourceApp()
-        let fallbackContext = editor.quickApplicationContext(for: sourceApp)
-
-        if notesState.note(for: fallbackContext) != nil {
-            presentQuickNoteEditor(readsSelection: readsSelection)
-            return
-        }
 
         Task { [weak self] in
             guard let self else { return }
             let context = await self.editor.resolveCurrentContextAsync(for: sourceApp)
             guard !self.editor.isEditorPresented else { return }
             if self.notesState.note(for: context) != nil {
-                self.presentQuickNoteEditor(resolvedContext: context, readsSelection: readsSelection)
+                self.presentQuickNoteEditor(
+                    passageText: passageText,
+                    resolvedContext: context,
+                    readsSelection: readsSelection
+                )
             } else {
                 self.presentLicenseWindow()
             }
@@ -474,9 +479,8 @@ final class AppState {
             attachPassage(text: passageText)
             return
         }
-        let context = editor.quickApplicationContext(for: noteSourceApp())
-        guard canCreateNote(for: context) else {
-            presentLicenseWindow()
+        if !isLicensed && isTrialExhausted {
+            presentQuickNoteEditorOrLicenseWall(passageText: passageText)
             return
         }
         presentQuickNoteEditor(passageText: passageText)
@@ -995,10 +999,9 @@ final class AppState {
             }
             if !isLicensed && isTrialExhausted {
                 presentQuickNoteEditorOrLicenseWall(readsSelection: false)
-                // Opens synchronously only when the app-level context
-                // already has a note; otherwise the license wall (or an
-                // async resolve) has taken over and there's nothing to
-                // dictate into yet.
+                // Past the trial the drawer (or the license window)
+                // only appears once the context has resolved, so there
+                // is nothing to dictate into on this press.
                 guard editor.isEditorPresented else { return }
             } else {
                 presentQuickNoteEditor(readsSelection: false)
