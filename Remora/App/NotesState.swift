@@ -56,6 +56,10 @@ final class NotesState {
     @ObservationIgnored private let store: NoteStore
 
     private static let trialNotesCreatedKey = "trialNotesCreated"
+    /// A scratch store (tests, UI-test launches) still reads the count,
+    /// so a launch argument can set it, but never writes it: test notes
+    /// must not move the real trial counter.
+    @ObservationIgnored private let persistsTrialCount: Bool
 
     init(store: NoteStore) {
         self.store = store
@@ -63,6 +67,7 @@ final class NotesState {
 
         // Seed with the on-disk note count so the counter survives fresh
         // preference files when notes already exist.
+        persistsTrialCount = !store.usesScratchDirectory
         let storedCount = UserDefaults.standard.integer(forKey: Self.trialNotesCreatedKey)
         let seededCount = max(storedCount, loaded.count)
         trialNotesCreated = seededCount
@@ -78,7 +83,7 @@ final class NotesState {
         noteSections = NoteSectionBuilder.build(from: _sortedNotes, todoOrder: todoOrder)
         recentNotes = Array(_sortedNotes.prefix(5))
 
-        if seededCount != storedCount {
+        if persistsTrialCount && seededCount != storedCount {
             UserDefaults.standard.set(seededCount, forKey: Self.trialNotesCreatedKey)
         }
     }
@@ -99,7 +104,9 @@ final class NotesState {
 
         if isNewNote {
             trialNotesCreated += 1
-            UserDefaults.standard.set(trialNotesCreated, forKey: Self.trialNotesCreatedKey)
+            if persistsTrialCount {
+                UserDefaults.standard.set(trialNotesCreated, forKey: Self.trialNotesCreatedKey)
+            }
         }
     }
 
