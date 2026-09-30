@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### A tidier menu bar
+- The menu bar popover is reorganised: the Remora wordmark heads it, **All Notes** and **New Note** sit side by side, Launch at login and the three hotkey recorders follow, then Recent, license and updates, with **Setup** and **Quit** at the bottom. "Permissions & Setup" is now just "Setup" everywhere.
+- Note titles are always generated; the toggle is gone.
+- Remora never shows a Dock icon, even while All Notes, Setup or About are open.
+- **Holding the dictation hotkey opens a note first.** With no drawer open, the dictation hotkey (Cmd+Shift+D by default) slides the quick-note drawer in and starts listening, so dictation always has somewhere to land. Closing the drawer mid-dictation keeps what has been recognised so far.
+- The About, Setup, Welcome and License windows are drawn on the same Liquid Glass as the note drawer and All Notes, with the wordmark in place of the large "Remora" heading.
+
 ### NoteSide is now Remora
 - The app has a new name and a new bundle identifier (`com.dylblake.remora`). Your notes come with it: on first launch, the NoteSide storage folder moves to `~/Library/Application Support/Remora`.
 - Because macOS sees Remora as a new app, it asks again for Accessibility and Automation access, the hotkey and other preferences return to their defaults, and a license key needs to be entered again. NoteSide 1.3.x can't update itself to Remora; install Remora from the new download.
