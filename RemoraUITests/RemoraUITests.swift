@@ -49,6 +49,20 @@ final class RemoraUITests: XCTestCase {
         XCTAssertTrue(app.images["remoraWordmark"].firstMatch.waitForExistence(timeout: 5), "Setup window did not open")
     }
 
+    /// The license window is where the trial ends, so it has to offer a way
+    /// to buy as well as a field for the key. The button isn't tapped: it
+    /// opens the website's checkout in the browser. The window only opens
+    /// unlicensed, so a stored key is overridden with one that won't verify.
+    func testLicenseWindowOffersPurchase() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UITEST_LAUNCH_ACTION"] = "license"
+        app.launchArguments += ["-com.remora.license-key", "invalid"]
+        app.launch()
+
+        XCTAssertTrue(app.textFields["licenseKeyField"].waitForExistence(timeout: 5), "License window did not open")
+        XCTAssertTrue(app.buttons["buyLicenseButton"].exists, "License window has no Buy button")
+    }
+
     /// Setup shows one summary row per capability, with the
     /// per-app detail folded behind disclosures.
     func testPermissionsWindowShowsSummaryRowsWithFoldedDetail() throws {

@@ -4,9 +4,13 @@ import SwiftUI
 
 struct LicenseView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.openURL) private var openURL
     @State private var licenseKey = ""
     @State private var errorMessage: String?
     @State private var isActivated = false
+
+    /// Opens the website's Paddle checkout; the key arrives by email.
+    private static let purchaseURL = URL(string: "https://dylblake.dev/remora/buy")!
 
     var body: some View {
         ScrollView {
@@ -34,7 +38,7 @@ struct LicenseView: View {
         } else if appState.isTrialExhausted {
             PageHeader(
                 title: "Your \(AppState.trialNoteLimit)-note free trial is complete.",
-                subtitle: "Your existing notes stay fully available. A license unlocks unlimited new notes — the key is in your purchase confirmation email."
+                subtitle: "Your existing notes stay fully available. A license unlocks unlimited new notes — buy one below, or paste the key from your purchase confirmation email."
             )
         } else {
             PageHeader(
@@ -81,15 +85,27 @@ struct LicenseView: View {
                     .foregroundStyle(RemoraTheme.danger)
                 }
 
-                HStack {
+                HStack(spacing: Spacing.md) {
                     Button("Activate", action: activate)
                         .buttonStyle(.glassProminent)
                         .controlSize(.large)
                         .keyboardShortcut(.defaultAction)
                         .disabled(licenseKey.isEmpty)
+
+                    Button("Buy a License", action: buy)
+                        .buttonStyle(.glass)
+                        .controlSize(.large)
+                        .accessibilityIdentifier("buyLicenseButton")
                 }
             }
         }
+    }
+
+    /// The window floats above the browser, so it steps aside for the
+    /// checkout; Activate License in the menu bar brings it back.
+    private func buy() {
+        openURL(Self.purchaseURL)
+        appState.dismissLicenseWindow()
     }
 
     private func activate() {

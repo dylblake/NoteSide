@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Buy from the trial
+- **The license window has a Buy a License button.** When the five free notes are used up, or any time from Activate License in the menu bar, it opens checkout on dylblake.dev. The key arrives by email and is pasted into the same window.
+
 ### Pinned notes are a To-Do list
 - **Pinning a note puts it on your To-Do list.** The Pinned section at the top of All Notes is now **To-Do**: one compact line per note with the icon of where it lives (the app, the browser, or the file), its title and a faint first line, and a count beside the heading. Unpinned notes keep their tiles below.
 - **Drag to reorder.** The list stays in the order you put it in; a newly pinned note joins at the bottom. The pin on a row (or right-click, Remove from To-Do) takes it back off the list.
