@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.1
 
 ### A one-page start
 - **First run is one page.** Allow Accessibility, press the hotkey, done: each step gets a green check and the next opens by itself. There are no pages to step through and no detour to Setup.
@@ -9,6 +9,8 @@
 - **Setup shows everything.** The per-browser, Finder and Xcode, and microphone and speech rows are always visible; there is nothing to expand.
 - **The license window comes up in front.** When the trial runs out it opens as the active window, with Buy a License as the default button, so one click or Return starts checkout.
 - A browser with no page open (a start page, a new tab) attaches the note to the browser and says so, instead of reporting that the page couldn't be read.
+
+**Requires macOS 26.2 or later.**
 
 ## 2.0.0
 
