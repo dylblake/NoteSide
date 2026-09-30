@@ -22,6 +22,10 @@ final class AppState {
     let editor: EditorState
     let hotkeys: HotKeyState
     var isAllNotesPanelPresented = false
+    /// Counts quick-note requests, whatever they lead to (the drawer, or
+    /// the license window once the trial is used up). First run watches
+    /// it to tick off "take your first note".
+    private(set) var quickNoteHotkeyPressCount = 0
     let formatting: FormattingState
     /// Titles are always generated; this is not a user preference. UI tests
     /// switch generation off with the `-autoTitleEnabled NO` launch
@@ -107,7 +111,8 @@ final class AppState {
 
         browserPermissions.configure(
             onEditorError: { [weak self] msg in self?.editor.editorErrorMessage = msg },
-            onOpenApplication: { [weak self] bundleId in self?.openApplication(bundleIdentifier: bundleId) }
+            onOpenApplication: { [weak self] bundleId in self?.openApplication(bundleIdentifier: bundleId) },
+            onAutomationGranted: { [weak self] in self?.bringSetupWindowsToFront(activate: true) }
         )
 
         dictationHotKeyMonitor.onRelease = { [weak self] in
@@ -149,11 +154,16 @@ final class AppState {
 
                 // Deliberate return to Remora (Dock / Cmd-Tab / click) while
                 // setting up: refresh the automation-based permissions too and
-                // bring the buried setup window back to the front.
+                // bring the buried setup window back to the front. Not
+                // while the license window is up: activation is how that
+                // window becomes key, and re-fronting Setup here would
+                // take key straight back.
                 if self.isAnySetupWindowVisible {
                     self.browserPermissions.refreshBrowserPermissionStates()
                     self.browserPermissions.refreshAppAutomationStates()
-                    self.bringSetupWindowsToFront(activate: false)
+                    if self.licenseWindowController?.isVisible != true {
+                        self.bringSetupWindowsToFront(activate: false)
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -312,6 +322,7 @@ final class AppState {
 
     func toggleQuickNote() {
         PanelMotionTrace.mark("hotkey")
+        quickNoteHotkeyPressCount += 1
         if isAllNotesPanelPresented {
             dismissAllNotesPanel()
         }
@@ -610,7 +621,6 @@ final class AppState {
         browserPermissions.refreshBrowserPermissionStates()
         browserPermissions.refreshAppAutomationStates()
         onboardingWindow.present()
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func presentFirstRunWindow() {
@@ -623,7 +633,6 @@ final class AppState {
             firstRunWindowController = controller
         }
         firstRunWindowController?.present()
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func presentInfoWindow() {
@@ -861,10 +870,12 @@ final class AppState {
 
     private func pollPermissionsTick() {
         // Cheap, non-prompting reads only. refreshPermissionStatus covers
-        // Accessibility + microphone + speech; never run browser/app-automation
-        // Apple Event probes here (they block and can fire consent prompts).
+        // Accessibility + microphone + speech, and the Automation refresh
+        // asks macOS for the grant itself; never run Apple Event probes
+        // here (they block and can fire consent prompts).
         let wasAccessibilityTrusted = isAccessibilityTrusted
         refreshPermissionStatus()
+        browserPermissions.refreshAutomationStatuses()
 
         // The payoff moment: the instant Accessibility flips on, pop the
         // wizard back to the front with its now-green card. Trust only flips

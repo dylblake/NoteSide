@@ -70,7 +70,7 @@ struct PermissionRow<Action: View>: View {
     }
 }
 
-/// Nested per-app row inside a disclosure.
+/// Per-app row listed under a `PermissionRow`.
 struct PermissionDetailRow<Action: View>: View {
     let title: String
     let detail: String

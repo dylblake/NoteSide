@@ -40,6 +40,29 @@ nonisolated struct ContextResolver: Sendable {
     /// `sourceApp` is the app the note is for; nil means the frontmost
     /// app (context tracking follows whatever is in front).
     func resolveCurrentContext(for sourceApp: NSRunningApplication? = nil, allowBrowserAutomation: Bool = true) -> NoteContext {
+        resolveCurrentContextDetailed(for: sourceApp, allowBrowserAutomation: allowBrowserAutomation).context
+    }
+
+    /// Also reports what the browser's AppleScript said, when it had to
+    /// run, so the caller can record whether Automation is granted.
+    func resolveCurrentContextDetailed(
+        for sourceApp: NSRunningApplication? = nil,
+        allowBrowserAutomation: Bool = true
+    ) -> (context: NoteContext, browserAutomationResult: BrowserAutomationProbeResult?) {
+        var browserAutomationResult: BrowserAutomationProbeResult?
+        let context = resolveContext(
+            for: sourceApp,
+            allowBrowserAutomation: allowBrowserAutomation,
+            browserAutomationResult: &browserAutomationResult
+        )
+        return (context, browserAutomationResult)
+    }
+
+    private func resolveContext(
+        for sourceApp: NSRunningApplication?,
+        allowBrowserAutomation: Bool,
+        browserAutomationResult: inout BrowserAutomationProbeResult?
+    ) -> NoteContext {
         guard let app = sourceApp ?? NSWorkspace.shared.frontmostApplication else {
             return NoteContext(
                 kind: .application,
@@ -90,7 +113,8 @@ nonisolated struct ContextResolver: Sendable {
                 for: app,
                 bundleIdentifier: bundleIdentifier,
                 appName: appName,
-                allowBrowserAutomation: allowBrowserAutomation
+                allowBrowserAutomation: allowBrowserAutomation,
+                automationResult: &browserAutomationResult
             )
         }
 
@@ -156,18 +180,31 @@ nonisolated struct ContextResolver: Sendable {
 
     /// Resolves the context for a supported browser. Prefers the
     /// Accessibility path (no Apple Events, no per-browser Automation
-    /// prompt), falling back to AppleScript, and distinguishes "no
-    /// active tab" (permission is fine, there's just nothing to attach
-    /// to) from "Automation not granted" so users with access aren't
-    /// told to grant it again.
+    /// prompt), falling back to AppleScript when the caller allows it,
+    /// and distinguishes "no page open" (nothing to attach to) from
+    /// "no way to read the page" so users with access aren't told to
+    /// grant it again. `automationResult` is set only when the script ran.
     private func browserContext(
         for app: NSRunningApplication,
         bundleIdentifier: String,
         appName: String,
-        allowBrowserAutomation: Bool
+        allowBrowserAutomation: Bool,
+        automationResult: inout BrowserAutomationProbeResult?
     ) -> NoteContext {
         if let url = axBrowserURLReader.activeURL(for: app) {
             return pageContext(for: url, sourceBundleIdentifier: bundleIdentifier)
+        }
+
+        let isAccessibilityTrusted = AXIsProcessTrusted()
+
+        // A Chromium accessibility tree that was asleep until the read
+        // above woke it answers a moment later; one short retry keeps
+        // that first press on the page rather than on the app.
+        if isAccessibilityTrusted {
+            Thread.sleep(forTimeInterval: 0.15)
+            if let url = axBrowserURLReader.activeURL(for: app) {
+                return pageContext(for: url, sourceBundleIdentifier: bundleIdentifier)
+            }
         }
 
         if allowBrowserAutomation {
@@ -175,6 +212,7 @@ nonisolated struct ContextResolver: Sendable {
                 bundleIdentifier: bundleIdentifier,
                 activatesBrowser: false
             )
+            automationResult = attempt.result
 
             switch attempt.result {
             case .success(_, let url):
@@ -192,16 +230,23 @@ nonisolated struct ContextResolver: Sendable {
             }
         }
 
-        #if MAS_BUILD
-        let grantHint = "Turn on Accessibility for Remora to attach notes per site."
-        #else
-        let grantHint = "Allow Automation access to attach notes per site."
-        #endif
+        // Accessibility is on and found no web page: the browser is on a
+        // start page, a new tab or has no window. Nothing is missing.
+        if isAccessibilityTrusted {
+            return NoteContext(
+                kind: .application,
+                identifier: bundleIdentifier,
+                displayName: appName,
+                secondaryLabel: "No page open — this note attaches to \(appName) itself.",
+                navigationTarget: nil
+            )
+        }
+
         return NoteContext(
             kind: .application,
             identifier: bundleIdentifier,
             displayName: "\(appName) (Browser URL Unavailable)",
-            secondaryLabel: grantHint,
+            secondaryLabel: "Turn on Accessibility for Remora to attach notes per site.",
             navigationTarget: nil
         )
     }

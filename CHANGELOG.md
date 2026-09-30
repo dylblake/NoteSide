@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### A one-page start
+- **First run is one page.** Allow Accessibility, press the hotkey, done: each step gets a green check and the next opens by itself. There are no pages to step through and no detour to Setup.
+- **One permission to get going.** Accessibility is all Remora asks for up front. It reads the page you're on in every supported browser, so a browser no longer asks for Automation the first time you take a note in it. Dictation, Finder, Xcode and iTerm2 still ask when you first use them.
+- **A connected browser is recognised.** Setup now asks macOS directly whether a browser or app has granted Automation, so a browser showing its start page turns green as soon as you allow it, and a change made in System Settings shows within a second.
+- **Setup shows everything.** The per-browser, Finder and Xcode, and microphone and speech rows are always visible; there is nothing to expand.
+- **The license window comes up in front.** When the trial runs out it opens as the active window, with Buy a License as the default button, so one click or Return starts checkout.
+- A browser with no page open (a start page, a new tab) attaches the note to the browser and says so, instead of reporting that the page couldn't be read.
+
 ## 2.0.0
 
 ### Buy from the trial

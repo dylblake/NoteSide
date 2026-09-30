@@ -34,19 +34,23 @@ Remora is a macOS menu bar app for context-aware notes. It lets you attach notes
 Remora uses macOS permissions for a few features:
 
 - Accessibility
-  - required for the global hotkey and app/context detection
+  - the one permission first run asks for: it reads the page you're on in supported browsers, the context inside apps such as Slack, Figma and code editors, and a selection you quote
+  - not needed for the global hotkey, which works without any permission
 - Automation
-  - required to read the active tab URL from supported browsers
+  - asked for per app, when first needed: Finder, Xcode and iTerm2 for the folder or file you're in
+  - optional for browsers, where it lets a reopened note find its page among background tabs, and reads the page if Accessibility is off
+- Microphone and Speech Recognition
+  - asked for the first time you dictate
 
-The app prompts for these when needed.
+First run is a single page: allow Accessibility, press the hotkey, done. Everything else is requested at the point of use and listed in Setup (menu bar icon → Setup).
 
 ## Privacy
 
 - Notes are stored locally on your Mac
 - For a note on a web page, Remora downloads that site's icon from the site itself, once, and keeps it on your Mac. Nothing about your notes is sent.
 - The app does not require an account
-- Accessibility is used only for hotkey handling and context detection
-- Automation is used only for supported browser tab detection
+- Accessibility is used only to detect the app, page or file you're in and to read a selection you quote
+- Automation is used only to read the folder, file or tab you're in from Finder, Xcode, iTerm2 and supported browsers
 
 ## Requirements
 
@@ -59,7 +63,7 @@ The app prompts for these when needed.
 1. Open `Remora.xcodeproj` in Xcode.
 2. Select the `Remora` scheme.
 3. Build and run on `My Mac`.
-4. Grant Accessibility and browser Automation permissions when prompted.
+4. Allow Accessibility on the first-run page.
 
 ## Testing
 
