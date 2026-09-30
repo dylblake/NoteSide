@@ -132,7 +132,7 @@ struct RichTextEditor: NSViewRepresentable {
             layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
             let matches = tagPattern.matches(in: text, range: fullRange)
             for match in matches {
-                layoutManager.addTemporaryAttribute(.foregroundColor, value: NSColor.controlAccentColor, forCharacterRange: match.range)
+                layoutManager.addTemporaryAttribute(.foregroundColor, value: RemoraTheme.tagNSColor, forCharacterRange: match.range)
             }
         }
 

@@ -6,6 +6,14 @@
 import Foundation
 import Observation
 
+/// One `#tag` across the whole store, with how many notes carry it.
+nonisolated struct TagSummary: Hashable, Sendable, Identifiable {
+    /// Lowercased, without the leading `#`.
+    let name: String
+    let count: Int
+    var id: String { name }
+}
+
 @MainActor
 @Observable
 final class NotesState {
@@ -13,11 +21,14 @@ final class NotesState {
         didSet {
             _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
             _notesByContextID = Dictionary(uniqueKeysWithValues: notes.map { ($0.context.id, $0) })
+            allTags = Self.aggregateTags(notes)
             recomputeFilteredNotes()
         }
     }
     private var _sortedNotes: [ContextNote] = []
     private var _notesByContextID: [String: ContextNote] = [:]
+    /// Every tag in the store, most-used first, for the search suggestions.
+    private(set) var allTags: [TagSummary] = []
     private(set) var filteredNotes: [ContextNote] = []
     private(set) var noteSections: [NoteSection] = []
     private(set) var recentNotes: [ContextNote] = []
@@ -54,6 +65,7 @@ final class NotesState {
         notes = loaded
         _sortedNotes = loaded.sorted { $0.updatedAt > $1.updatedAt }
         _notesByContextID = Dictionary(uniqueKeysWithValues: loaded.map { ($0.context.id, $0) })
+        allTags = Self.aggregateTags(loaded)
         filteredNotes = _sortedNotes
         noteSections = NoteSectionBuilder.build(from: _sortedNotes)
         recentNotes = Array(_sortedNotes.prefix(5))
@@ -174,6 +186,40 @@ final class NotesState {
             self.filteredNotes = result.0
             self.noteSections = result.1
         }
+    }
+
+    /// Counts each tag once per note (a note's `tags` are already deduped),
+    /// most-used first, ties alphabetical.
+    nonisolated static func aggregateTags(_ notes: [ContextNote]) -> [TagSummary] {
+        var counts: [String: Int] = [:]
+        for note in notes {
+            for tag in note.tags {
+                counts[tag, default: 0] += 1
+            }
+        }
+        return counts
+            .map { TagSummary(name: $0.key, count: $0.value) }
+            .sorted { lhs, rhs in
+                lhs.count != rhs.count ? lhs.count > rhs.count : lhs.name < rhs.name
+            }
+    }
+
+    /// Tags to offer under the search field. An empty query or a bare `#`
+    /// offers everything; `#he` narrows to prefix matches first, then
+    /// substring matches. A plain-text query (no `#`) is a body search,
+    /// so nothing is suggested; likewise once a space follows the tag.
+    nonisolated static func tagSuggestions(tags: [TagSummary], query: String) -> [TagSummary] {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return tags }
+        guard trimmed.hasPrefix("#") else { return [] }
+
+        let needle = String(trimmed.dropFirst()).lowercased()
+        guard !needle.contains(where: \.isWhitespace) else { return [] }
+        if needle.isEmpty { return tags }
+
+        let prefixed = tags.filter { $0.name.hasPrefix(needle) }
+        let contained = tags.filter { !$0.name.hasPrefix(needle) && $0.name.contains(needle) }
+        return prefixed + contained
     }
 
     nonisolated static func filter(notes: [ContextNote], query: String) -> [ContextNote] {

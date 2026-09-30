@@ -17,6 +17,9 @@ struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var showingBulkDeleteConfirmation = false
     @State private var searchFocusRequestID = UUID()
+    /// While the search field has the caret its own key handling (tag
+    /// suggestions, typing) must win over the list shortcuts below.
+    @State private var isSearchFieldFocused = false
     @FocusState private var isListFocused: Bool
     @AppStorage("allNotesViewMode") private var viewModeRaw: String = AllNotesViewMode.grid.rawValue
 
@@ -46,7 +49,12 @@ struct ContentView: View {
 
                 TagSearchField(
                     text: $notes.searchText,
+                    isFocused: $isSearchFieldFocused,
                     focusRequestID: searchFocusRequestID,
+                    suggestions: NotesState.tagSuggestions(
+                        tags: appState.notesState.allTags,
+                        query: appState.notesState.searchText
+                    ),
                     onMoveDown: {
                         isListFocused = true
                         if appState.notesState.keyboardFocusedNoteID == nil,
@@ -57,6 +65,9 @@ struct ContentView: View {
                 )
                 .padding(.horizontal, Spacing.lg)
                 .padding(.bottom, Spacing.sm)
+                // The suggestions overlay hangs below the field; keep it
+                // above the scroll view that follows.
+                .zIndex(1)
 
                 ScrollView {
                     Color.clear
@@ -90,14 +101,16 @@ struct ContentView: View {
             .focusable()
             .focusEffectDisabled()
             .focused($isListFocused)
-            .onKeyPress(.downArrow) { moveKeyboardFocus(by: 1, proxy: proxy) }
-            .onKeyPress(.upArrow) { moveKeyboardFocus(by: -1, proxy: proxy) }
-            .onKeyPress(.rightArrow) { moveKeyboardFocus(by: 1, proxy: proxy) }
-            .onKeyPress(.leftArrow) { moveKeyboardFocus(by: -1, proxy: proxy) }
-            .onKeyPress(.return) { openKeyboardFocusedNote() }
-            .onKeyPress(.space) { toggleKeyboardFocusedSelection() }
-            .onKeyPress(.delete) { confirmDeleteKeyboardFocusedNote() }
-            .onKeyPress(.deleteForward) { confirmDeleteKeyboardFocusedNote() }
+            // These fire before the AppKit first responder sees the key,
+            // so they step aside while the search field is being typed in.
+            .onKeyPress(.downArrow) { unlessSearching { moveKeyboardFocus(by: 1, proxy: proxy) } }
+            .onKeyPress(.upArrow) { unlessSearching { moveKeyboardFocus(by: -1, proxy: proxy) } }
+            .onKeyPress(.rightArrow) { unlessSearching { moveKeyboardFocus(by: 1, proxy: proxy) } }
+            .onKeyPress(.leftArrow) { unlessSearching { moveKeyboardFocus(by: -1, proxy: proxy) } }
+            .onKeyPress(.return) { unlessSearching { openKeyboardFocusedNote() } }
+            .onKeyPress(.space) { unlessSearching { toggleKeyboardFocusedSelection() } }
+            .onKeyPress(.delete) { unlessSearching { confirmDeleteKeyboardFocusedNote() } }
+            .onKeyPress(.deleteForward) { unlessSearching { confirmDeleteKeyboardFocusedNote() } }
             .background(
                 // Hidden ⌘F target: moves focus into the search field.
                 Button("") { searchFocusRequestID = UUID() }
@@ -121,6 +134,10 @@ struct ContentView: View {
     /// notes) so arrow keys walk the list the way it reads.
     private var orderedVisibleNotes: [ContextNote] {
         appState.notesState.noteSections.flatMap { $0.groups.flatMap(\.notes) }
+    }
+
+    private func unlessSearching(_ action: () -> KeyPress.Result) -> KeyPress.Result {
+        isSearchFieldFocused ? .ignored : action()
     }
 
     private func moveKeyboardFocus(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
@@ -697,9 +714,31 @@ private struct NoteListRow: View {
 
 private struct TagSearchField: View {
     @Binding var text: String
+    /// Reported the moment the caret enters or leaves the field, so the
+    /// caller can hand keys to the field instead of the note list.
+    @Binding var isFocused: Bool
     var focusRequestID = UUID()
+    /// Tags to offer while the field is focused (already narrowed to the
+    /// current query by `NotesState.tagSuggestions`).
+    var suggestions: [TagSummary] = []
+    /// Down arrow with no suggestions showing: move focus into the notes.
     var onMoveDown: (() -> Void)?
     @State private var shouldPlaceCursor = false
+    @State private var isFieldFocused = false
+    /// Escape or picking a tag hides the suggestions until the next edit
+    /// or the next time the field is focused.
+    @State private var isSuppressed = false
+    @State private var highlightedIndex: Int?
+    @State private var blurHideTask: Task<Void, Never>?
+    @State private var fieldHeight: CGFloat = 0
+    /// Picking re-focuses the field to place the caret; that refocus must
+    /// not re-open the list it just closed.
+    @State private var pickedAt: Date?
+    @State private var pickedText: String?
+
+    private var isDropdownVisible: Bool {
+        isFieldFocused && !isSuppressed && !suggestions.isEmpty
+    }
 
     var body: some View {
         HStack(spacing: Spacing.xs) {
@@ -710,7 +749,11 @@ private struct TagSearchField: View {
                 text: $text,
                 placeCursorAtEnd: shouldPlaceCursor,
                 focusRequestID: focusRequestID,
-                onMoveDown: onMoveDown
+                onFocusChange: handleFocusChange,
+                onMoveDown: handleMoveDown,
+                onMoveUp: handleMoveUp,
+                onCommit: handleCommit,
+                onEscape: handleEscape
             )
                 .onChange(of: shouldPlaceCursor) { _, newValue in
                     if newValue {
@@ -760,7 +803,177 @@ private struct TagSearchField: View {
                         .stroke(RemoraTheme.border.opacity(0.6), lineWidth: 1)
                 )
         )
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            fieldHeight = height
+        }
+        .onChange(of: text) { _, newValue in
+            highlightedIndex = nil
+            if newValue != pickedText {
+                isSuppressed = false
+                pickedText = nil
+            }
+        }
+        .onChange(of: suggestions.count) { _, _ in
+            highlightedIndex = nil
+        }
+        // Floats below the field rather than pushing the notes down. The
+        // caller raises this view's zIndex so it paints over the list.
+        .overlay(alignment: .top) {
+            if isDropdownVisible {
+                TagSuggestionDropdown(
+                    suggestions: suggestions,
+                    highlightedIndex: highlightedIndex,
+                    onPick: pick
+                )
+                .offset(y: fieldHeight + Spacing.xxs)
+                .transition(.opacity)
+            }
+        }
+        .animation(PanelAnimation.prefersReducedMotion ? nil : .easeOut(duration: 0.12), value: isDropdownVisible)
         .accessibilityIdentifier("allNotesSearchField")
+    }
+
+    // MARK: - Field events
+
+    private func handleFocusChange(_ focused: Bool) {
+        blurHideTask?.cancel()
+        isFocused = focused
+        guard focused else {
+            // Defer so a click on a suggestion lands before the list hides.
+            blurHideTask = Task {
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled else { return }
+                isFieldFocused = false
+            }
+            return
+        }
+
+        isFieldFocused = true
+        let justPicked = pickedAt.map { Date().timeIntervalSince($0) < 0.5 } ?? false
+        if !justPicked {
+            isSuppressed = false
+        }
+    }
+
+    private func handleMoveDown() -> Bool {
+        guard isDropdownVisible else {
+            onMoveDown?()
+            return true
+        }
+        highlightedIndex = min((highlightedIndex ?? -1) + 1, suggestions.count - 1)
+        return true
+    }
+
+    private func handleMoveUp() -> Bool {
+        guard isDropdownVisible, let index = highlightedIndex else { return false }
+        highlightedIndex = index == 0 ? nil : index - 1
+        return true
+    }
+
+    private func handleCommit() -> Bool {
+        guard isDropdownVisible, let index = highlightedIndex, index < suggestions.count else { return false }
+        pick(suggestions[index])
+        return true
+    }
+
+    /// Consumes Escape only while the list is showing; otherwise it
+    /// propagates to `onExitCommand`, which dismisses the panel.
+    private func handleEscape() -> Bool {
+        guard isDropdownVisible else { return false }
+        isSuppressed = true
+        highlightedIndex = nil
+        return true
+    }
+
+    private func pick(_ tag: TagSummary) {
+        blurHideTask?.cancel()
+        let picked = "#\(tag.name)"
+        pickedText = picked
+        pickedAt = .now
+        text = picked
+        isSuppressed = true
+        highlightedIndex = nil
+        shouldPlaceCursor = true
+    }
+}
+
+/// The tag list under the search field: every known tag, most-used first,
+/// each in the tag colour with its note count.
+private struct TagSuggestionDropdown: View {
+    let suggestions: [TagSummary]
+    let highlightedIndex: Int?
+    let onPick: (TagSummary) -> Void
+
+    private static let rowHeight: CGFloat = 28
+    private static let maxVisibleRows = 8
+
+    private var listHeight: CGFloat {
+        CGFloat(min(suggestions.count, Self.maxVisibleRows)) * Self.rowHeight + Spacing.xs
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, tag in
+                        Button {
+                            onPick(tag)
+                        } label: {
+                            HStack(spacing: Spacing.xs) {
+                                Text("#\(tag.name)")
+                                    .font(.callout.weight(.medium))
+                                    .foregroundStyle(RemoraTheme.tag)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                Text("\(tag.count)")
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(RemoraTheme.tertiaryText)
+                            }
+                            .padding(.horizontal, Spacing.sm)
+                            .frame(height: Self.rowHeight)
+                            .frame(maxWidth: .infinity)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(index == highlightedIndex ? RemoraTheme.tag.opacity(0.18) : Color.clear)
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .id(index)
+                        .accessibilityIdentifier("tagSuggestion-\(tag.name)")
+                    }
+                }
+                .padding(Spacing.xxs)
+            }
+            .frame(height: listHeight)
+            .onChange(of: highlightedIndex) { _, index in
+                if let index {
+                    proxy.scrollTo(index)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        // Opaque: the section headers underneath otherwise bleed through.
+        .cardSurface(cornerRadius: CornerRadius.control)
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("tagSuggestionsList")
+    }
+}
+
+/// Reports focus the moment the field takes it. `controlTextDidBeginEditing`
+/// only fires on the first keystroke, too late to show suggestions.
+private final class FocusReportingTextField: NSTextField {
+    var onBecomeFirstResponder: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted {
+            onBecomeFirstResponder?()
+        }
+        return accepted
     }
 }
 
@@ -768,14 +981,20 @@ private struct TagColoredTextField: NSViewRepresentable {
     @Binding var text: String
     var placeCursorAtEnd: Bool = false
     var focusRequestID = UUID()
-    var onMoveDown: (() -> Void)?
+    var onFocusChange: ((Bool) -> Void)?
+    /// Key handlers return true when they consumed the key; false lets
+    /// AppKit (and then SwiftUI, for Escape) handle it as usual.
+    var onMoveDown: (() -> Bool)?
+    var onMoveUp: (() -> Bool)?
+    var onCommit: (() -> Bool)?
+    var onEscape: (() -> Bool)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        let field = FocusReportingTextField()
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -783,6 +1002,9 @@ private struct TagColoredTextField: NSViewRepresentable {
         field.placeholderString = "Search notes"
         field.delegate = context.coordinator
         field.cell?.lineBreakMode = .byTruncatingTail
+        field.onBecomeFirstResponder = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onFocusChange?(true)
+        }
         return field
     }
 
@@ -828,12 +1050,23 @@ private struct TagColoredTextField: NSViewRepresentable {
             Self.applyTagColoring(to: field)
         }
 
+        func controlTextDidEndEditing(_ notification: Notification) {
+            parent.onFocusChange?(false)
+        }
+
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            if commandSelector == #selector(NSResponder.moveDown(_:)), let onMoveDown = parent.onMoveDown {
-                onMoveDown()
-                return true
+            switch commandSelector {
+            case #selector(NSResponder.moveDown(_:)):
+                return parent.onMoveDown?() ?? false
+            case #selector(NSResponder.moveUp(_:)):
+                return parent.onMoveUp?() ?? false
+            case #selector(NSResponder.insertNewline(_:)):
+                return parent.onCommit?() ?? false
+            case #selector(NSResponder.cancelOperation(_:)):
+                return parent.onEscape?() ?? false
+            default:
+                return false
             }
-            return false
         }
 
         static func applyTagColoring(to field: NSTextField) {
@@ -846,7 +1079,7 @@ private struct TagColoredTextField: NSViewRepresentable {
             storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: fullRange)
             let matches = tagPattern.matches(in: text, range: fullRange)
             for match in matches {
-                storage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: match.range)
+                storage.addAttribute(.foregroundColor, value: RemoraTheme.tagNSColor, range: match.range)
             }
             storage.endEditing()
         }
@@ -862,12 +1095,12 @@ private struct NoteTagPills: View {
             ForEach(tags.prefix(limit), id: \.self) { tag in
                 Text("#\(tag)")
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(RemoraTheme.accent)
+                    .foregroundStyle(RemoraTheme.tag)
                     .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, Spacing.xxs)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(RemoraTheme.accent.opacity(0.15))
+                            .fill(RemoraTheme.tag.opacity(0.15))
                     )
             }
             if tags.count > limit {

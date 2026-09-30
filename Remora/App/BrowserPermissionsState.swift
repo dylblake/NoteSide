@@ -398,6 +398,15 @@ final class BrowserPermissionsState {
         }
     }
 
+    /// Whether macOS has already granted Remora Automation access to this
+    /// browser, from the persisted record rather than the in-memory map,
+    /// which is only populated while the Setup window is open. A stale
+    /// "granted" (revoked later in System Settings) just fails the script
+    /// with -1743; it never re-prompts.
+    func isBrowserAutomationKnownGranted(_ bundleIdentifier: String) -> Bool {
+        storedBrowserPermissionState(for: bundleIdentifier) == .granted
+    }
+
     private func storedBrowserPermissionState(for bundleIdentifier: String) -> BrowserPermissionState {
         storedState(prefix: Self.browserPermissionDefaultsPrefix, bundleIdentifier: bundleIdentifier)
     }
