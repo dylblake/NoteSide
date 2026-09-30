@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0
 
 ### Buy from the trial
 - **The license window has a Buy a License button.** When the five free notes are used up, or any time from Activate License in the menu bar, it opens checkout on dylblake.dev. The key arrives by email and is pasted into the same window.
@@ -82,6 +82,8 @@
 - **Strikethrough** (⇧⌘X) alongside bold, italic and underline.
 - **Text size** with ⌘+ / ⌘− / ⌘0 or the Aa menu — the whole note scales while headings keep their proportions, and the setting is remembered.
 - Reopened notes now render in the system font again instead of falling back to Helvetica Neue.
+
+**Requires macOS 26.2 or later.**
 
 ## 1.3.1
 

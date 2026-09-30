@@ -10,6 +10,8 @@
 #      "remora-notary". Set up with:
 #        xcrun notarytool store-credentials "remora-notary" \
 #          --apple-id <APPLE_ID> --team-id 57SW9PT7P8 --password <APP_SPECIFIC_PWD>
+#      A profile stored under another name works too:
+#        KEYCHAIN_PROFILE=<name> ./scripts/release.sh
 #
 # Outputs (under build/):
 #   build/Remora.xcarchive   — full archive (debug symbols etc.)
@@ -32,7 +34,7 @@ SCHEME="Remora"
 CONFIGURATION="Release"
 TEAM_ID="57SW9PT7P8"
 SIGN_IDENTITY="Developer ID Application: Dylan Evans (${TEAM_ID})"
-KEYCHAIN_PROFILE="remora-notary"
+KEYCHAIN_PROFILE="${KEYCHAIN_PROFILE:-remora-notary}"
 EXPORT_OPTIONS="exportOptions.plist"
 
 BUILD_DIR="build"
