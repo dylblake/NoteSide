@@ -12,15 +12,22 @@ import QuartzCore
 /// screen refresh while the main thread is free; a gap between samples
 /// is a main-thread stall. The offset is read from the presentation
 /// layer — what is on screen — not the model value.
+///
+/// Each panel is traced on its own track, named by `label` on every
+/// line, so the list moving beside the note can't pass for the note.
 @MainActor
 enum PanelMotionTrace {
+    nonisolated static let noteLabel = "note"
+    nonisolated static let listLabel = "list"
+
     /// Records a named event and samples `panel` (or the last panel
-    /// traced) every frame until it has been still for a moment.
-    static func mark(_ event: String, panel: NSWindow? = nil) {
+    /// traced under `label`) every frame until it has been still for a
+    /// moment.
+    static func mark(_ event: String, panel: NSWindow? = nil, label: String = noteLabel) {
         #if DEBUG
         guard let recorder = Recorder.shared else { return }
-        recorder.record(event: event, panel: panel)
-        recorder.sample(panel)
+        recorder.record(event: event, panel: panel, label: label)
+        recorder.sample(panel, label: label)
         #endif
     }
 }
@@ -37,51 +44,62 @@ private final class Recorder: NSObject {
     /// Keep sampling this long after the last event, to catch the settle.
     private static let tail: CFTimeInterval = 0.6
 
+    private struct Track {
+        var panel: NSWindow
+        var link: CADisplayLink?
+        var sampleUntil: CFTimeInterval = 0
+    }
+
     private let path: String
     private var lines: [String] = []
-    private var panel: NSWindow?
-    private var link: CADisplayLink?
-    private var sampleUntil: CFTimeInterval = 0
+    private var tracks: [String: Track] = [:]
 
     private init(path: String) {
         self.path = path
     }
 
-    func record(event: String, panel: NSWindow?) {
-        var fields: [String: Any] = ["t": CACurrentMediaTime(), "event": event]
-        if let panel { fields.merge(state(of: panel)) { $1 } }
+    func record(event: String, panel: NSWindow?, label: String) {
+        var fields: [String: Any] = ["t": CACurrentMediaTime(), "event": event, "panel": label]
+        if let panel { fields.merge(state(of: panel, label: label)) { $1 } }
         append(fields)
         // Events are rare; write them through so a test can wait on them.
         flush()
     }
 
-    func sample(_ panel: NSWindow?) {
-        guard let panel = panel ?? self.panel else { return }
-        self.panel = panel
-        sampleUntil = CACurrentMediaTime() + Self.tail
-        guard link == nil, let view = panel.contentView else { return }
-        let link = view.displayLink(target: self, selector: #selector(step(_:)))
-        link.add(to: .main, forMode: .common)
-        self.link = link
+    func sample(_ panel: NSWindow?, label: String) {
+        guard let panel = panel ?? tracks[label]?.panel else { return }
+        var track = tracks[label] ?? Track(panel: panel)
+        track.panel = panel
+        track.sampleUntil = CACurrentMediaTime() + Self.tail
+        if track.link == nil, let view = panel.contentView {
+            let link = view.displayLink(target: self, selector: #selector(step(_:)))
+            link.add(to: .main, forMode: .common)
+            track.link = link
+        }
+        tracks[label] = track
     }
 
     @objc private func step(_ link: CADisplayLink) {
-        guard let panel else { return }
-        var fields = state(of: panel)
+        guard let (label, track) = tracks.first(where: { $0.value.link === link }) else {
+            link.invalidate()
+            return
+        }
+        var fields = state(of: track.panel, label: label)
         // Read time, not the link's frame time: the presentation layer is
         // evaluated at the current time, so value and time stay paired even
         // when a callback runs late.
         fields["t"] = CACurrentMediaTime()
         fields["event"] = "frame"
+        fields["panel"] = label
         append(fields)
-        if CACurrentMediaTime() > sampleUntil {
+        if CACurrentMediaTime() > track.sampleUntil {
             link.invalidate()
-            self.link = nil
+            tracks[label]?.link = nil
             flush()
         }
     }
 
-    private func state(of panel: NSWindow) -> [String: Any] {
+    private func state(of panel: NSWindow, label: String) -> [String: Any] {
         let offset = panel.contentView?.layer.map(PanelAnimation.currentOffset(of:)) ?? 0
         var fields: [String: Any] = [
             "offset": Double(offset),
@@ -89,10 +107,14 @@ private final class Recorder: NSObject {
             "width": Double(panel.frame.width),
             "visible": panel.isVisible,
             "key": panel.isKeyWindow,
+            // Liquid Glass draws as active while key or main; beside each
+            // other the panels must always hold one of them.
+            "main": panel.isMainWindow,
             // No screen (ordered out): -1, never NaN, which JSON can't hold.
             "screenX": panel.screen.map { Double($0.frame.minX) } ?? -1
         ]
-        if let contentView = panel.contentView, let field = titleField(in: contentView) {
+        if label == PanelMotionTrace.noteLabel,
+           let contentView = panel.contentView, let field = titleField(in: contentView) {
             fields["title"] = field.stringValue
             fields["titleAlpha"] = Double(onScreenOpacity(of: field, within: contentView))
         }

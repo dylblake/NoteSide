@@ -21,7 +21,20 @@ final class AppState {
     let notesState: NotesState
     let editor: EditorState
     let hotkeys: HotKeyState
-    var isAllNotesPanelPresented = false
+    /// Where All Notes is: not shown, alone at the screen edge, or out
+    /// from under the open note drawer, beside it.
+    enum AllNotesMode {
+        case hidden
+        case alone
+        case stacked
+    }
+    private(set) var allNotesMode: AllNotesMode = .hidden
+    var isAllNotesPanelPresented: Bool { allNotesMode != .hidden }
+    var isAllNotesStacked: Bool { allNotesMode == .stacked }
+    /// Which layout the list was last opened in. It changes only when the
+    /// list opens, never as it closes, so the content doesn't reflow
+    /// while the list is sliding or fading away.
+    private(set) var allNotesUsesStackedLayout = false
     /// Counts quick-note requests, whatever they lead to (the drawer, or
     /// the license window once the trial is used up). First run watches
     /// it to tick off "take your first note".
@@ -119,6 +132,10 @@ final class AppState {
             self?.canCreateNote(for: context) ?? true
         }
 
+        notesState.onNotesDeleted = { [weak self] notes in
+            self?.releaseDeletedNotesFromEditor(notes)
+        }
+
         dictationHotKeyMonitor.onRelease = { [weak self] in
             self?.stopDictation()
         }
@@ -181,6 +198,10 @@ final class AppState {
                    app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
                     self.lastExternalApp = app
                 }
+                // The hotkey path brought this app forward itself and is
+                // opening the drawer on the pointer's display: no follow.
+                let isExpectedActivation = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                    .processIdentifier == self.expectedActivationPID
 
                 Task { [weak self] in
                     guard let self else { return }
@@ -207,10 +228,47 @@ final class AppState {
                     // Defer the reposition by one runloop tick so SwiftUI's
                     // re-render has time to commit to the layer.
                     DispatchQueue.main.async { [weak self] in
-                        self?.panelController?.repositionToActiveScreenIfNeeded()
-                        self?.allNotesPanelCtrl?.repositionToActiveScreenIfNeeded()
+                        guard let self else { return }
+                        // While a picked note is on its way to its page,
+                        // the apps coming forward aren't the destination;
+                        // the drawer moves once, when it gets there.
+                        if !self.editor.isContextFrozen, !isExpectedActivation,
+                           self.panelController?.repositionToActiveScreenIfNeeded() == true,
+                           self.isAllNotesStacked {
+                            // The list doesn't cross displays with the
+                            // note; it goes back under before the move.
+                            self.closeStackedAllNotes()
+                        }
+                        self.allNotesPanelCtrl?.repositionToActiveScreenIfNeeded()
                     }
                 }
+            }
+            .store(in: &cancellables)
+
+        // While a picked note's page is coming forward, the app that
+        // activates takes the keyboard and clears the main window; the
+        // drawer holds the picked note through it and should look it,
+        // so it takes main back until it can take key at the end.
+        NotificationCenter.default.publisher(for: NSWindow.didResignMainNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notification in
+                guard let self, self.editor.isContextFrozen,
+                      let window = notification.object as? NSWindow, window === self.panelController?.window,
+                      window.isVisible, NSApp.mainWindow == nil else { return }
+                window.makeMain()
+            }
+            .store(in: &cancellables)
+
+        // An app the hotkey path just brought forward may take the
+        // keyboard back a moment after the drawer opened; for that moment
+        // the drawer takes it again.
+        NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notification in
+                guard let self, Date() < self.retakeKeyUntil,
+                      let window = notification.object as? NSWindow, window === self.panelController?.window,
+                      self.editor.isEditorPresented else { return }
+                self.panelController?.makeKeyIfVisible()
             }
             .store(in: &cancellables)
 
@@ -254,6 +312,12 @@ final class AppState {
         DispatchQueue.main.async { [weak self] in
             self?.noteEditorPanelController.prewarm()
         }
+        // All Notes too, a moment later: its first open is usually beside
+        // a note that's already on screen.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self, !self.isAllNotesPanelPresented else { return }
+            self.allNotesPanelController.prewarm()
+        }
 
         #if DEBUG
         // UI-test hook: lets XCUITest drive a real window deterministically
@@ -284,6 +348,29 @@ final class AppState {
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.toggleQuickNote() }
+            }
+            // And for the All Notes hotkey, so the list's slide beside
+            // the note can be measured the same way.
+            DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("com.remora.uitest.toggleAllNotes"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.toggleAllNotesPanel() }
+            }
+            // And for picking a note in the list: the notification's
+            // object is the note's context identifier.
+            DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("com.remora.uitest.openNote"),
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                let identifier = notification.object as? String
+                MainActor.assumeIsolated {
+                    guard let self,
+                          let note = self.notesState.notes.first(where: { $0.context.identifier == identifier }) else { return }
+                    self.open(note)
+                }
             }
         }
         #endif
@@ -327,24 +414,99 @@ final class AppState {
     func toggleQuickNote() {
         PanelMotionTrace.mark("hotkey")
         quickNoteHotkeyPressCount += 1
-        if isAllNotesPanelPresented {
-            dismissAllNotesPanel()
-        }
-
+        // With the drawer open the hotkey closes it, and the list beside
+        // it goes too.
         if editor.isEditorPresented {
             saveAndDismissEditor()
             return
         }
 
+        if isAllNotesPanelPresented {
+            dismissAllNotesPanel()
+        }
+
+        openQuickNoteWherePointerIs()
+    }
+
+    private var quickNoteRequestGeneration = 0
+    /// The app the hotkey path brought forward, while its activation is
+    /// expected: the display-follow that activation triggers is skipped,
+    /// since the drawer is being opened on the pointer's display anyway.
+    private var expectedActivationPID: pid_t?
+    /// Until when the drawer takes the keyboard back if the app just
+    /// brought forward grabs it a moment after the drawer opened.
+    private var retakeKeyUntil: Date = .distantPast
+
+    /// The drawer opens on the display the pointer is on. When the app in
+    /// front has its window on another display, the window under the
+    /// pointer is what the user is looking at: it is brought forward
+    /// first, the note is for it, and the drawer opens beside it. With
+    /// the pointer on the front app's own display, or over nothing, the
+    /// front app keeps the note.
+    private func openQuickNoteWherePointerIs() {
+        quickNoteRequestGeneration += 1
+        let generation = quickNoteRequestGeneration
+
+        guard let pointer = PointerWindowLocator.pointerLocation(),
+              let pointerScreen = PointerWindowLocator.screen(containing: pointer) else {
+            openQuickNote(on: nil)
+            return
+        }
+
+        let decision = PointerWindowLocator.decide(
+            windows: PointerWindowLocator.onScreenWindows(),
+            pointer: pointer,
+            frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            ownPID: ProcessInfo.processInfo.processIdentifier
+        )
+        let frontScreen = decision.frontmostWindow.map { PointerWindowLocator.screen(containing: CGPoint(x: $0.bounds.midX, y: $0.bounds.midY)) } ?? nil
+        guard let frontScreen, frontScreen.frame != pointerScreen.frame,
+              let target = decision.windowUnderPointer,
+              AXIsProcessTrusted(),
+              let app = NSRunningApplication(processIdentifier: target.ownerPID) else {
+            openQuickNote(on: pointerScreen)
+            return
+        }
+
+        // Another display: bring the window under the pointer forward,
+        // wait for its app to be in front, then open. Opening first would
+        // hand the keyboard to the drawer only to lose it to the
+        // activation a moment later, with the glass going light and back.
+        let needsActivation = app.processIdentifier != NSWorkspace.shared.frontmostApplication?.processIdentifier
+        if needsActivation {
+            expectedActivationPID = app.processIdentifier
+        }
+        Task { [weak self] in
+            _ = await Task.detached(priority: .userInitiated) {
+                PointerWindowLocator.raise(target)
+            }.value
+            guard let self else { return }
+            defer { self.expectedActivationPID = nil }
+            guard self.quickNoteRequestGeneration == generation else { return }
+            if needsActivation {
+                PointerWindowLocator.activate(app)
+                let deadline = Date().addingTimeInterval(0.15)
+                while Date() < deadline,
+                      NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
+                    try? await Task.sleep(for: .milliseconds(10))
+                }
+            }
+            guard self.quickNoteRequestGeneration == generation, !self.editor.isEditorPresented else { return }
+            self.retakeKeyUntil = Date().addingTimeInterval(0.5)
+            self.openQuickNote(on: pointerScreen, readsSelection: false)
+        }
+    }
+
+    private func openQuickNote(on screen: NSScreen?, readsSelection: Bool = true) {
         // Trial gate: once the free-note allowance is used up, creating a
         // NEW note requires a license — but existing notes always stay
         // editable, so only block when the current context has no note.
         if !isLicensed && isTrialExhausted {
-            presentQuickNoteEditorOrLicenseWall()
+            presentQuickNoteEditorOrLicenseWall(readsSelection: readsSelection, screen: screen)
             return
         }
 
-        presentQuickNoteEditor()
+        presentQuickNoteEditor(readsSelection: readsSelection, screen: screen)
     }
 
     /// Trial-exhausted path: opens the editor when the current context
@@ -354,7 +516,11 @@ final class AppState {
     /// app-level context is no shortcut: a note attached to the browser
     /// itself would otherwise open the drawer on every page in it, and
     /// the drawer would then settle on the page as a new note.
-    private func presentQuickNoteEditorOrLicenseWall(passageText: String? = nil, readsSelection: Bool = true) {
+    private func presentQuickNoteEditorOrLicenseWall(
+        passageText: String? = nil,
+        readsSelection: Bool = true,
+        screen: NSScreen? = nil
+    ) {
         let sourceApp = noteSourceApp()
 
         Task { [weak self] in
@@ -365,7 +531,8 @@ final class AppState {
                 self.presentQuickNoteEditor(
                     passageText: passageText,
                     resolvedContext: context,
-                    readsSelection: readsSelection
+                    readsSelection: readsSelection,
+                    screen: screen
                 )
             } else {
                 self.presentLicenseWindow()
@@ -382,10 +549,13 @@ final class AppState {
     /// already has it. `readsSelection: false` skips the host selection
     /// read entirely (dictation: a held ⌘⇧D means "listen", not "quote",
     /// and the ⌘C fallback would fire while those modifiers are down).
+    /// `screen` is the display the caller has chosen (the pointer's, from
+    /// the hotkey); without it the drawer goes beside the front app.
     private func presentQuickNoteEditor(
         passageText: String? = nil,
         resolvedContext: NoteContext? = nil,
-        readsSelection: Bool = true
+        readsSelection: Bool = true,
+        screen: NSScreen? = nil
     ) {
         editor.editorErrorMessage = nil
         let sourceApp = noteSourceApp()
@@ -426,7 +596,7 @@ final class AppState {
         // its glass in the lighter inactive style. Otherwise it takes key
         // when the host is done.
         let hostMustStayKey = selectionRead?.isHostDone == false
-        noteEditorPanelController.present(makeKey: !hostMustStayKey)
+        noteEditorPanelController.present(makeKey: !hostMustStayKey, on: screen)
         browserPermissions.queueQuickNotePermissionRequestIfNeeded(sourceBundleIdentifier: sourceBundleIdentifier)
 
         // The context first, then the passage: a passage attached to the
@@ -526,6 +696,7 @@ final class AppState {
         // synchronously, and the close should answer the keypress, not
         // wait for the disk. The slide runs in the render server meanwhile.
         panelController?.dismiss()
+        closeStackedAllNotes()
         editor.persistCurrentEditorContent()
         notesState.flush()
         resetEditorAfterDismiss()
@@ -534,7 +705,22 @@ final class AppState {
     func dismissEditor() {
         endDictationForDismiss()
         panelController?.dismiss()
+        closeStackedAllNotes()
         resetEditorAfterDismiss()
+    }
+
+    /// The note is leaving, so the list beside it leaves with it. It fades
+    /// rather than slides: the note's sheet is what hides the line the
+    /// list slides behind.
+    private func closeStackedAllNotes() {
+        guard allNotesMode == .stacked else { return }
+        allNotesMode = .hidden
+        // The note slides out holding the keyboard, as it does when it
+        // closes alone; the list, made main by that, leaves still active,
+        // sliding off the display with it.
+        panelController?.makeKeyIfVisible()
+        allNotesPanelCtrl?.dismiss(style: .slideOffDisplay)
+        pairStackPanels(false)
     }
 
     /// The drawer is closing under a live dictation (click outside, Escape,
@@ -559,6 +745,7 @@ final class AppState {
     private func resetEditorAfterDismiss() {
         editor.isEditorPresented = false
         editor.isViewingOrphanedNote = false
+        editor.isContextFrozen = false
         editor.stopContextTracking()
         editor.cancelAutosave()
     }
@@ -590,12 +777,18 @@ final class AppState {
     }
 
     func toggleAllNotesPanel() {
+        PanelMotionTrace.mark("listToggle", label: PanelMotionTrace.listLabel)
+        // The note is sampled too while the list moves beside it.
+        PanelMotionTrace.mark("listToggle", panel: panelController?.window)
         if isAllNotesPanelPresented {
             dismissAllNotesPanel()
             return
         }
 
         if editor.isEditorPresented {
+            if revealAllNotesBesideEditor() { return }
+
+            // The display is too narrow for the pair: swap them.
             saveAndDismissEditor()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
                 self?.presentAllNotesPanel()
@@ -607,17 +800,76 @@ final class AppState {
     }
 
     private func presentAllNotesPanel() {
+        resetAllNotesBrowsing()
+        allNotesUsesStackedLayout = false
+        allNotesMode = .alone
+        allNotesPanelController.present()
+    }
+
+    /// Slides the list out from under the open note drawer, to its left.
+    /// The note doesn't move. False when the display can't fit the pair.
+    private func revealAllNotesBesideEditor() -> Bool {
+        guard let anchor = noteEditorPanelController.stackAnchor,
+              let frame = PanelLayout.stackedAllNotesFrame(
+                editorFrame: anchor.frame,
+                visibleFrame: anchor.visibleFrame
+              ) else { return false }
+
+        // So the list shows what has just been typed. An empty drawer
+        // isn't a note yet, and isn't a reason to delete one either.
+        editor.persistCurrentEditorContent(deleteIfEmpty: false)
+        resetAllNotesBrowsing()
+        allNotesUsesStackedLayout = true
+        allNotesMode = .stacked
+        // Beside each other the two sheets stay active by one being key
+        // and the other main (see `NoteEditorPanel.stackSibling`). The
+        // note is key now; it takes main before the list takes key, so it
+        // never has a frame without either.
+        pairStackPanels(true)
+        panelController?.window?.makeMain()
+        allNotesPanelController.present(placement: .stacked(frame: frame))
+        return true
+    }
+
+    private func pairStackPanels(_ paired: Bool) {
+        let note = panelController?.window as? NoteEditorPanel
+        // Through the creating accessor: the first reveal pairs before the
+        // list has ever been built.
+        let list = (paired ? allNotesPanelController : allNotesPanelCtrl)?.window as? NoteEditorPanel
+        note?.stackSibling = paired ? list : nil
+        list?.stackSibling = paired ? note : nil
+    }
+
+    private func resetAllNotesBrowsing() {
         notesState.allNotesScrollResetID = UUID()
         notesState.selectedNoteIDs.removeAll()
         notesState.keyboardFocusedNoteID = nil
         notesState.searchText = ""
-        isAllNotesPanelPresented = true
-        allNotesPanelController.present()
     }
 
-    func dismissAllNotesPanel() {
-        isAllNotesPanelPresented = false
+    /// Closes the list: off the screen edge when it's alone, back under
+    /// the note when it's beside it. The list had the keyboard; the note
+    /// takes it back at once (the list becomes main for its slide out, so
+    /// neither sheet changes look) unless the caller is about to hand it
+    /// on.
+    func dismissAllNotesPanel(returningKeyToEditor: Bool = true) {
+        let wasStacked = allNotesMode == .stacked
+        allNotesMode = .hidden
         allNotesPanelCtrl?.dismiss()
+        guard wasStacked, editor.isEditorPresented else {
+            pairStackPanels(false)
+            return
+        }
+        if returningKeyToEditor {
+            panelController?.makeKeyIfVisible()
+            richTextController.focus()
+        }
+        // Unpair once the list is gone; until then its last key change
+        // still has to keep the note main.
+        DispatchQueue.main.asyncAfter(deadline: .now() + PanelAnimation.dismissDuration + 0.05) { [weak self] in
+            guard let self, !self.isAllNotesStacked else { return }
+            self.pairStackPanels(false)
+        }
     }
 
     private func presentOnboardingWindow() {
@@ -674,6 +926,7 @@ final class AppState {
     }
 
     func edit(_ note: ContextNote) {
+        editor.isContextFrozen = false
         editor.activeContext = note.context
         editor.loadEditorState(for: note)
 
@@ -689,6 +942,27 @@ final class AppState {
     }
 
     func open(_ note: ContextNote) {
+        // With the drawer already up (the list beside it, or a Recent row
+        // in the menu bar), the picked note takes over the drawer in
+        // place; nothing is closed and reopened.
+        let drawerIsOpen = editor.isEditorPresented
+        PanelMotionTrace.mark("pick", panel: panelController?.window)
+        if drawerIsOpen {
+            // The note that's already open: just put the list away.
+            if editor.activeContext?.id == note.context.id, !editor.isViewingOrphanedNote {
+                dismissAllNotesPanel()
+                return
+            }
+            endDictationForDismiss()
+            editor.persistCurrentEditorContent()
+            notesState.flush()
+            editor.isViewingOrphanedNote = false
+            // Hold the drawer on the picked note while its page or file
+            // comes forward; `edit` releases it and takes the keyboard.
+            editor.isContextFrozen = true
+            editor.activeContext = note.context
+            editor.loadEditorState(for: note)
+        }
         dismissAllNotesPanel()
 
         guard isContextReachable(note.context) else {
@@ -706,17 +980,65 @@ final class AppState {
         let generation = openNoteGeneration
         Task { [weak self] in
             guard let self else { return }
+            if drawerIsOpen {
+                // Let the list finish sliding under first: the app coming
+                // forward takes the keyboard, and a list still on its way
+                // would lose its active look for the rest of the slide.
+                try? await Task.sleep(for: .milliseconds(Int(PanelAnimation.dismissDuration * 1000) + 60))
+                guard openNoteGeneration == generation else { return }
+            }
             let revealed = await revealIfAlreadyOpen(note.context)
             guard openNoteGeneration == generation else { return }
             if !revealed {
                 navigate(to: note.context)
             }
+            if drawerIsOpen {
+                // The app coming forward takes the keyboard; the drawer,
+                // still up with the picked note, takes it straight back
+                // and keeps it for the moment the app may grab it again.
+                retakeKeyUntil = Date().addingTimeInterval(0.5)
+                panelController?.makeKeyIfVisible()
+            }
             // Lets the front app settle so the editor's context tracking
             // sees the page or file the note belongs to.
             try? await Task.sleep(for: .milliseconds(350))
             guard openNoteGeneration == generation else { return }
-            edit(note)
+            if drawerIsOpen, editor.isEditorPresented, editor.activeContext?.id == note.context.id {
+                settleOpenDrawer(on: note)
+            } else {
+                edit(note)
+            }
         }
+    }
+
+    /// The drawer already shows the picked note and its page has come
+    /// forward: follow it to its display if it moved, and take the
+    /// keyboard. The note isn't reloaded, so nothing typed meanwhile is
+    /// lost.
+    private func settleOpenDrawer(on note: ContextNote) {
+        editor.isContextFrozen = false
+        // Key first: the app that came forward took it, and a drawer that
+        // follows to another display slides in with whatever it had.
+        panelController?.makeKeyIfVisible()
+        richTextController.focus()
+        panelController?.repositionToActiveScreenIfNeeded()
+        if isAutoTitleEnabled && editor.editorTitle.isEmpty && !note.body.isEmpty {
+            editor.generateTitleIfNeeded(noteID: note.id, body: note.body, context: note.context)
+        }
+    }
+
+    /// A note deleted from the list while it is open in the drawer: empty
+    /// the drawer, or closing it would save the note straight back.
+    private func releaseDeletedNotesFromEditor(_ notes: [ContextNote]) {
+        // Only when it was this drawer's note that went: a drawer on a
+        // context with no saved note yet keeps what is being typed.
+        guard editor.isEditorPresented, let context = editor.activeContext,
+              notes.contains(where: { $0.context.id == context.id }),
+              notesState.note(for: context) == nil else { return }
+        editor.cancelAutosave()
+        editor.editorAttributedText = NSAttributedString(string: "")
+        editor.editorTitle = ""
+        editor.isActiveNotePinned = false
     }
 
     /// Brings the note's page, document or folder forward if it's already
@@ -1253,6 +1575,13 @@ final class AppState {
         controller.onClickOutside = { [weak self] in
             guard let self, self.editor.isEditorPresented else { return }
             self.saveAndDismissEditor()
+        }
+        // Beside the note, the list is part of the drawer: a click in it
+        // is not a click outside.
+        controller.stackFrames = { [weak self] in
+            guard let self, self.isAllNotesStacked,
+                  let frame = self.allNotesPanelCtrl?.visibleFrame else { return [] }
+            return [frame]
         }
         panelController = controller
         return controller

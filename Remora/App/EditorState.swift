@@ -53,6 +53,11 @@ final class EditorState {
     /// open drawer must not become a way round the trial by following
     /// the user to a page or file that would be a new note.
     @ObservationIgnored var canCreateNote: (NoteContext) -> Bool = { _ in true }
+    /// Set while a note picked in All Notes is being brought to its page
+    /// or file with the drawer already open. The apps that come forward
+    /// on the way are not where the user is going, so the drawer holds
+    /// the picked note instead of following them.
+    @ObservationIgnored var isContextFrozen = false
 
     static let intraAppPollingBundleIdentifiers: Set<String> = [
         "com.apple.finder",
@@ -377,6 +382,7 @@ final class EditorState {
         // longer exists), don't let polling switch the editor to whatever app
         // is currently in front.
         if isViewingOrphanedNote { return }
+        if isContextFrozen { return }
 
         // Our own windows (All Notes, Settings, the menu bar popover)
         // coming to the front is not a context change: the note stays on

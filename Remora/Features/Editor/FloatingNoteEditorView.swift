@@ -169,6 +169,22 @@ struct FloatingNoteEditorView: View {
 
     private var footer: some View {
         HStack(spacing: Spacing.sm) {
+            // On the side the list comes out from.
+            IconButton(
+                systemName: "sidebar.leading",
+                accessibilityLabel: appState.isAllNotesStacked
+                    ? "Hide All Notes (\(appState.hotkeys.allNotesHotKeyDisplayString))"
+                    : "Show All Notes (\(appState.hotkeys.allNotesHotKeyDisplayString))",
+                tint: appState.isAllNotesStacked ? RemoraTheme.accent : RemoraTheme.primaryText,
+                size: 14,
+                hitSize: 34
+            ) {
+                appState.toggleAllNotesPanel()
+            }
+            .padding(Spacing.xxs)
+            .glassEffect(.regular, in: Capsule(style: .continuous))
+            .accessibilityIdentifier("editorAllNotesButton")
+
             ViewThatFits(in: .horizontal) {
                 Text("Press \(appState.hotkeys.hotKeyDisplayString) again or Escape to dismiss")
                     .lineLimit(1)
@@ -221,6 +237,7 @@ struct FloatingNoteEditorView: View {
                 .glassEffect(.regular, in: Capsule(style: .continuous))
             }
         }
+        .frame(height: PanelLayout.footerHeight)
     }
 }
 

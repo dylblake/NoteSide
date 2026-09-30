@@ -110,9 +110,14 @@ final class NotesState {
         }
     }
 
+    /// Told which notes were just deleted, so the open drawer can let go
+    /// of one of them instead of saving it back.
+    @ObservationIgnored var onNotesDeleted: ([ContextNote]) -> Void = { _ in }
+
     func delete(_ note: ContextNote) {
         notes.removeAll { $0.id == note.id }
         save()
+        onNotesDeleted([note])
     }
 
     func toggleSelection(_ noteID: UUID) {
@@ -130,9 +135,11 @@ final class NotesState {
     func deleteSelectedNotes() {
         guard !selectedNoteIDs.isEmpty else { return }
         let toDelete = selectedNoteIDs
+        let deleted = notes.filter { toDelete.contains($0.id) }
         notes.removeAll { toDelete.contains($0.id) }
         save()
         selectedNoteIDs.removeAll()
+        onNotesDeleted(deleted)
     }
 
     /// Toggles pin for a single note (note-level only — does NOT sync editor state).

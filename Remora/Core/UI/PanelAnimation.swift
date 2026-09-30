@@ -126,6 +126,47 @@ enum PanelLayout {
         return clamp(floor(screenWidth * 0.45), min: allNotesMinWidth, max: allNotesMaxWidth, screenWidth: screenWidth)
     }
 
+    // MARK: The stack (All Notes beside the note drawer)
+
+    /// Both panels inset their glass sheet from the window's edges by
+    /// these amounts (see `FloatingNoteEditorView`, `FloatingAllNotesView`).
+    static let sheetLeadingPadding: CGFloat = 32
+    static let sheetTrailingPadding: CGFloat = 20
+    /// Both panels' footers share a height, so their sheets end on the
+    /// same line when they sit side by side.
+    static let footerHeight: CGFloat = 42
+
+    /// How far the list's sheet runs under the note's sheet. More than the
+    /// sheets' corner radius, so the list's rounded corners are hidden and
+    /// the note's corners show list behind them, not the desktop.
+    static let stackLap: CGFloat = 28
+
+    /// While stacked, the list keeps its content clear of everything the
+    /// note covers: the note window's transparent leading padding (which
+    /// takes the mouse) and the lap. Only glass sits under the note.
+    static let stackedContentInset = sheetLeadingPadding + stackLap
+
+    /// How far the list's window extends under the note's window.
+    static let stackTuck = sheetTrailingPadding + stackedContentInset
+
+    private static let stackScreenMargin: CGFloat = 16
+    /// Narrowest list window still worth browsing beside a note.
+    private static let stackedMinWidth: CGFloat = 480
+
+    /// The All Notes frame when it sits beside the note drawer: tucked
+    /// under the drawer's leading edge and extending left, as wide as the
+    /// standalone list's content plus what the note covers. Nil when the
+    /// display is too narrow for the pair; the caller then swaps the
+    /// panels instead of stacking them.
+    static func stackedAllNotesFrame(editorFrame: NSRect, visibleFrame: NSRect) -> NSRect? {
+        let maxX = editorFrame.minX + stackTuck
+        let available = maxX - (visibleFrame.minX + stackScreenMargin)
+        let wanted = allNotesPaneWidth(forScreenWidth: visibleFrame.width) + stackedContentInset
+        let width = floor(Swift.min(wanted, available))
+        guard width >= stackedMinWidth else { return nil }
+        return NSRect(x: maxX - width, y: editorFrame.minY, width: width, height: editorFrame.height)
+    }
+
     private static func clamp(_ value: CGFloat, min lower: CGFloat, max upper: CGFloat, screenWidth: CGFloat) -> CGFloat {
         // Never cover more than 85% of the screen, whatever the minimum says.
         let hardCap = floor(screenWidth * 0.85)
