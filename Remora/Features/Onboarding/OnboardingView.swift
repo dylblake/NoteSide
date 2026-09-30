@@ -1,39 +1,7 @@
 import AppKit
 import SwiftUI
 
-private enum PermissionRowStatus {
-    case granted
-    /// Explicitly denied or required-and-absent.
-    case missing
-    /// Not requested yet — nothing is wrong.
-    case pending
-
-    var symbolName: String {
-        switch self {
-        case .granted: return "checkmark.circle.fill"
-        case .missing: return "xmark.circle.fill"
-        case .pending: return "circle.dashed"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .granted: return RemoraTheme.success
-        case .missing: return RemoraTheme.danger
-        case .pending: return RemoraTheme.secondaryText
-        }
-    }
-
-    var accessibilityDescription: String {
-        switch self {
-        case .granted: return "granted"
-        case .missing: return "not granted"
-        case .pending: return "not requested"
-        }
-    }
-}
-
-/// Permissions & Setup. A short "how it works" card, then one permission
+/// The Setup window. A short "how it works" card, then one permission
 /// row per capability. Each row shows its state at a glance; the per-app
 /// detail (individual browsers, Finder / Xcode, microphone + speech) is
 /// tucked behind a disclosure that opens itself only when something needs
@@ -58,29 +26,22 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(RemoraTheme.windowBackground.ignoresSafeArea())
         .onAppear(perform: seedDisclosures)
     }
 
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("Remora")
-                .font(.largeTitle.weight(.bold))
-                .foregroundStyle(RemoraTheme.primaryText)
-                .accessibilityAddTraits(.isHeader)
-
-            Text("Notes that stay attached to the app, page, or file you're in.")
-                .font(.title3)
-                .foregroundStyle(RemoraTheme.secondaryText)
-        }
+        PageHeader(
+            title: "Setup",
+            subtitle: "Notes that stay attached to the app, page, or file you're in."
+        )
     }
 
     // MARK: How it works
 
     private var howItWorksCard: some View {
-        card(title: "How it works", systemImage: "keyboard") {
+        TitledCard(title:"How it works", systemImage: "keyboard") {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 step(1, "Switch to any app, browser tab, or file.")
                 step(2, "Press \(appState.hotkeys.hotKeyDisplayString) to open a note for that context, and again to save.")
@@ -90,9 +51,9 @@ struct OnboardingView: View {
                 HStack(spacing: Spacing.xs) {
                     Spacer(minLength: 0)
                     Button("Open All Notes") { appState.toggleAllNotesPanel() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                     Button("Try a Note") { appState.toggleQuickNote() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glass)
                 }
                 .padding(.top, Spacing.xxs)
             }
@@ -119,7 +80,7 @@ struct OnboardingView: View {
     // MARK: Permissions
 
     private var permissionsCard: some View {
-        card(title: "Permissions", systemImage: "lock.shield") {
+        TitledCard(title:"Permissions", systemImage: "lock.shield") {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Hotkeys work out of the box. Everything below is optional and unlocks one capability each.")
                     .font(.subheadline)
@@ -139,14 +100,14 @@ struct OnboardingView: View {
     }
 
     private var accessibilityRow: some View {
-        permissionRow(
+        PermissionRow(
             title: "Accessibility",
             detail: accessibilityRowDetail,
             status: appState.isAccessibilityTrusted ? .granted : .missing
         ) {
             if !appState.isAccessibilityTrusted {
                 Button("Request Access") { appState.openAccessibilitySettings() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
             }
         }
     }
@@ -166,14 +127,14 @@ struct OnboardingView: View {
     #if !MAS_BUILD
     private var browserRow: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            permissionRow(
+            PermissionRow(
                 title: "Browser Automation",
                 detail: browserSummaryDetail,
                 status: browserAutomationSummaryStatus
             ) {
                 if browserAutomationSummaryStatus == .missing {
                     Button("Open Settings") { appState.browserPermissions.openAutomationSettings() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                 }
             }
 
@@ -227,17 +188,17 @@ struct OnboardingView: View {
     private func browserDetailRow(title: String, bundleIdentifier: String) -> some View {
         let status = appState.browserPermissions.browserPermissionStates[bundleIdentifier] ?? .notInstalled
 
-        return detailRow(title: title, detail: automationStatusText(for: status), status: rowStatus(for: status)) {
+        return PermissionDetailRow(title: title, detail: automationStatusText(for: status), status: rowStatus(for: status)) {
             if appState.browserPermissions.isRequestPending(for: bundleIdentifier) {
-                pendingLabel("Connecting…")
+                PendingLabel(text: "Connecting…")
             } else if status == .undetermined {
                 Button("Connect") { appState.browserPermissions.requestAutomationAccess(for: bundleIdentifier) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
             } else if status != .granted {
                 // macOS won't re-prompt after a denial — the only path back
                 // is the Automation pane in System Settings.
                 Button("Open Settings") { appState.browserPermissions.openAutomationSettings() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
             }
         }
     }
@@ -245,14 +206,14 @@ struct OnboardingView: View {
 
     private var appAutomationRow: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            permissionRow(
+            PermissionRow(
                 title: "Finder & Xcode",
                 detail: appAutomationSummaryDetail,
                 status: appAutomationSummaryStatus
             ) {
                 if appAutomationSummaryStatus == .missing {
                     Button("Open Settings") { appState.browserPermissions.openAutomationSettings() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                 }
             }
 
@@ -303,15 +264,15 @@ struct OnboardingView: View {
     private func appAutomationDetailRow(for target: AppAutomationTarget) -> some View {
         let status = appState.browserPermissions.appAutomationStates[target.bundleIdentifier] ?? .notInstalled
 
-        return detailRow(title: target.title, detail: target.purpose, status: rowStatus(for: status)) {
+        return PermissionDetailRow(title: target.title, detail: target.purpose, status: rowStatus(for: status)) {
             if appState.browserPermissions.isRequestPending(for: target.bundleIdentifier) {
-                pendingLabel("Requesting…")
+                PendingLabel(text: "Requesting…")
             } else if status == .undetermined {
                 Button("Request Access") { appState.browserPermissions.requestAppAutomationAccess(for: target) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
             } else if status == .notGranted {
                 Button("Open Settings") { appState.browserPermissions.openAutomationSettings() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
             }
         }
     }
@@ -322,7 +283,7 @@ struct OnboardingView: View {
         let status: PermissionRowStatus = (micGranted && speechGranted) ? .granted : .missing
 
         return VStack(alignment: .leading, spacing: Spacing.xs) {
-            permissionRow(
+            PermissionRow(
                 title: "Voice Dictation",
                 detail: status == .granted
                     ? "Hold \(appState.hotkeys.dictationHotKeyDisplayString) in a note to dictate. Speech is recognised on device."
@@ -331,22 +292,22 @@ struct OnboardingView: View {
             ) {
                 if status != .granted {
                     Button("Enable") { appState.requestDictationPermissionsIfNeeded() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                 }
             }
 
             DisclosureGroup(isExpanded: $showsDictationDetails) {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    detailRow(title: "Microphone", detail: micGranted ? "Enabled." : "Required to capture audio.", status: micGranted ? .granted : .missing) {
+                    PermissionDetailRow(title: "Microphone", detail: micGranted ? "Enabled." : "Required to capture audio.", status: micGranted ? .granted : .missing) {
                         if !micGranted {
                             Button("Request Access") { appState.requestMicrophoneAccess() }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.glass)
                         }
                     }
-                    detailRow(title: "Speech Recognition", detail: speechGranted ? "Enabled." : "Required to turn speech into text.", status: speechGranted ? .granted : .missing) {
+                    PermissionDetailRow(title: "Speech Recognition", detail: speechGranted ? "Enabled." : "Required to turn speech into text.", status: speechGranted ? .granted : .missing) {
                         if !speechGranted {
                             Button("Request Access") { appState.requestSpeechRecognitionAccess() }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.glass)
                         }
                     }
                 }
@@ -364,7 +325,7 @@ struct OnboardingView: View {
 
     private var completionFooter: some View {
         HStack(alignment: .firstTextBaseline, spacing: Spacing.md) {
-            Text("Reopen this window anytime from the menu bar icon → Permissions & Setup.")
+            Text("Reopen this window anytime from the menu bar icon → Setup.")
                 .font(.footnote)
                 .foregroundStyle(RemoraTheme.tertiaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -374,110 +335,13 @@ struct OnboardingView: View {
             Button(appState.hasCompletedOnboarding ? "Done" : "Get Started") {
                 appState.completeOnboarding()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .controlSize(.large)
             .keyboardShortcut(.defaultAction)
         }
     }
 
     // MARK: Building blocks
-
-    private func card<Content: View>(
-        title: String,
-        systemImage: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Label(title, systemImage: systemImage)
-                .font(.headline)
-                .foregroundStyle(RemoraTheme.primaryText)
-                .accessibilityAddTraits(.isHeader)
-
-            content()
-        }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface(cornerRadius: CornerRadius.sheet)
-    }
-
-    /// Top-level permission: status glyph, title, one-line detail, action.
-    private func permissionRow<Action: View>(
-        title: String,
-        detail: String,
-        status: PermissionRowStatus,
-        @ViewBuilder action: () -> Action
-    ) -> some View {
-        HStack(alignment: .top, spacing: Spacing.sm) {
-            Image(systemName: status.symbolName)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(status.color)
-                .frame(width: 24)
-                .padding(.top, 1)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(RemoraTheme.primaryText)
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(RemoraTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: Spacing.sm)
-
-            action()
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .insetRowSurface()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(title), \(status.accessibilityDescription)")
-    }
-
-    /// Nested per-app row inside a disclosure.
-    private func detailRow<Action: View>(
-        title: String,
-        detail: String,
-        status: PermissionRowStatus,
-        @ViewBuilder action: () -> Action
-    ) -> some View {
-        HStack(alignment: .center, spacing: Spacing.sm) {
-            Image(systemName: status.symbolName)
-                .font(.body)
-                .foregroundStyle(status.color)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(RemoraTheme.primaryText)
-                Text(detail)
-                    .font(.footnote)
-                    .foregroundStyle(RemoraTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: Spacing.sm)
-
-            action()
-                .controlSize(.small)
-        }
-        .padding(.vertical, Spacing.xxs)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(title), \(status.accessibilityDescription)")
-    }
-
-    private func pendingLabel(_ text: String) -> some View {
-        HStack(spacing: Spacing.xs - 2) {
-            ProgressView().controlSize(.small)
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(RemoraTheme.secondaryText)
-        }
-    }
 
     private func rowStatus(for state: BrowserPermissionState) -> PermissionRowStatus {
         switch state {

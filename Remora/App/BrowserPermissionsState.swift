@@ -311,7 +311,7 @@ final class BrowserPermissionsState {
 
         if browserPermissionStates[sourceBundleIdentifier] != .granted {
             let name = browserName(for: sourceBundleIdentifier)
-            browserAutomationMessage = "Browser access is not enabled for \(name) yet. Use Permissions & Setup to request it."
+            browserAutomationMessage = "Browser access is not enabled for \(name) yet. Open Setup from the menu bar icon to request it."
         }
         #endif
     }

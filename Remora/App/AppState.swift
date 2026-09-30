@@ -22,11 +22,11 @@ final class AppState {
     let editor: EditorState
     let hotkeys: HotKeyState
     var isAllNotesPanelPresented = false
-    var showsDockIcon: Bool
     let formatting: FormattingState
-    var isAutoTitleEnabled: Bool {
-        didSet { UserDefaults.standard.set(isAutoTitleEnabled, forKey: "autoTitleEnabled") }
-    }
+    /// Titles are always generated; this is not a user preference. UI tests
+    /// switch generation off with the `-autoTitleEnabled NO` launch
+    /// argument (Debug builds only).
+    let isAutoTitleEnabled: Bool
     var isLicensed: Bool = false
     var isDictating = false
     var dictationPartialText = ""
@@ -48,10 +48,8 @@ final class AppState {
     private var cancellables: Set<AnyCancellable> = []
     /// The last app other than Remora to come to the front.
     private var lastExternalApp: NSRunningApplication?
-    private var isAllNotesPanelVisible = false
     private var isOnboardingWindowVisible = false
     private var isFirstRunWindowVisible = false
-    private var isInfoWindowVisible = false
     private var permissionPollTask: Task<Void, Never>?
 
     private var isAnySetupWindowVisible: Bool {
@@ -70,13 +68,8 @@ final class AppState {
         let browserPerms = BrowserPermissionsState(browserURLProvider: browserURLProvider)
         self.browserPermissions = browserPerms
         hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingDefaultsKey)
-        // bool(forKey:) also understands the string form that launch
-        // arguments (`-autoTitleEnabled NO`) put in NSArgumentDomain.
-        let initialAutoTitle = UserDefaults.standard.object(forKey: "autoTitleEnabled") == nil
-            ? true
-            : UserDefaults.standard.bool(forKey: "autoTitleEnabled")
-        isAutoTitleEnabled = initialAutoTitle
-        showsDockIcon = false
+        let autoTitle = Self.resolveAutoTitleEnabled()
+        isAutoTitleEnabled = autoTitle
         let ns = NotesState(store: store)
         notesState = ns
         let rtc = richTextController
@@ -89,7 +82,8 @@ final class AppState {
             richTextController: rtc,
             contextResolver: contextResolver,
             browserPermissions: browserPerms,
-            titleGenerator: titleGen
+            titleGenerator: titleGen,
+            isAutoTitleEnabled: { autoTitle }
         )
 
         // Launched from the Dock or Spotlight, Remora isn't in front yet:
@@ -98,10 +92,6 @@ final class AppState {
            frontmost.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastExternalApp = frontmost
         }
-
-        // Wire the closure after all stored properties are initialized so
-        // we can safely capture [weak self].
-        editor.isAutoTitleEnabled = { [weak self] in self?.isAutoTitleEnabled ?? initialAutoTitle }
 
         hotkeys.configure(
             quickNoteAction: { [weak self] in self?.toggleQuickNote() },
@@ -214,7 +204,6 @@ final class AppState {
             .store(in: &cancellables)
 
         refreshPermissionStatus()
-        applyDockIconPreference()
 
         #if MAS_BUILD
         // The App Store purchase is the unlock; license keys don't exist
@@ -344,12 +333,12 @@ final class AppState {
     /// already has a note, otherwise shows the license window. The full
     /// context isn't knowable synchronously (AppleScript/AX), so when the
     /// cheap app-level lookup misses we resolve first, then decide.
-    private func presentQuickNoteEditorOrLicenseWall() {
+    private func presentQuickNoteEditorOrLicenseWall(readsSelection: Bool = true) {
         let sourceApp = noteSourceApp()
         let fallbackContext = editor.quickApplicationContext(for: sourceApp)
 
         if notesState.note(for: fallbackContext) != nil {
-            presentQuickNoteEditor()
+            presentQuickNoteEditor(readsSelection: readsSelection)
             return
         }
 
@@ -358,7 +347,7 @@ final class AppState {
             let context = await self.editor.resolveCurrentContextAsync(for: sourceApp)
             guard !self.editor.isEditorPresented else { return }
             if self.notesState.note(for: context) != nil {
-                self.presentQuickNoteEditor(resolvedContext: context)
+                self.presentQuickNoteEditor(resolvedContext: context, readsSelection: readsSelection)
             } else {
                 self.presentLicenseWindow()
             }
@@ -371,8 +360,14 @@ final class AppState {
     /// Nothing waits before the slide: the drawer answers the hotkey.
     /// `passageText` supplies the selection when it arrived through the
     /// Services menu; `resolvedContext` skips resolution when the caller
-    /// already has it.
-    private func presentQuickNoteEditor(passageText: String? = nil, resolvedContext: NoteContext? = nil) {
+    /// already has it. `readsSelection: false` skips the host selection
+    /// read entirely (dictation: a held ⌘⇧D means "listen", not "quote",
+    /// and the ⌘C fallback would fire while those modifiers are down).
+    private func presentQuickNoteEditor(
+        passageText: String? = nil,
+        resolvedContext: NoteContext? = nil,
+        readsSelection: Bool = true
+    ) {
         editor.editorErrorMessage = nil
         let sourceApp = noteSourceApp()
         let sourceBundleIdentifier = sourceApp?.bundleIdentifier
@@ -390,7 +385,7 @@ final class AppState {
         let richText = richTextController
         // Starts now, before the drawer does anything, so a Chromium host
         // gets its ⌘C straight away.
-        let selectionRead: SelectionRead? = passageText == nil && sourceIsFrontmost
+        let selectionRead: SelectionRead? = readsSelection && passageText == nil && sourceIsFrontmost
             ? EditorState.startSelectionRead(from: sourceApp) {
                 // The host has handled its ⌘C: take key so typing lands here.
                 guard editorState.isEditorPresented else { return }
@@ -508,6 +503,7 @@ final class AppState {
     }
 
     func saveAndDismissEditor() {
+        endDictationForDismiss()
         // Start the slide-out before the save: the flush writes
         // synchronously, and the close should answer the keypress, not
         // wait for the disk. The slide runs in the render server meanwhile.
@@ -518,8 +514,28 @@ final class AppState {
     }
 
     func dismissEditor() {
+        endDictationForDismiss()
         panelController?.dismiss()
         resetEditorAfterDismiss()
+    }
+
+    /// The drawer is closing under a live dictation (click outside, Escape,
+    /// the quick-note hotkey, delete). Keep what has been recognised so far
+    /// so it's saved with the note, and stop listening without waiting for
+    /// the recogniser's final pass — the release hotkey has nothing left to
+    /// do, so its monitor comes down too.
+    private func endDictationForDismiss() {
+        guard isDictating else { return }
+        isDictating = false
+        dictationPartialText = ""
+        dictationHotKeyMonitor.stopMonitoring()
+        let partial = dictationService.partialTranscript
+        if !partial.isEmpty {
+            richTextController.insertDictatedText(partial)
+        }
+        Task { [dictationService] in
+            _ = await dictationService.stopListening()
+        }
     }
 
     private func resetEditorAfterDismiss() {
@@ -746,31 +762,14 @@ final class AppState {
         }
     }
 
-    func setShowsDockIcon(_ showsDockIcon: Bool) {
-        self.showsDockIcon = showsDockIcon
-        applyDockIconPreference()
-    }
-
-    func setAllNotesPanelVisible(_ isVisible: Bool) {
-        isAllNotesPanelVisible = isVisible
-        applyDockIconPreference()
-    }
-
     func setOnboardingWindowVisible(_ isVisible: Bool) {
         isOnboardingWindowVisible = isVisible
-        applyDockIconPreference()
         updatePermissionPolling()
     }
 
     func setFirstRunWindowVisible(_ isVisible: Bool) {
         isFirstRunWindowVisible = isVisible
-        applyDockIconPreference()
         updatePermissionPolling()
-    }
-
-    func setInfoWindowVisible(_ isVisible: Bool) {
-        isInfoWindowVisible = isVisible
-        applyDockIconPreference()
     }
 
     // MARK: - Permission Polling & Window Fronting
@@ -897,15 +896,46 @@ final class AppState {
     }
     #endif
 
-    private func applyDockIconPreference() {
-        let shouldShowDockIcon = isAllNotesPanelVisible || isAnySetupWindowVisible || isInfoWindowVisible
-        showsDockIcon = shouldShowDockIcon
-        NSApp?.setActivationPolicy(shouldShowDockIcon ? .regular : .accessory)
+    /// Remora is an accessory app (`LSUIElement`) and never shows a Dock
+    /// icon, so nothing here touches the activation policy.
+    private static func resolveAutoTitleEnabled() -> Bool {
+        let defaults = UserDefaults.standard
+        // Clear what the old "Generate note titles automatically" toggle
+        // persisted, so a stale `false` can't keep titles off now that there
+        // is no toggle to turn them back on. This only touches the app's
+        // domain; the launch argument lives in NSArgumentDomain.
+        defaults.removeObject(forKey: "autoTitleEnabled")
+        #if DEBUG
+        // bool(forKey:) understands the string form (`-autoTitleEnabled NO`)
+        // that launch arguments put in NSArgumentDomain.
+        if defaults.object(forKey: "autoTitleEnabled") != nil {
+            return defaults.bool(forKey: "autoTitleEnabled")
+        }
+        #endif
+        return true
     }
 
-
+    /// Hold-to-talk. With no drawer open, the hotkey opens one first — the
+    /// same entry rules as the quick-note hotkey minus the toggle — so
+    /// dictation always has a note to land in.
     private func startDictation() {
-        guard editor.isEditorPresented, !isDictating else { return }
+        guard !isDictating else { return }
+
+        if !editor.isEditorPresented {
+            if isAllNotesPanelPresented {
+                dismissAllNotesPanel()
+            }
+            if !isLicensed && isTrialExhausted {
+                presentQuickNoteEditorOrLicenseWall(readsSelection: false)
+                // Opens synchronously only when the app-level context
+                // already has a note; otherwise the license wall (or an
+                // async resolve) has taken over and there's nothing to
+                // dictate into yet.
+                guard editor.isEditorPresented else { return }
+            } else {
+                presentQuickNoteEditor(readsSelection: false)
+            }
+        }
 
         // Dictation is hold-to-talk: release detection uses a global
         // flagsChanged monitor, which only receives events from other apps
@@ -919,7 +949,7 @@ final class AppState {
 
         guard dictationService.isFullyAuthorized else {
             requestDictationPermissionsIfNeeded()
-            editor.editorErrorMessage = "Dictation needs Microphone and Speech Recognition access — grant both in Permissions & Setup."
+            editor.editorErrorMessage = "Dictation needs Microphone and Speech Recognition access — grant both in Setup."
             return
         }
 

@@ -3,9 +3,9 @@ import Combine
 import ServiceManagement
 import SwiftUI
 
-/// Menu bar popover. Primary actions and recent notes up top, settings
-/// and hotkeys always visible beneath them, license and update status at
-/// the bottom.
+/// Menu bar popover. Wordmark header and the two primary actions up top,
+/// launch-at-login and hotkeys always visible beneath them, then recent
+/// notes, license and update status, and Setup / Quit at the bottom.
 struct MenuBarContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
@@ -19,12 +19,12 @@ struct MenuBarContentView: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             header
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                menuButton("View All Notes", systemImage: "square.grid.2x2", shortcut: appState.hotkeys.allNotesHotKeyDisplayString) {
+            HStack(spacing: Spacing.xs) {
+                menuButton("All Notes", systemImage: "square.grid.2x2") {
                     dismiss()
                     appState.openAllNotes()
                 }
-                menuButton("New Note Here", systemImage: "square.and.pencil", shortcut: appState.hotkeys.hotKeyDisplayString) {
+                menuButton("New Note", systemImage: "square.and.pencil") {
                     dismiss()
                     appState.toggleQuickNote()
                 }
@@ -39,11 +39,11 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            recentSection
+            settingsSection
 
             Divider()
 
-            settingsSection
+            recentSection
 
             Divider()
 
@@ -56,7 +56,7 @@ struct MenuBarContentView: View {
             Divider()
 
             HStack(spacing: Spacing.xs) {
-                menuButton("Permissions & Setup", systemImage: "checklist") {
+                menuButton("Setup", systemImage: "checklist") {
                     dismiss()
                     appState.showOnboarding()
                 }
@@ -74,10 +74,10 @@ struct MenuBarContentView: View {
     // MARK: Sections
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Remora")
-                    .font(.headline)
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Wordmark()
+                    .accessibilityAddTraits(.isHeader)
                 Text("Notes for the app, page, or file you're in.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -103,7 +103,7 @@ struct MenuBarContentView: View {
 
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            sectionHeader("Recent")
+            SectionHeader(title: "Recent")
 
             if appState.notesState.recentNotes.isEmpty {
                 Text("No notes yet. Press \(appState.hotkeys.hotKeyDisplayString) in any app to write one.")
@@ -123,21 +123,16 @@ struct MenuBarContentView: View {
         }
     }
 
-    /// Settings and hotkeys stay visible; the popover is the one place
-    /// to check or change a shortcut, so hiding them costs more than the
-    /// height saves.
+    /// Launch at login and the hotkeys stay visible, with no section
+    /// headers: the popover is the one place to check or change a
+    /// shortcut, so hiding them costs more than the height saves.
     private var settingsSection: some View {
-        @Bindable var appState = appState
-        return VStack(alignment: .leading, spacing: Spacing.sm) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                sectionHeader("Settings")
-
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in
                         setLaunchAtLogin(newValue)
                     }
-
-                Toggle("Generate note titles automatically", isOn: $appState.isAutoTitleEnabled)
 
                 if launchAtLoginNeedsApproval {
                     HStack(spacing: Spacing.xs - 2) {
@@ -157,7 +152,6 @@ struct MenuBarContentView: View {
             .font(.subheadline)
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                sectionHeader("Hotkeys")
                 hotkeyRow("Quick Note", displayText: appState.hotkeys.hotKeyDisplayString) { shortcut in
                     appState.hotkeys.setHotKeyShortcut(shortcut)
                 }
@@ -232,28 +226,11 @@ struct MenuBarContentView: View {
 
     // MARK: Pieces
 
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .textCase(.uppercase)
-            .tracking(0.7)
-            .foregroundStyle(RemoraTheme.secondaryText)
-            .accessibilityAddTraits(.isHeader)
-    }
-
-    private func menuButton(_ title: String, systemImage: String, shortcut: String? = nil, action: @escaping () -> Void) -> some View {
+    private func menuButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: Spacing.xs) {
-                Label(title, systemImage: systemImage)
-                Spacer(minLength: 0)
-                if let shortcut {
-                    Text(shortcut)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.bordered)
     }

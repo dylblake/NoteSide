@@ -7,7 +7,10 @@ struct InfoView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
-                    header
+                    PageHeader(
+                        title: "About Remora",
+                        subtitle: "Context-aware notes for the app, page, or file you are in."
+                    )
                     privacyCard
                 }
                 .padding(Spacing.xl)
@@ -18,25 +21,6 @@ struct InfoView: View {
                 .padding(.bottom, Spacing.md)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(background)
-    }
-
-    private var background: some View {
-        RemoraTheme.windowBackground
-            .ignoresSafeArea()
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("Remora")
-                .font(.largeTitle.weight(.bold))
-                .foregroundStyle(RemoraTheme.primaryText)
-                .accessibilityAddTraits(.isHeader)
-
-            Text("Context-aware notes for the app, page, or file you are in.")
-                .font(.subheadline)
-                .foregroundStyle(RemoraTheme.tertiaryText)
-        }
     }
 
     private var footer: some View {
@@ -53,7 +37,7 @@ struct InfoView: View {
     }
 
     private var privacyCard: some View {
-        infoCard(title: "Privacy", systemImage: "hand.raised") {
+        TitledCard(title: "Privacy", systemImage: "hand.raised") {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 bullet("Notes are stored locally on this Mac.")
                 bullet("Accessibility is only used for the hotkey and context detection.")
@@ -61,23 +45,6 @@ struct InfoView: View {
                 bullet("This build does not require an account to use the app.")
             }
         }
-    }
-
-    private func infoCard<Content: View>(
-        title: String,
-        systemImage: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Label(title, systemImage: systemImage)
-                .font(.headline)
-                .foregroundStyle(RemoraTheme.primaryText)
-
-            content()
-        }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface(cornerRadius: CornerRadius.sheet)
     }
 
     private func bullet(_ text: String) -> some View {

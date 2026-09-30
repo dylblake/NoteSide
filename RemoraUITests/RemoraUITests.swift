@@ -46,10 +46,10 @@ final class RemoraUITests: XCTestCase {
         app.launchEnvironment["UITEST_LAUNCH_ACTION"] = "onboarding"
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Remora"].waitForExistence(timeout: 5), "Onboarding window did not open")
+        XCTAssertTrue(app.images["remoraWordmark"].firstMatch.waitForExistence(timeout: 5), "Setup window did not open")
     }
 
-    /// Permissions & Setup shows one summary row per capability, with the
+    /// Setup shows one summary row per capability, with the
     /// per-app detail folded behind disclosures.
     func testPermissionsWindowShowsSummaryRowsWithFoldedDetail() throws {
         let app = XCUIApplication()
