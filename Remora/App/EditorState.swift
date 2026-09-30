@@ -295,52 +295,50 @@ final class EditorState {
         defer { isResolvingContext = false }
 
         let bundleIdentifier = (sourceApp ?? NSWorkspace.shared.frontmostApplication)?.bundleIdentifier
-        let permissionStates = browserPermissions.browserPermissionStates
-        let browserProvider = browserPermissions.browserURLProvider
         let resolver = contextResolver
 
-        let shouldAttemptBrowserAutomation: Bool = {
+        // Whether the resolver may fall back to the browser's AppleScript
+        // when Accessibility can't read the page. A browser that already
+        // granted Automation always may. One that was never asked may
+        // only while Accessibility is off: that script is what fires the
+        // macOS consent prompt, and with Accessibility on the page is
+        // readable without it, so a Start Page or an empty window
+        // shouldn't cost the user a prompt.
+        let allowBrowserAutomation: Bool = {
             #if MAS_BUILD
             // Sandboxed builds have no browser Apple Events entitlement —
             // the Accessibility reader is the only browser path.
             return false
             #else
-            guard let bundleId = bundleIdentifier else { return false }
-            guard browserProvider.supports(bundleIdentifier: bundleId) else { return false }
-            let state = permissionStates[bundleId]
-            return state == .granted || state == nil || state == .undetermined
+            guard let bundleId = bundleIdentifier,
+                  browserPermissions.browserURLProvider.supports(bundleIdentifier: bundleId) else { return false }
+            if browserPermissions.isBrowserAutomationKnownGranted(bundleId) { return true }
+            if browserPermissions.browserPermissionStates[bundleId] == .notGranted { return false }
+            return !AXIsProcessTrusted()
             #endif
         }()
-        let isFirstAttempt = shouldAttemptBrowserAutomation
-            && (bundleIdentifier.map { permissionStates[$0] == nil || permissionStates[$0] == .undetermined } ?? false)
 
         // Run the heavy AppleScript / Accessibility work off the main thread
-        let (context, probeSuccess): (NoteContext, Bool?) = await withCheckedContinuation { continuation in
+        let (context, automationResult) = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                var probeSuccess: Bool? = nil
-
-                if isFirstAttempt, let bundleId = bundleIdentifier {
-                    let attempt = browserProvider.accessAttempt(bundleIdentifier: bundleId, activatesBrowser: false)
-                    switch attempt.result {
-                    case .success: probeSuccess = true
-                    case .automationDenied: probeSuccess = false
-                    default: break
-                    }
-                }
-
-                var allowBrowserAutomation = bundleIdentifier.map { permissionStates[$0] == .granted } ?? false
-                if probeSuccess == true {
-                    allowBrowserAutomation = true
-                }
-
-                let resolved = resolver.resolveCurrentContext(for: sourceApp, allowBrowserAutomation: allowBrowserAutomation)
-                continuation.resume(returning: (resolved, probeSuccess))
+                continuation.resume(returning: resolver.resolveCurrentContextDetailed(
+                    for: sourceApp,
+                    allowBrowserAutomation: allowBrowserAutomation
+                ))
             }
         }
 
-        // Apply probe results back on main actor
-        if let probeSuccess, let bundleId = bundleIdentifier {
-            browserPermissions.setBrowserPermissionState(probeSuccess ? .granted : .notGranted, for: bundleId)
+        // Record what the script said about the grant, when it ran. No
+        // tab still means the Apple Event went through.
+        if let bundleId = bundleIdentifier {
+            switch automationResult {
+            case .success, .noTab:
+                browserPermissions.setBrowserPermissionState(.granted, for: bundleId)
+            case .automationDenied:
+                browserPermissions.setBrowserPermissionState(.notGranted, for: bundleId)
+            case .unavailable, .notBrowser, nil:
+                break
+            }
         }
 
         return context

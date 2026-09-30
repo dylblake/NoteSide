@@ -69,21 +69,28 @@ final class BrowserPermissionsState {
     @ObservationIgnored let browserURLProvider: BrowserURLProvider
     @ObservationIgnored private var onEditorError: (String?) -> Void
     @ObservationIgnored private var onOpenApplication: (String) -> Void
+    /// Fired when a Connect click or a status refresh finds a newly
+    /// granted app, so the setup window the prompt buried can come back.
+    @ObservationIgnored private var onAutomationGranted: () -> Void
+    @ObservationIgnored private var isRefreshingAutomationStatuses = false
 
     init(browserURLProvider: BrowserURLProvider) {
         self.browserURLProvider = browserURLProvider
         self.onEditorError = { _ in }
         self.onOpenApplication = { _ in }
+        self.onAutomationGranted = {}
         Self.migrateBrowserPermissionStatesIfNeeded()
     }
 
     /// Must be called once after init to wire closures back to AppState.
     func configure(
         onEditorError: @escaping (String?) -> Void,
-        onOpenApplication: @escaping (String) -> Void
+        onOpenApplication: @escaping (String) -> Void,
+        onAutomationGranted: @escaping () -> Void
     ) {
         self.onEditorError = onEditorError
         self.onOpenApplication = onOpenApplication
+        self.onAutomationGranted = onAutomationGranted
     }
 
     // MARK: - Public Methods
@@ -104,8 +111,6 @@ final class BrowserPermissionsState {
         // covers browsers), and the sandbox would fail every probe anyway.
         return
         #else
-        var browsersToProbe: [String] = []
-
         for browser in Self.supportedBrowsers {
             let bundleIdentifier = browser.bundleIdentifier
 
@@ -120,54 +125,77 @@ final class BrowserPermissionsState {
             let storedState = storedBrowserPermissionState(for: bundleIdentifier)
             let knownState: BrowserPermissionState? = storedState == .notInstalled ? nil : storedState
 
-            guard let knownState else {
-                // Don't probe here: an Apple Event to a never-attempted
-                // browser would fire the macOS consent prompt for every
-                // running browser the moment this refresh runs. Mark it
-                // undetermined so onboarding lists it with a Request
-                // Access button instead.
-                browserPermissionStates[bundleIdentifier] = .undetermined
-                continue
-            }
-
-            browserPermissionStates[bundleIdentifier] = knownState
-            if browserURLProvider.isRunning(bundleIdentifier: bundleIdentifier) {
-                browsersToProbe.append(bundleIdentifier)
-            }
+            // The stored record is only the starting point (never
+            // attempted shows as undetermined, with a Connect button);
+            // the status refresh below corrects it for running browsers
+            // without sending an Apple Event, so nothing here can fire a
+            // consent prompt.
+            browserPermissionStates[bundleIdentifier] = knownState ?? .undetermined
         }
 
-        guard !browsersToProbe.isEmpty else { return }
-
-        // Re-verify running browsers off the main thread — each probe is a
-        // full Apple Event round-trip, and a busy browser would otherwise
-        // stall the UI for its duration.
-        let provider = browserURLProvider
-        Task { [weak self] in
-            for bundleIdentifier in browsersToProbe {
-                let attempt = await Task.detached(priority: .userInitiated) {
-                    provider.accessAttempt(bundleIdentifier: bundleIdentifier, activatesBrowser: false)
-                }.value
-
-                guard let self else { return }
-                switch attempt.result {
-                case .success:
-                    self.setBrowserPermissionState(.granted, for: bundleIdentifier)
-                case .automationDenied, .unavailable, .notBrowser:
-                    self.setBrowserPermissionState(.notGranted, for: bundleIdentifier)
-                case .noTab:
-                    // Inconclusive — keep the stored state already applied.
-                    break
-                }
-            }
-        }
+        refreshAutomationStatuses()
         #endif
+    }
+
+    /// Re-reads the Automation grant of every running browser and app
+    /// target straight from macOS. It sends no Apple Events, so it can't
+    /// prompt, launch anything or stall on a busy app, and is cheap
+    /// enough for the setup windows' once-a-second poll. An app that
+    /// isn't running keeps whatever state it has.
+    func refreshAutomationStatuses() {
+        guard !isRefreshingAutomationStatuses else { return }
+
+        #if MAS_BUILD
+        let browserIdentifiers: [String] = []
+        #else
+        let browserIdentifiers = Self.supportedBrowsers
+            .map(\.bundleIdentifier)
+            .filter { browserURLProvider.isRunning(bundleIdentifier: $0) }
+        #endif
+        let appIdentifiers = Self.appAutomationTargets
+            .map(\.bundleIdentifier)
+            .filter { browserURLProvider.isRunning(bundleIdentifier: $0) }
+        guard !(browserIdentifiers.isEmpty && appIdentifiers.isEmpty) else { return }
+
+        isRefreshingAutomationStatuses = true
+        Task { [weak self] in
+            let statuses = await AutomationPermission.statuses(
+                forBundleIdentifiers: browserIdentifiers + appIdentifiers
+            )
+            guard let self else { return }
+            self.isRefreshingAutomationStatuses = false
+
+            var didGrant = false
+            for bundleIdentifier in browserIdentifiers {
+                guard let state = Self.permissionState(for: statuses[bundleIdentifier]) else { continue }
+                let wasGranted = self.browserPermissionStates[bundleIdentifier] == .granted
+                self.setBrowserPermissionState(state, for: bundleIdentifier)
+                didGrant = didGrant || (!wasGranted && state == .granted)
+            }
+            for bundleIdentifier in appIdentifiers {
+                guard let state = Self.permissionState(for: statuses[bundleIdentifier]) else { continue }
+                let wasGranted = self.appAutomationStates[bundleIdentifier] == .granted
+                self.setAppAutomationState(state, for: bundleIdentifier)
+                didGrant = didGrant || (!wasGranted && state == .granted)
+            }
+            if didGrant {
+                self.onAutomationGranted()
+            }
+        }
+    }
+
+    private static func permissionState(for status: AutomationPermission.Status?) -> BrowserPermissionState? {
+        switch status {
+        case .granted: return .granted
+        case .denied: return .notGranted
+        case .notDetermined: return .undetermined
+        case .unknown, nil: return nil
+        }
     }
 
     // MARK: - App Automation (Finder, Xcode)
 
     func refreshAppAutomationStates() {
-        var targetsToProbe: [AppAutomationTarget] = []
-
         for target in Self.appAutomationTargets {
             let bundleIdentifier = target.bundleIdentifier
 
@@ -179,32 +207,12 @@ final class BrowserPermissionsState {
             let storedState = storedState(prefix: Self.appAutomationDefaultsPrefix, bundleIdentifier: bundleIdentifier)
             let knownState: BrowserPermissionState? = storedState == .notInstalled ? nil : storedState
 
-            guard let knownState else {
-                // Same rule as browsers: never probe an app macOS hasn't
-                // asked about yet, or opening this window would fire the
-                // consent prompt unprompted.
-                appAutomationStates[bundleIdentifier] = .undetermined
-                continue
-            }
-
-            appAutomationStates[bundleIdentifier] = knownState
-            if browserURLProvider.isRunning(bundleIdentifier: bundleIdentifier) {
-                targetsToProbe.append(target)
-            }
+            // Same as browsers: start from the stored record and let the
+            // status refresh correct it without sending an Apple Event.
+            appAutomationStates[bundleIdentifier] = knownState ?? .undetermined
         }
 
-        guard !targetsToProbe.isEmpty else { return }
-
-        Task { [weak self] in
-            for target in targetsToProbe {
-                let (_, error) = await AppleScriptExecutor.shared.execute(
-                    key: "automation-probe:\(target.bundleIdentifier)",
-                    source: target.probeScript
-                )
-                guard let self else { return }
-                self.applyAppAutomationProbeResult(error: error, for: target.bundleIdentifier, conclusiveOnly: true)
-            }
-        }
+        refreshAutomationStatuses()
     }
 
     func requestAppAutomationAccess(for target: AppAutomationTarget) {
@@ -258,7 +266,9 @@ final class BrowserPermissionsState {
     }
 
     func setAppAutomationState(_ state: BrowserPermissionState, for bundleIdentifier: String) {
-        appAutomationStates[bundleIdentifier] = isBrowserInstalled(bundleIdentifier) ? state : .notInstalled
+        let newState = isBrowserInstalled(bundleIdentifier) ? state : .notInstalled
+        guard appAutomationStates[bundleIdentifier] != newState else { return }
+        appAutomationStates[bundleIdentifier] = newState
 
         let defaultsKey = Self.appAutomationDefaultsPrefix + bundleIdentifier
         switch appAutomationStates[bundleIdentifier] {
@@ -274,7 +284,9 @@ final class BrowserPermissionsState {
     func setBrowserPermissionState(_ state: BrowserPermissionState, for bundleIdentifier: String?) {
         guard let bundleIdentifier else { return }
 
-        browserPermissionStates[bundleIdentifier] = isBrowserInstalled(bundleIdentifier) ? state : .notInstalled
+        let newState = isBrowserInstalled(bundleIdentifier) ? state : .notInstalled
+        guard browserPermissionStates[bundleIdentifier] != newState else { return }
+        browserPermissionStates[bundleIdentifier] = newState
 
         let defaultsKey = Self.browserPermissionDefaultsPrefix + bundleIdentifier
         switch browserPermissionStates[bundleIdentifier] {
@@ -327,13 +339,23 @@ final class BrowserPermissionsState {
         browserAutomationMessage = result.message
 
         switch result {
-        case .success(let browserName, _):
+        case .success(let browserName, _), .noTab(let browserName):
+            // No tab still means the Apple Event went through: the grant
+            // is there, the browser just had no page (Safari's Start
+            // Page, a window with no tabs).
             onEditorError(nil)
-            setBrowserPermissionState(.granted, for: bundleIdentifier(for: browserName))
-        case .automationDenied(let browserName), .unavailable(let browserName):
+            let bundleIdentifier = bundleIdentifier(for: browserName)
+            let wasGranted = bundleIdentifier.map { browserPermissionStates[$0] == .granted } ?? true
+            setBrowserPermissionState(.granted, for: bundleIdentifier)
+            if !wasGranted {
+                onAutomationGranted()
+            }
+        case .automationDenied(let browserName):
             onEditorError(result.message)
             setBrowserPermissionState(.notGranted, for: bundleIdentifier(for: browserName))
-        case .noTab, .notBrowser:
+        case .unavailable, .notBrowser:
+            // A timeout or a launch race says nothing about the grant;
+            // the status refresh settles it.
             break
         }
     }
@@ -385,6 +407,7 @@ final class BrowserPermissionsState {
             case .unavailable, .notBrowser:
                 guard retriesRemaining > 0 else {
                     self.pendingAutomationRequests[bundleIdentifier] = nil
+                    self.refreshAutomationStatuses()
                     return
                 }
 

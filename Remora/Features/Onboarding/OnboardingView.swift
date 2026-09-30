@@ -2,16 +2,11 @@ import AppKit
 import SwiftUI
 
 /// The Setup window. A short "how it works" card, then one permission
-/// row per capability. Each row shows its state at a glance; the per-app
-/// detail (individual browsers, Finder / Xcode, microphone + speech) is
-/// tucked behind a disclosure that opens itself only when something needs
-/// attention.
+/// row per capability. Each row shows its state at a glance, with the
+/// per-app detail (individual browsers, Finder / Xcode, microphone +
+/// speech) listed straight beneath it: nothing to expand.
 struct OnboardingView: View {
     @Environment(AppState.self) private var appState
-    @State private var showsBrowserDetails = false
-    @State private var showsAppDetails = false
-    @State private var showsDictationDetails = false
-    @State private var didSeedDisclosures = false
 
     var body: some View {
         ScrollView {
@@ -26,7 +21,6 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear(perform: seedDisclosures)
     }
 
     // MARK: Header
@@ -82,7 +76,7 @@ struct OnboardingView: View {
     private var permissionsCard: some View {
         TitledCard(title:"Permissions", systemImage: "lock.shield") {
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Hotkeys work out of the box. Everything below is optional and unlocks one capability each.")
+                Text("Hotkeys work out of the box. Accessibility is the one to turn on first; the rest unlock one capability each and can wait until you need them.")
                     .font(.subheadline)
                     .foregroundStyle(RemoraTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -112,16 +106,12 @@ struct OnboardingView: View {
         }
     }
 
+    /// The same in both builds: Accessibility is how browser pages are
+    /// read, with a browser's Automation only as a fallback.
     private var accessibilityRowDetail: String {
-        #if MAS_BUILD
         appState.isAccessibilityTrusted
             ? "Reads the current browser page and detects Slack, Figma, and editor context."
             : "Needed for browser pages, Slack / Figma / editor context, and dictation. After clicking, enable Remora in System Settings; use ＋ if it isn't listed."
-        #else
-        appState.isAccessibilityTrusted
-            ? "Detects Slack, Figma, and editor context, and powers dictation's hold-to-release."
-            : "Needed for Slack / Figma / editor context and dictation. After clicking, enable Remora in System Settings; use ＋ if it isn't listed."
-        #endif
     }
 
     #if !MAS_BUILD
@@ -139,28 +129,21 @@ struct OnboardingView: View {
             }
 
             if !installedBrowsers.isEmpty {
-                DisclosureGroup(isExpanded: $showsBrowserDetails) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        ForEach(installedBrowsers, id: \.bundleIdentifier) { browser in
-                            browserDetailRow(title: browser.title, bundleIdentifier: browser.bundleIdentifier)
-                        }
+                detailRows {
+                    ForEach(installedBrowsers, id: \.bundleIdentifier) { browser in
+                        browserDetailRow(title: browser.title, bundleIdentifier: browser.bundleIdentifier)
                     }
-                    .padding(.top, Spacing.xs)
-                } label: {
-                    Text("\(installedBrowsers.count) installed \(installedBrowsers.count == 1 ? "browser" : "browsers")")
-                        .font(.subheadline.weight(.medium))
                 }
-                .padding(.leading, Spacing.xl + Spacing.xxs)
-                .accessibilityIdentifier("browserDetailsDisclosure")
+                .accessibilityIdentifier("browserDetails")
             }
         }
     }
 
     private var browserSummaryDetail: String {
         switch browserAutomationSummaryStatus {
-        case .granted: return "Attaches notes to the exact page you're on. All installed browsers are connected."
+        case .granted: return "Reopening a note finds its page among a browser's background tabs. All installed browsers are connected."
         case .missing: return "A browser has Automation turned off. macOS asks once; re-enable it in System Settings → Privacy & Security → Automation."
-        case .pending: return "Attaches notes to the exact page you're on. macOS asks the first time Remora reads a browser's active tab."
+        case .pending: return "Optional. Accessibility already reads the page you're on; connecting a browser also lets a reopened note find its page among background tabs."
         }
     }
 
@@ -218,19 +201,12 @@ struct OnboardingView: View {
             }
 
             if !installedAppAutomationTargets.isEmpty {
-                DisclosureGroup(isExpanded: $showsAppDetails) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        ForEach(installedAppAutomationTargets, id: \.bundleIdentifier) { target in
-                            appAutomationDetailRow(for: target)
-                        }
+                detailRows {
+                    ForEach(installedAppAutomationTargets, id: \.bundleIdentifier) { target in
+                        appAutomationDetailRow(for: target)
                     }
-                    .padding(.top, Spacing.xs)
-                } label: {
-                    Text("Per-app access")
-                        .font(.subheadline.weight(.medium))
                 }
-                .padding(.leading, Spacing.xl + Spacing.xxs)
-                .accessibilityIdentifier("appDetailsDisclosure")
+                .accessibilityIdentifier("appDetails")
             }
         }
     }
@@ -296,28 +272,21 @@ struct OnboardingView: View {
                 }
             }
 
-            DisclosureGroup(isExpanded: $showsDictationDetails) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    PermissionDetailRow(title: "Microphone", detail: micGranted ? "Enabled." : "Required to capture audio.", status: micGranted ? .granted : .missing) {
-                        if !micGranted {
-                            Button("Request Access") { appState.requestMicrophoneAccess() }
-                                .buttonStyle(.glass)
-                        }
-                    }
-                    PermissionDetailRow(title: "Speech Recognition", detail: speechGranted ? "Enabled." : "Required to turn speech into text.", status: speechGranted ? .granted : .missing) {
-                        if !speechGranted {
-                            Button("Request Access") { appState.requestSpeechRecognitionAccess() }
-                                .buttonStyle(.glass)
-                        }
+            detailRows {
+                PermissionDetailRow(title: "Microphone", detail: micGranted ? "Enabled." : "Required to capture audio.", status: micGranted ? .granted : .missing) {
+                    if !micGranted {
+                        Button("Request Access") { appState.requestMicrophoneAccess() }
+                            .buttonStyle(.glass)
                     }
                 }
-                .padding(.top, Spacing.xs)
-            } label: {
-                Text("Microphone and speech")
-                    .font(.subheadline.weight(.medium))
+                PermissionDetailRow(title: "Speech Recognition", detail: speechGranted ? "Enabled." : "Required to turn speech into text.", status: speechGranted ? .granted : .missing) {
+                    if !speechGranted {
+                        Button("Request Access") { appState.requestSpeechRecognitionAccess() }
+                            .buttonStyle(.glass)
+                    }
+                }
             }
-            .padding(.leading, Spacing.xl + Spacing.xxs)
-            .accessibilityIdentifier("dictationDetailsDisclosure")
+            .accessibilityIdentifier("dictationDetails")
         }
     }
 
@@ -343,6 +312,17 @@ struct OnboardingView: View {
 
     // MARK: Building blocks
 
+    /// The per-app rows under a permission's summary row, indented to sit
+    /// under its text. Always shown.
+    private func detailRows<Rows: View>(@ViewBuilder _ rows: () -> Rows) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            rows()
+        }
+        .padding(.leading, Spacing.xl + Spacing.xxs)
+        .padding(.trailing, Spacing.md)
+        .accessibilityElement(children: .contain)
+    }
+
     private func rowStatus(for state: BrowserPermissionState) -> PermissionRowStatus {
         switch state {
         case .granted: return .granted
@@ -362,18 +342,5 @@ struct OnboardingView: View {
         case .notInstalled:
             return "Not installed on this Mac."
         }
-    }
-
-    /// Open the disclosures that need attention the first time the window
-    /// appears; leave everything else folded.
-    private func seedDisclosures() {
-        guard !didSeedDisclosures else { return }
-        didSeedDisclosures = true
-        #if !MAS_BUILD
-        showsBrowserDetails = browserAutomationSummaryStatus != .granted && !installedBrowsers.isEmpty
-        #endif
-        showsAppDetails = appAutomationSummaryStatus == .missing
-        showsDictationDetails = !(appState.isMicrophoneAuthorized && appState.isSpeechRecognitionAuthorized)
-            && (appState.isMicrophoneAuthorized || appState.isSpeechRecognitionAuthorized)
     }
 }

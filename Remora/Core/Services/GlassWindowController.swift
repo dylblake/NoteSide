@@ -50,9 +50,22 @@ class GlassWindowController: NSObject, NSWindowDelegate {
             ? window.frame.size
             : window.frameRect(forContentRect: NSRect(origin: .zero, size: defaultContentSize)).size
         window.centerOnPreferredScreen(size: size)
-        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        // A plain `activate()` is a cooperative request that macOS refuses
+        // while another app is active, which is always the case when the
+        // hotkey brings up the license window: it then shows but isn't key,
+        // and the first click only activates it.
+        NSApp.activate(ignoringOtherApps: true)
         window.orderFrontRegardless()
         window.makeKeyAndOrderFront(nil)
+        #if DEBUG
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak window, title] in
+            DebugTrace.log("window '\(title)' presented: active=\(NSApp.isActive) key=\(window?.isKeyWindow ?? false)")
+        }
+        #endif
+    }
+
+    var isVisible: Bool {
+        window?.isVisible ?? false
     }
 
     /// Re-front the window when the user returns to Remora (e.g. after a
