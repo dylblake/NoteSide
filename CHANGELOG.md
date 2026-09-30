@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Tags at your fingertips, and no duplicate tabs
+- **Every tag, one click away.** Put the cursor in the All Notes search field and a list of every `#tag` across your notes drops down, most-used first with a count. Typing `#he` narrows it; pick one with a click or the arrow keys and Return, and the notes filter to that tag. Escape closes the list first and the panel second.
+- Tags are yellow everywhere they appear: in the editor, the search field, note cards and the new list, whatever your accent colour.
+- **Reopening a note finds the tab you already have.** Clicking a note in All Notes now brings forward the browser window whose visible tab is that page, the Finder window already on that folder, or the document window already open in Preview, Xcode and other apps, instead of opening a second one. Where Remora already has Automation access to a browser, it also finds the page among that browser's background tabs and switches to it. Nothing here asks for a new permission; when nothing is open, the note opens fresh as before.
+- Typing Space or Delete in the All Notes search no longer selects or offers to delete the note highlighted by the arrow keys.
+
 ### A tidier menu bar
 - The menu bar popover is reorganised: the Remora wordmark heads it, **All Notes** and **New Note** sit side by side, Launch at login and the three hotkey recorders follow, then Recent, license and updates, with **Setup** and **Quit** at the bottom. "Permissions & Setup" is now just "Setup" everywhere.
 - Note titles are always generated; the toggle is gone.

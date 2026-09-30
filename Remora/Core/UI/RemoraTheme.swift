@@ -19,6 +19,11 @@ enum RemoraTheme {
     static let success = Color(nsColor: .systemGreen)
     static let danger = Color(nsColor: .systemRed)
     static let warning = Color(nsColor: .systemOrange)
+    /// `#tags` everywhere they appear (editor highlight, search field,
+    /// note-card pills, search suggestions). Deliberately not the accent
+    /// colour so tags read the same regardless of the user's accent.
+    static let tag = Color(nsColor: tagNSColor)
+    static let tagNSColor: NSColor = .systemYellow
 
     /// Per-context tints for note cards. System colours so they adapt to
     /// the appearance and accessibility settings like everything else.

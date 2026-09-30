@@ -39,6 +39,9 @@ final class AppState {
     #endif
     let dictationService = DictationService()
     private let dictationHotKeyMonitor = DictationHotKeyMonitor()
+    private let openContextLocator = OpenContextLocator()
+    /// Bumped per `open(_:)`; a stale generation stops navigating/editing.
+    private var openNoteGeneration = 0
     private var panelController: NoteEditorPanelController?
     private var allNotesPanelCtrl: AllNotesPanelController?
     private var onboardingWindowController: OnboardingWindowController?
@@ -675,19 +678,73 @@ final class AppState {
     func open(_ note: ContextNote) {
         dismissAllNotesPanel()
 
-        if isContextReachable(note.context) {
-            navigate(to: note.context)
-            Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(350))
-                self?.edit(note)
-            }
-        } else {
+        guard isContextReachable(note.context) else {
             editor.isViewingOrphanedNote = true
             Task { [weak self] in
                 self?.edit(note)
                 self?.editor.editorErrorMessage = "The original file or page for this note is no longer available. Navigate to its new home, then re-attach it below."
             }
+            return
         }
+
+        // A second click while the first is still looking for an open tab
+        // supersedes it: only the latest one navigates and edits.
+        openNoteGeneration += 1
+        let generation = openNoteGeneration
+        Task { [weak self] in
+            guard let self else { return }
+            let revealed = await revealIfAlreadyOpen(note.context)
+            guard openNoteGeneration == generation else { return }
+            if !revealed {
+                navigate(to: note.context)
+            }
+            // Lets the front app settle so the editor's context tracking
+            // sees the page or file the note belongs to.
+            try? await Task.sleep(for: .milliseconds(350))
+            guard openNoteGeneration == generation else { return }
+            edit(note)
+        }
+    }
+
+    /// Brings the note's page, document or folder forward if it's already
+    /// open somewhere, rather than opening a duplicate. Permission
+    /// snapshots are taken here so the locator never triggers a prompt.
+    private func revealIfAlreadyOpen(_ context: NoteContext) async -> Bool {
+        var fileURL: URL?
+        var stopAccessing = false
+        if context.kind == .file, let resolved = resolvedFileURL(for: context) {
+            fileURL = resolved.url
+            stopAccessing = resolved.stopAccessing
+        }
+        defer {
+            if stopAccessing {
+                fileURL?.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let scriptableBrowsers: Set<String> = {
+            #if MAS_BUILD
+            // Sandboxed builds have no browser Apple Events entitlement.
+            return []
+            #else
+            return Set(
+                BrowserURLProvider.supportedBrowsers
+                    .map(\.bundleIdentifier)
+                    .filter { browserPermissions.isBrowserAutomationKnownGranted($0) }
+            )
+            #endif
+        }()
+
+        let request = OpenContextLocator.Request(
+            context: context,
+            fileURL: fileURL,
+            scriptableBrowserBundleIDs: scriptableBrowsers,
+            // Context detection already scripts Finder whenever it's in
+            // front (ContextResolver.currentFinderContextURL), so a Finder
+            // note only exists if that works; the reveal adds no new prompt.
+            finderScriptable: context.sourceBundleIdentifier == OpenContextLocator.finderBundleIdentifier
+        )
+        return await openContextLocator.revealIfOpen(request)
     }
 
     /// Rewrites an orphaned note's context to whatever the user is
