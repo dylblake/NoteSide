@@ -2,15 +2,15 @@ import SwiftUI
 
 /// Formatting controls for the note editor: paragraph style, character
 /// traits, lists and tables. (Text size is keyboard-only: ⌘+ / ⌘− / ⌘0.) Sits on a single glass capsule so
-/// it reads as one floating control, and collapses to icon-only when the
-/// pane is narrow.
+/// it reads as one floating control, and folds its less-used items into an
+/// overflow menu when the pane is narrow.
 struct FormattingToolbar: View {
     @Environment(AppState.self) private var appState
 
     private typealias TextStyle = RichTextEditorController.TextStyle
 
-    /// Three tiers, widest first: full (style name visible), compact
-    /// (icons only), narrow (lists and table fold into an overflow menu).
+    /// Three tiers, widest first: full, compact (no menu chevron), narrow
+    /// (lists and table fold into an overflow menu).
     var body: some View {
         ViewThatFits(in: .horizontal) {
             toolbar(tier: .full)
@@ -215,15 +215,10 @@ struct FormattingToolbar: View {
                 .keyboardShortcut(KeyEquivalent(style.shortcutKey), modifiers: [.command, .shift])
             }
         } label: {
-            HStack(spacing: Spacing.xxs) {
-                Image(systemName: "textformat")
-                if !compact {
-                    Text(selection.wrappedValue.title)
-                        .lineLimit(1)
-                }
-            }
-            .font(.system(size: 12, weight: .medium))
-            .frame(minWidth: compact ? 30 : 92, alignment: .leading)
+            Text(selection.wrappedValue.title)
+                .lineLimit(1)
+                .font(.system(size: 12, weight: .medium))
+                .frame(minWidth: compact ? 0 : 76, alignment: .leading)
             .frame(height: 28)
             .padding(.horizontal, Spacing.xs)
             .contentShape(Rectangle())

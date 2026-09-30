@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Pinned notes are a To-Do list
+- **Pinning a note puts it on your To-Do list.** The Pinned section at the top of All Notes is now **To-Do**: one compact line per note with the icon of where it lives (the app, the browser, or the file), its title and a faint first line, and a count beside the heading. Unpinned notes keep their tiles below.
+- **Drag to reorder.** The list stays in the order you put it in; a newly pinned note joins at the bottom. The pin on a row (or right-click, Remove from To-Do) takes it back off the list.
+- **One grid, no sections.** Everything that isn't on the To-Do list sits in a single grid, newest first, so tiles fill the width of the pane instead of each site and project getting a heading and a row of its own. All Notes is tiles only: the list/grid switch is gone.
+- **Every note shows where it lives.** Tiles, To-Do rows and the note editor carry the icon of the note's context: the website's own icon, the app's, or the file's. Website icons are downloaded from the site itself the first time and kept on your Mac; until one arrives the browser's icon stands in. The Mac App Store build gains the outgoing-network permission for this.
+- **Calmer tiles.** Tiles are neutral instead of tinted by kind, all the same height, and read top to bottom: source, title, the start of the note, then tags and date. A note without a title is headed by its first line. Select, pin and delete appear when the pointer or the keyboard is on a tile.
+- The `#` button in the All Notes search field is gone, since focusing the field already lists every tag, and the paragraph-style menu in the editor shows just the style name.
+
 ### Tags at your fingertips, and no duplicate tabs
 - **Every tag, one click away.** Put the cursor in the All Notes search field and a list of every `#tag` across your notes drops down, most-used first with a count. Typing `#he` narrows it; pick one with a click or the arrow keys and Return, and the notes filter to that tag. Escape closes the list first and the panel second.
 - Tags are yellow everywhere they appear: in the editor, the search field, note cards and the new list, whatever your accent colour.

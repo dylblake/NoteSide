@@ -68,4 +68,15 @@ nonisolated struct NoteContext: Codable, Hashable, Identifiable, Sendable {
 
         return "\(kind.rawValue)::\(identifier)"
     }
+
+    /// Host of the page a web note is attached to, without `www.`.
+    var siteHost: String? {
+        guard kind == .url,
+              let secondaryLabel,
+              let host = URL(string: secondaryLabel)?.host()?.lowercased(),
+              !host.isEmpty else {
+            return nil
+        }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
 }

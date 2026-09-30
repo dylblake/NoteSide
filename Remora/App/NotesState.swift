@@ -22,9 +22,16 @@ final class NotesState {
             _sortedNotes = notes.sorted { $0.updatedAt > $1.updatedAt }
             _notesByContextID = Dictionary(uniqueKeysWithValues: notes.map { ($0.context.id, $0) })
             allTags = Self.aggregateTags(notes)
+            todoOrder = Self.reconciledTodoOrder(todoOrder, notes: notes)
             recomputeFilteredNotes()
         }
     }
+    /// IDs of the pinned notes in the user's manual To-Do order. Kept in
+    /// step with `notes`: unpinned and deleted notes drop out, newly
+    /// pinned ones join at the end.
+    private(set) var todoOrder: [UUID] = []
+    /// How many notes are on the To-Do list (pinned), whatever the search.
+    var todoCount: Int { todoOrder.count }
     private var _sortedNotes: [ContextNote] = []
     private var _notesByContextID: [String: ContextNote] = [:]
     /// Every tag in the store, most-used first, for the search suggestions.
@@ -66,8 +73,9 @@ final class NotesState {
         _sortedNotes = loaded.sorted { $0.updatedAt > $1.updatedAt }
         _notesByContextID = Dictionary(uniqueKeysWithValues: loaded.map { ($0.context.id, $0) })
         allTags = Self.aggregateTags(loaded)
+        todoOrder = Self.reconciledTodoOrder(store.loadedTodoOrder, notes: loaded)
         filteredNotes = _sortedNotes
-        noteSections = NoteSectionBuilder.build(from: _sortedNotes)
+        noteSections = NoteSectionBuilder.build(from: _sortedNotes, todoOrder: todoOrder)
         recentNotes = Array(_sortedNotes.prefix(5))
 
         if seededCount != storedCount {
@@ -87,7 +95,7 @@ final class NotesState {
         var updated = notes.filter { $0.context.id != note.context.id }
         updated.append(note)
         notes = updated
-        store.save(notes: notes)
+        save()
 
         if isNewNote {
             trialNotesCreated += 1
@@ -97,7 +105,7 @@ final class NotesState {
 
     func delete(_ note: ContextNote) {
         notes.removeAll { $0.id == note.id }
-        store.save(notes: notes)
+        save()
     }
 
     func toggleSelection(_ noteID: UUID) {
@@ -116,7 +124,7 @@ final class NotesState {
         guard !selectedNoteIDs.isEmpty else { return }
         let toDelete = selectedNoteIDs
         notes.removeAll { toDelete.contains($0.id) }
-        store.save(notes: notes)
+        save()
         selectedNoteIDs.removeAll()
     }
 
@@ -141,13 +149,47 @@ final class NotesState {
             guard selected.contains(note.id) else { return note }
             return note.copying(updatedAt: .now, isPinned: nextPinned)
         }
-        store.save(notes: notes)
+        save()
         selectedNoteIDs.removeAll()
         return nextPinned
     }
 
+    /// Applies a drag in the To-Do list. `visibleOrder` is the new order
+    /// of the rows on screen; while a search hides some pinned notes, the
+    /// visible ones trade places among the slots they already held.
+    func reorderTodo(visibleOrder: [UUID]) {
+        let moving = Set(visibleOrder)
+        guard moving.count == visibleOrder.count, moving.isSubset(of: todoOrder) else { return }
+
+        var replacements = visibleOrder.makeIterator()
+        let reordered = todoOrder.map { moving.contains($0) ? (replacements.next() ?? $0) : $0 }
+        guard reordered != todoOrder else { return }
+
+        todoOrder = reordered
+        noteSections = NoteSectionBuilder.build(from: filteredNotes, todoOrder: todoOrder)
+        save()
+    }
+
     func flush() {
         store.flush()
+    }
+
+    private func save() {
+        store.save(notes: notes, todoOrder: todoOrder)
+    }
+
+    /// Drops IDs that are no longer pinned and appends newly pinned notes
+    /// (most recently updated first among themselves).
+    nonisolated static func reconciledTodoOrder(_ order: [UUID], notes: [ContextNote]) -> [UUID] {
+        let pinned = notes.filter(\.isPinned)
+        let pinnedIDs = Set(pinned.map(\.id))
+        var seen = Set<UUID>()
+        let kept = order.filter { pinnedIDs.contains($0) && seen.insert($0).inserted }
+        let added = pinned
+            .filter { !seen.contains($0.id) }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .map(\.id)
+        return kept + added
     }
 
     private func recomputeFilteredNotes() {
@@ -156,7 +198,7 @@ final class NotesState {
         searchTask?.cancel()
         recentNotes = Array(_sortedNotes.prefix(5))
         filteredNotes = Self.filter(notes: _sortedNotes, query: searchText)
-        noteSections = NoteSectionBuilder.build(from: filteredNotes)
+        noteSections = NoteSectionBuilder.build(from: filteredNotes, todoOrder: todoOrder)
     }
 
     /// Typing path: debounced, with matching and section building off the
@@ -166,10 +208,11 @@ final class NotesState {
         searchTask?.cancel()
         let query = searchText
         let source = _sortedNotes
+        let order = todoOrder
 
         guard !query.isEmpty else {
             filteredNotes = source
-            noteSections = NoteSectionBuilder.build(from: source)
+            noteSections = NoteSectionBuilder.build(from: source, todoOrder: order)
             return
         }
 
@@ -179,7 +222,7 @@ final class NotesState {
 
             let result: ([ContextNote], [NoteSection]) = await Task.detached(priority: .userInitiated) {
                 let filtered = NotesState.filter(notes: source, query: query)
-                return (filtered, NoteSectionBuilder.build(from: filtered))
+                return (filtered, NoteSectionBuilder.build(from: filtered, todoOrder: order))
             }.value
 
             guard let self, !Task.isCancelled, self.searchText == query else { return }
